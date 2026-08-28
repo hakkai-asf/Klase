@@ -142,13 +142,14 @@ async function rigFromGltf(
   startFallback: THREE.AnimationClip | null,
   stopFallback: THREE.AnimationClip | null,
 ) {
-  let walk = clipNamed(anims, /^walk$/i) ?? clipNamed(anims, /walk/i);
+  // Clips that shipped in the same GLB as the mesh bind reliably.
+  // Mixamo-only files are fallbacks (and start/stop).
+  let walk = clipNamed(anims, /^walk$/i) ?? adaptClip(walkFallback, scene, "Walk");
   if (walk) walk = stripRootXZ(walk);
-  else walk = adaptClip(walkFallback, scene, "Walk");
   if (!walk) throw new Error("No walk clip");
   walk.name = "Walk";
 
-  let idle = adaptClip(idleFallback, scene, "Idle") ?? clipNamed(anims, /idle/i);
+  let idle = clipNamed(anims, /^idle$/i) ?? adaptClip(idleFallback, scene, "Idle");
   if (idle) {
     idle = stripRootXZ(idle);
     idle.name = "Idle";
@@ -228,8 +229,9 @@ export async function preloadAvatars() {
   const startFallback = firstClip(startGltf.animations, "Start Walking.glb");
   const stopFallback = firstClip(stopGltf.animations, "Stop Walking.glb");
   previews = { x: xGltf.scene, y: yGltf.scene };
+  const skinnedScene = cloneSkinned(skinnedGltf.scene);
   const skinnedFallback = await rigFromGltf(
-    skinnedGltf.scene,
+    skinnedScene,
     skinnedGltf.animations,
     walkFallback,
     idleFallback,
@@ -252,6 +254,13 @@ export async function preloadAvatars() {
     ? await rigFromGltf(yGltf.scene, yGltf.animations, walkFallback, idleFallback, startFallback, stopFallback)
     : skinnedFallback;
   rigs = { x, y };
+}
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    rigs = null;
+    previews = null;
+  });
 }
 
 function pickRig(body?: string): Rig | null {
@@ -343,6 +352,7 @@ function primitiveAvatar(look: Look, nametag: string) {
     stopAction: null as THREE.AnimationAction | null,
     phase: "idle" as LocoPhase,
     wantMove: false,
+    phaseTime: 0,
   };
 }
 
@@ -354,6 +364,10 @@ export function createAvatar(look: Look, nametag: string) {
   const model = cloneModel(rig.template);
   fitToHeight(model, 1.7);
   enableShadows(model);
+  model.traverse((o) => {
+    const sk = o as THREE.SkinnedMesh;
+    if (sk.isSkinnedMesh) sk.frustumCulled = false;
+  });
   const body = model;
   root.add(model);
 
@@ -366,6 +380,7 @@ export function createAvatar(look: Look, nametag: string) {
   const walkAction = mixer.clipAction(rig.walk);
   walkAction.setLoop(THREE.LoopRepeat, Infinity);
   walkAction.enabled = true;
+  walkAction.setEffectiveTimeScale(1);
   walkAction.setEffectiveWeight(0);
   walkAction.play();
 
@@ -374,27 +389,11 @@ export function createAvatar(look: Look, nametag: string) {
     idleAction = mixer.clipAction(rig.idle);
     idleAction.setLoop(THREE.LoopRepeat, Infinity);
     idleAction.enabled = true;
+    idleAction.setEffectiveTimeScale(1);
     idleAction.setEffectiveWeight(1);
     idleAction.play();
   }
 
-  let startAction: THREE.AnimationAction | null = null;
-  if (rig.start) {
-    startAction = mixer.clipAction(rig.start);
-    startAction.setLoop(THREE.LoopOnce, 1);
-    startAction.clampWhenFinished = true;
-    startAction.enabled = true;
-    startAction.setEffectiveWeight(0);
-  }
-
-  let stopAction: THREE.AnimationAction | null = null;
-  if (rig.stop) {
-    stopAction = mixer.clipAction(rig.stop);
-    stopAction.setLoop(THREE.LoopOnce, 1);
-    stopAction.clampWhenFinished = true;
-    stopAction.enabled = true;
-    stopAction.setEffectiveWeight(0);
-  }
   mixer.update(1 / 30);
 
   return {
@@ -416,89 +415,81 @@ export function createAvatar(look: Look, nametag: string) {
     mixer,
     walkAction,
     idleAction,
-    startAction,
-    stopAction,
+    startAction: null as THREE.AnimationAction | null,
+    stopAction: null as THREE.AnimationAction | null,
     phase: "idle" as LocoPhase,
     wantMove: false,
+    phaseTime: 0,
   };
 }
 
-function actionFinished(action: THREE.AnimationAction | null) {
+function actionFinished(action: THREE.AnimationAction | null, elapsed: number) {
   if (!action) return true;
   const dur = action.getClip().duration;
-  return dur <= 0 || (!action.isRunning() && action.time >= dur - 0.05);
+  if (dur <= 0.04) return true;
+  if (elapsed >= dur - 0.04) return true;
+  return !action.isRunning() && elapsed > 0.12;
 }
 
 function playOnce(action: THREE.AnimationAction) {
-  action.reset();
+  action.enabled = true;
+  action.paused = false;
   action.setLoop(THREE.LoopOnce, 1);
   action.clampWhenFinished = true;
-  action.paused = false;
-  action.enabled = true;
+  action.reset();
   action.play();
 }
 
 function stepLoco(avatar: {
   phase: LocoPhase;
+  phaseTime: number;
   wantMove: boolean;
   walkAction: THREE.AnimationAction;
   idleAction: THREE.AnimationAction | null;
   startAction: THREE.AnimationAction | null;
   stopAction: THREE.AnimationAction | null;
 }) {
+  const startDur = avatar.startAction?.getClip().duration ?? 0;
+  const stopDur = avatar.stopAction?.getClip().duration ?? 0;
+
   if (avatar.wantMove) {
     if (avatar.phase === "idle" || avatar.phase === "stop") {
-      if (avatar.startAction) {
+      if (avatar.startAction && startDur > 0.08) {
         avatar.phase = "start";
+        avatar.phaseTime = 0;
         playOnce(avatar.startAction);
       } else {
         avatar.phase = "walk";
-        avatar.walkAction.time = 0;
+        avatar.phaseTime = 0;
       }
-    } else if (avatar.phase === "start" && actionFinished(avatar.startAction)) {
+    } else if (avatar.phase === "start" && actionFinished(avatar.startAction, avatar.phaseTime)) {
       avatar.phase = "walk";
-      avatar.walkAction.time = 0;
+      avatar.phaseTime = 0;
     }
     return;
   }
   if (avatar.phase === "walk" || avatar.phase === "start") {
-    if (avatar.stopAction) {
+    if (avatar.stopAction && stopDur > 0.08) {
       avatar.phase = "stop";
+      avatar.phaseTime = 0;
       playOnce(avatar.stopAction);
     } else {
       avatar.phase = "idle";
+      avatar.phaseTime = 0;
     }
-  } else if (avatar.phase === "stop" && actionFinished(avatar.stopAction)) {
+  } else if (avatar.phase === "stop" && actionFinished(avatar.stopAction, avatar.phaseTime)) {
     avatar.phase = "idle";
+    avatar.phaseTime = 0;
   }
 }
 
-function blendLoco(
-  avatar: {
-    phase: LocoPhase;
-    walkAction: THREE.AnimationAction;
-    idleAction: THREE.AnimationAction | null;
-    startAction: THREE.AnimationAction | null;
-    stopAction: THREE.AnimationAction | null;
-  },
-  dt: number,
-) {
-  const k = Math.min(1, 12 * dt);
-  const w = {
-    idle: avatar.phase === "idle" ? 1 : 0,
-    start: avatar.phase === "start" ? 1 : 0,
-    walk: avatar.phase === "walk" ? 1 : 0,
-    stop: avatar.phase === "stop" ? 1 : 0,
-  };
-  const lerp = (action: THREE.AnimationAction | null, target: number) => {
-    if (!action) return;
-    const cur = action.getEffectiveWeight();
-    action.setEffectiveWeight(cur + (target - cur) * k);
-  };
-  lerp(avatar.idleAction, w.idle);
-  lerp(avatar.startAction, w.start);
-  lerp(avatar.walkAction, w.walk);
-  lerp(avatar.stopAction, w.stop);
+function setActionWeight(action: THREE.AnimationAction | null, target: number, k: number) {
+  if (!action) return;
+  action.enabled = true;
+  action.paused = false;
+  action.setEffectiveTimeScale(1);
+  const cur = action.getEffectiveWeight();
+  action.setEffectiveWeight(cur + (target - cur) * k);
 }
 
 export function poseWalk(
@@ -513,23 +504,17 @@ export function poseWalk(
     stopAction?: THREE.AnimationAction | null;
     phase?: LocoPhase;
     wantMove?: boolean;
+    phaseTime?: number;
   },
   dt: number,
   moving: boolean,
 ) {
   if (avatar.mixer && avatar.walkAction) {
-    const loco = {
-      phase: avatar.phase ?? "idle",
-      wantMove: moving,
-      walkAction: avatar.walkAction,
-      idleAction: avatar.idleAction ?? null,
-      startAction: avatar.startAction ?? null,
-      stopAction: avatar.stopAction ?? null,
-    };
-    stepLoco(loco);
-    avatar.phase = loco.phase;
-    avatar.wantMove = moving;
-    blendLoco(loco, dt);
+    const k = Math.min(1, 10 * dt);
+    setActionWeight(avatar.walkAction, moving ? 1 : 0, k);
+    setActionWeight(avatar.idleAction ?? null, moving ? 0 : 1, k);
+    setActionWeight(avatar.startAction ?? null, 0, 1);
+    setActionWeight(avatar.stopAction ?? null, 0, 1);
     avatar.mixer.update(dt);
     return;
   }

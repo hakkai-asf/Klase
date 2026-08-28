@@ -2,6 +2,7 @@ import "./styles.css";
 import { normalizeLook, randomLook, type Look } from "@klase/shared";
 import { World } from "./game/world";
 import { preloadAvatars } from "./game/avatar";
+import { preloadClassroom } from "./game/classroom";
 import { joinClassroom, pickRoom, type RemotePlayer } from "./net";
 import { addChat, disposeLandingPreviews, renderGameShell, renderLanding, showCustomize, showPlayers, type ChatLine } from "./ui";
 import { currentSession, loadSavedLook, signIn, signUp } from "./auth";
@@ -72,10 +73,9 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
 
   const ui = renderGameShell(app);
   const selfId = room.sessionId;
-  try {
-    await preloadAvatars();
-  } catch (e) {
-    console.warn("Mixamo GLB preload failed, using primitive avatars", e);
+  const results = await Promise.allSettled([preloadAvatars(), preloadClassroom()]);
+  for (const r of results) {
+    if (r.status === "rejected") console.warn("Asset preload failed", r.reason);
   }
   const world = new World(ui.canvas, selfId, name, look);
   const muted = new Set<string>();

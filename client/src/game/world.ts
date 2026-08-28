@@ -1,12 +1,12 @@
 import * as THREE from "three";
 import { MOVE_SPEED, type Look } from "@klase/shared";
 import { applyLook, createAvatar, poseWalk } from "./avatar";
-import { buildClassroom, resolveMove, type AABB } from "./classroom";
+import { buildClassroom, preloadClassroom, resolveMove, type AABB } from "./classroom";
 
 type AvatarHandle = ReturnType<typeof createAvatar> & { target: THREE.Vector3; targetRot: number };
 
 const ISO = new THREE.Vector3(12, 15, 12);
-const FRUSTUM = 4.6;
+const FRUSTUM = 3.85;
 
 export class World {
   readonly renderer: THREE.WebGLRenderer;
@@ -30,7 +30,7 @@ export class World {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
-    this.scene.background = new THREE.Color(0xd5cfc4);
+    this.scene.background = new THREE.Color(0xeeeae3);
     this.colliders = buildClassroom(this.scene);
     this.upsert(localId, localName, look, this.localX, this.localZ, this.localRot);
 

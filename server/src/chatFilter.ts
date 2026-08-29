@@ -1,3 +1,5 @@
+import { redactLinks } from "@klase/shared";
+
 const RAW = [
   "fuck",
   "shit",
@@ -29,6 +31,10 @@ const patterns = RAW.map((w) => {
   const chars = w.split("").join("+[^a-z]*");
   return new RegExp(chars, "i");
 });
+
+export function filterChat(text: string): string {
+  return filterProfanity(redactLinks(text));
+}
 
 export function filterProfanity(text: string): string {
   const compact = normalize(text);

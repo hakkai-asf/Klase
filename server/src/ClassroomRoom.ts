@@ -1,7 +1,7 @@
 import { Room, Client, ServerError } from "@colyseus/core";
 import { CHAT_LOG_MAX, CHAT_RADIUS, IDLE_MS, PLAYER_RADIUS, REGULAR_CAP, SEAT_REACH, WEARABLES, classroomSeats, normalizeLook } from "@klase/shared";
 import { ClassroomState, Player } from "./schema.js";
-import { filterProfanity } from "./chatFilter.js";
+import { filterChat } from "./chatFilter.js";
 import { assertCanModerate, banName, ownerName, resolveIdentity } from "./roles.js";
 import { saveLook, setBanned, setRole, supabaseEnabled } from "./supabase.js";
 
@@ -90,7 +90,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
       if (!p || p.serverMuted) return;
       const raw = String(data?.text ?? "").slice(0, 240).trim();
       if (!raw) return;
-      const text = filterProfanity(raw);
+      const text = filterChat(raw);
       this.touch(client.sessionId);
       const line: ChatLine = {
         from: client.sessionId,

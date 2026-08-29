@@ -1,10 +1,10 @@
 import "./styles.css";
-import { normalizeLook, randomLook, type Look } from "@klase/shared";
+import { hasLink, normalizeLook, randomLook, type Look } from "@klase/shared";
 import { World } from "./game/world";
 import { preloadAvatars } from "./game/avatar";
 import { preloadClassroom } from "./game/classroom";
 import { joinClassroom, pickRoom, type RemotePlayer } from "./net";
-import { addChat, disposeLandingPreviews, renderGameShell, renderLanding, setMicButton, setMuteAllButton, setViewButton, showCustomize, showPlayers, type ChatLine } from "./ui";
+import { addChat, disposeLandingPreviews, renderGameShell, renderLanding, setChatOpen, setMicButton, setMuteAllButton, setViewButton, showCustomize, showPlayers, type ChatLine } from "./ui";
 import { bindJoystick, isTouchUi } from "./joystick";
 import { currentSession, loadSavedLook, signIn, signUp } from "./auth";
 import { VoiceMesh } from "./voice";
@@ -89,14 +89,37 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
   let voice: VoiceMesh | undefined;
   let leaveReason = "";
   let left = false;
+  const CHAT_IDLE_MS = 5000;
+  let chatIdle = 0;
+  const typing = (t: EventTarget | null) => {
+    const el = t as HTMLElement | null;
+    return Boolean(el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA"));
+  };
+  const chatOpen = () => !ui.chat.classList.contains("collapsed");
+  const scheduleChatIdle = () => {
+    window.clearTimeout(chatIdle);
+    chatIdle = window.setTimeout(() => {
+      if (document.activeElement === ui.input || ui.chat.classList.contains("composing")) {
+        scheduleChatIdle();
+        return;
+      }
+      setChatOpen(ui.chat, ui.chatBtn, ui.input, false);
+    }, CHAT_IDLE_MS);
+  };
+  const revealChat = (focus = false) => {
+    setChatOpen(ui.chat, ui.chatBtn, ui.input, true, focus);
+    if (focus) window.clearTimeout(chatIdle);
+    else scheduleChatIdle();
+  };
 
   room.onMessage("chat", (line: ChatLine) => {
-    addChat(ui.chat, ui.log, line, selfId, muted);
+    const opened = addChat(ui.chat, ui.log, line, selfId, muted);
+    if (opened) revealChat();
     if (line.kind === "chat" && !muted.has(line.from)) world?.showSpeech(line.from, line.text);
   });
   room.onMessage("chat-history", (lines: ChatLine[]) => {
     if (!Array.isArray(lines)) return;
-    for (const line of lines) addChat(ui.chat, ui.log, line, selfId, muted);
+    for (const line of lines) addChat(ui.chat, ui.log, line, selfId, muted, { silent: true });
   });
   room.send("need-history");
   room.onMessage("voice-level", (msg: { from?: string; level?: number }) => {
@@ -120,6 +143,7 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
   window.addEventListener("pointerdown", bumpActivity);
   room.onLeave((code) => {
     left = true;
+    window.clearTimeout(chatIdle);
     window.removeEventListener("mousemove", bumpActivity);
     window.removeEventListener("keydown", bumpActivity);
     window.removeEventListener("pointerdown", bumpActivity);
@@ -240,6 +264,16 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
   const sendChat = () => {
     const text = ui.input.value.trim();
     if (!text) return;
+    if (hasLink(text)) {
+      addChat(
+        ui.chat,
+        ui.log,
+        { from: selfId, name: "", text: "Sending links will get you banned.", kind: "system" },
+        selfId,
+        muted,
+      );
+      revealChat();
+    }
     room.send("chat", { text });
     ui.input.value = "";
   };
@@ -247,35 +281,43 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
   ui.input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendChat();
   });
-  ui.input.addEventListener("focus", () => ui.chat.classList.add("composing"));
+  ui.input.addEventListener("focus", () => {
+    ui.chat.classList.add("composing");
+    window.clearTimeout(chatIdle);
+  });
   ui.input.addEventListener("blur", () => {
     if (!ui.input.value.trim()) ui.chat.classList.remove("composing");
+    if (chatOpen()) scheduleChatIdle();
   });
   ui.chatBtn.addEventListener("click", () => {
-    ui.chat.classList.toggle("collapsed");
-    ui.chatBtn.classList.toggle("primary", !ui.chat.classList.contains("collapsed"));
-    if (!ui.chat.classList.contains("collapsed")) {
-      ui.chat.classList.add("composing");
-      ui.input.focus();
-    }
+    if (chatOpen()) setChatOpen(ui.chat, ui.chatBtn, ui.input, false);
+    else revealChat(true);
   });
   window.addEventListener("keydown", (e) => {
-    if (e.key !== "Enter") return;
     const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
-    ui.chat.classList.remove("collapsed");
-    ui.chat.classList.add("composing");
-    ui.input.focus();
-    e.preventDefault();
+    if (typing(t)) return;
+    if (e.key === "Enter") {
+      revealChat(true);
+      e.preventDefault();
+      return;
+    }
+    if (e.key.toLowerCase() === "m" && !e.repeat) {
+      e.preventDefault();
+      if (chatOpen()) setChatOpen(ui.chat, ui.chatBtn, ui.input, false);
+      else revealChat(true);
+    }
   });
 
   ui.canvas.addEventListener("pointerdown", () => void mesh.unlock());
   ui.micBtn.addEventListener("click", async () => {
+    ui.micBtn.setAttribute("disabled", "");
     try {
       await mesh.setMic(!mesh.micOn);
       setMicButton(ui.micBtn, mesh.micOn);
     } catch {
       setMicButton(ui.micBtn, false, "Microphone permission was denied");
+    } finally {
+      ui.micBtn.removeAttribute("disabled");
     }
   });
   ui.muteAllBtn.addEventListener("click", () => setMuteAll(!mesh.muteAll));

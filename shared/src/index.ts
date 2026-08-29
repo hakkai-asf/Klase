@@ -119,3 +119,18 @@ export function classroomSeats(): Seat[] {
 }
 
 export type ChatKind = "chat" | "system" | "join-owner" | "join-admin" | "join" | "leave" | "leave-owner" | "leave-admin";
+
+const LINK_RE =
+  /(?:https?:\/\/|www\.)\S+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|gg|co|app|dev|xyz|me|tv|info|edu|gov)(?:\/\S*)?/gi;
+
+function linkPattern() {
+  return new RegExp(LINK_RE.source, "gi");
+}
+
+export function hasLink(text: string): boolean {
+  return linkPattern().test(text);
+}
+
+export function redactLinks(text: string): string {
+  return text.replace(linkPattern(), "***");
+}

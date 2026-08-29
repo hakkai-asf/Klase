@@ -254,6 +254,10 @@ button, input, select { font-family: inherit; }
   background: transparent;
   box-shadow: none;
   pointer-events: none;
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition: opacity 0.4s ease, transform 0.4s ease, visibility 0s;
 }
 
 .chat-dock.game-chat > * {
@@ -261,7 +265,15 @@ button, input, select { font-family: inherit; }
 }
 
 .chat-dock.collapsed {
-  display: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(0.45rem);
+  pointer-events: none;
+  transition: opacity 0.4s ease, transform 0.4s ease, visibility 0s 0.4s;
+}
+
+.chat-dock.collapsed > * {
+  pointer-events: none;
 }
 
 .chat-dock.empty .chat-log {
@@ -287,6 +299,7 @@ button, input, select { font-family: inherit; }
   font-size: 0.82rem;
   max-width: 95%;
   color: var(--klase-ink);
+  animation: bubble-in 0.2s ease;
 }
 
 .bubble.mine {
@@ -333,6 +346,11 @@ button, input, select { font-family: inherit; }
 }
 
 .bubble strong { display: block; font-size: 0.72rem; color: var(--klase-ink-muted); }
+
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
 
 .chat-dock.empty:not(.composing) .chat-row {
   display: none;
@@ -421,7 +439,7 @@ button, input, select { font-family: inherit; }
 .sit-prompt.stand-hud {
   left: 50%;
   top: auto;
-  bottom: 1.15rem;
+  bottom: 3.5rem;
   transform: translateX(-50%);
   min-width: 0;
   height: auto;
@@ -431,7 +449,7 @@ button, input, select { font-family: inherit; }
 }
 
 .sit-prompt.stand-hud.above-fp-hint {
-  bottom: 3.35rem;
+  bottom: 5.85rem;
 }
 
 .joy-wrap {
@@ -496,13 +514,20 @@ button, input, select { font-family: inherit; }
   justify-content: flex-end;
 }
 
-.fp-mouse-hint {
+.fp-hints {
   position: absolute;
   left: 50%;
   bottom: 1.15rem;
   transform: translateX(-50%);
   pointer-events: none;
   z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.fp-hint {
   padding: 0.4rem 0.85rem;
   border-radius: var(--klase-radius-hud);
   box-shadow: var(--klase-shadow);
@@ -512,6 +537,8 @@ button, input, select { font-family: inherit; }
   white-space: nowrap;
 }
 
-.touch-ui .fp-mouse-hint { display: none !important; }
+.fp-hint[hidden] { display: none; }
+
+.touch-ui .fp-hints { display: none !important; }
 
 .hidden { display: none !important; }

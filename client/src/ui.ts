@@ -205,7 +205,7 @@ export function renderGameShell(root: HTMLElement) {
   actions.append(micBtn, muteAllBtn, chatBtn, playersBtn, lookBtn, viewBtn);
   top.append(roomChip, actions);
 
-  const chat = el("div", "chat-dock game-chat empty");
+  const chat = el("div", "chat-dock game-chat empty collapsed");
   const log = el("div", "chat-log");
   const row = el("div", "chat-row");
   const input = el("input", "chat-input") as HTMLInputElement;
@@ -248,6 +248,26 @@ export function renderGameShell(root: HTMLElement) {
   };
 }
 
+export function setChatOpen(
+  chat: HTMLElement,
+  chatBtn: HTMLElement,
+  input: HTMLInputElement,
+  open: boolean,
+  focus = false,
+) {
+  chat.classList.toggle("collapsed", !open);
+  chatBtn.classList.toggle("primary", open);
+  if (open) {
+    if (focus) {
+      chat.classList.add("composing");
+      input.focus();
+    }
+  } else {
+    chat.classList.remove("composing");
+    input.blur();
+  }
+}
+
 export function syncChatVisibility(chat: HTMLElement, log: HTMLElement) {
   chat.classList.toggle("empty", log.childElementCount === 0);
 }
@@ -258,8 +278,9 @@ export function addChat(
   line: ChatLine,
   selfId: string,
   muted: Set<string>,
+  opts?: { silent?: boolean },
 ) {
-  if (line.kind === "chat" && muted.has(line.from)) return;
+  if (line.kind === "chat" && muted.has(line.from)) return false;
   const b = el("div", "bubble");
   if (line.from === selfId) b.classList.add("mine");
   if (line.kind === "join-owner" || line.kind === "join" || line.kind === "leave" || line.kind === "leave-owner" || line.kind === "system") b.classList.add("system");
@@ -273,8 +294,8 @@ export function addChat(
   log.append(b);
   while (log.childElementCount > CHAT_LOG_MAX) log.firstElementChild?.remove();
   log.scrollTop = log.scrollHeight;
-  chat.classList.remove("collapsed");
   syncChatVisibility(chat, log);
+  return !opts?.silent && line.kind === "chat";
 }
 
 export function showCustomize(

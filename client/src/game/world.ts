@@ -21,6 +21,9 @@ const LOOK_SENS_TOUCH = 0.0038;
 const PITCH_MAX = 1.15;
 const EYE_STAND = 1.55;
 const EYE_FWD = 0.12;
+const SPEECH_HOLD = 4000;
+const SPEECH_FADE_IN = 0.12;
+const SPEECH_FADE_OUT = 0.25;
 
 export class World {
   readonly renderer: THREE.WebGLRenderer;
@@ -54,6 +57,8 @@ export class World {
   private lastPtrX = 0;
   private lastPtrY = 0;
   private fpWalls: THREE.Group;
+  private hintWrap: HTMLElement;
+  private viewHint: HTMLElement;
   private mouseHint: HTMLElement;
   private onFirstPersonChange?: (on: boolean) => void;
 
@@ -88,11 +93,18 @@ export class World {
     this.sitPrompt.textContent = this.touchUi ? "Sit" : "E";
     this.sitPrompt.hidden = true;
     canvas.parentElement?.append(this.sitPrompt);
+    this.hintWrap = document.createElement("div");
+    this.hintWrap.className = "fp-hints";
+    this.hintWrap.hidden = this.touchUi;
+    this.viewHint = document.createElement("div");
+    this.viewHint.className = "fp-hint";
+    this.viewHint.textContent = "V — first person";
     this.mouseHint = document.createElement("div");
-    this.mouseHint.className = "fp-mouse-hint";
-    this.mouseHint.textContent = "Esc — toggle mouse · V — classroom view";
+    this.mouseHint.className = "fp-hint";
+    this.mouseHint.textContent = "Esc — toggle mouse";
     this.mouseHint.hidden = true;
-    canvas.parentElement?.append(this.mouseHint);
+    this.hintWrap.append(this.viewHint, this.mouseHint);
+    canvas.parentElement?.append(this.hintWrap);
     this.upsert(localId, localName, look, this.localX, this.localZ, this.localRot, "");
     this.bindLook(canvas);
 
@@ -103,12 +115,13 @@ export class World {
       if (!e.repeat) this.justPressed.add(key);
       this.keys.add(key);
       if (key === "e" || key === " ") e.preventDefault();
-      if (this.touchUi || !this.firstPerson) return;
+      if (this.touchUi) return;
       if (key === "v") {
         e.preventDefault();
-        this.setFirstPerson(false);
+        this.setFirstPerson(!this.firstPerson);
         return;
       }
+      if (!this.firstPerson) return;
       if (key === "escape" && document.pointerLockElement !== this.renderer.domElement) {
         e.preventDefault();
         void this.renderer.domElement.requestPointerLock();
@@ -141,6 +154,7 @@ export class World {
     const local = this.avatars.get(this.localId);
     if (local) setLocalFpPresentation(local, on);
     this.poseFp();
+    this.viewHint.textContent = on ? "V — classroom view" : "V — first person";
     this.mouseHint.hidden = !on || this.touchUi;
     const canvas = this.renderer.domElement;
     if (!on) {
@@ -272,8 +286,8 @@ export class World {
     const a = this.avatars.get(id);
     if (!a || !text.trim()) return;
     drawSpeech(a.speechCanvas, a.speechTex, text);
+    a.speechUntil = performance.now() + SPEECH_HOLD;
     a.speechSprite.visible = true;
-    a.speechUntil = performance.now() + 4000;
     layoutHeadSprites(a);
     if (id === this.localId) setLocalFpPresentation(a, this.firstPerson);
   }
@@ -320,6 +334,16 @@ export class World {
 
   private seatY(seatId: string) {
     return this.seats.find((s) => s.id === seatId)?.y ?? 0;
+  }
+
+  private tickSpeech(a: AvatarHandle, now: number, dt: number) {
+    const target = now < a.speechUntil ? 1 : 0;
+    const speed = (target > a.speechFade ? dt / SPEECH_FADE_IN : dt / SPEECH_FADE_OUT);
+    if (target > a.speechFade) a.speechFade = Math.min(1, a.speechFade + speed);
+    else a.speechFade = Math.max(0, a.speechFade - speed);
+    const mat = a.speechSprite.material as THREE.SpriteMaterial;
+    mat.opacity = a.speechFade;
+    a.speechSprite.visible = a.speechFade > 0.01;
   }
 
   private updateSitPrompt(seat: Seat | null) {
@@ -453,7 +477,7 @@ export class World {
 
     const now = performance.now();
     for (const a of this.avatars.values()) {
-      if (a.speechSprite.visible && now >= a.speechUntil) a.speechSprite.visible = false;
+      this.tickSpeech(a, now, dt);
       if (a.micSprite.visible && now >= a.voiceUntil) {
         a.micSprite.visible = false;
         a.micFill = -1;

@@ -556,7 +556,7 @@ function speechSprite(height: number) {
   canvas.height = 160;
   const tex = new THREE.CanvasTexture(canvas);
   const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }),
+    new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, opacity: 0 }),
   );
   sprite.position.y = height + 0.62;
   sprite.scale.set(1.85, 0.58, 1);
@@ -696,6 +696,7 @@ function primitiveAvatar(look: Look, nametag: string) {
     speechTex: speech.tex,
     speechSprite: speech.sprite,
     speechUntil: 0,
+    speechFade: 0,
     headH: 1.85,
     micCanvas: mic.canvas,
     micTex: mic.tex,
@@ -782,6 +783,7 @@ export function createAvatar(look: Look, nametag: string) {
     speechTex: speech.tex,
     speechSprite: speech.sprite,
     speechUntil: 0,
+    speechFade: 0,
     headH,
     micCanvas: mic.canvas,
     micTex: mic.tex,

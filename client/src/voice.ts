@@ -29,6 +29,8 @@ export class VoiceMesh {
   muteAll = false;
   localMuted = new Set<string>();
   serverMutedIds = new Set<string>();
+  private micWanted = false;
+  private micBusy = false;
 
   constructor(
     private room: Room,
@@ -46,22 +48,54 @@ export class VoiceMesh {
   }
 
   async setMic(on: boolean) {
-    await this.unlock();
+    this.micWanted = on;
+    if (this.micBusy) return;
+    this.micBusy = true;
+    try {
+      await this.unlock();
+      while (this.micOn !== this.micWanted) {
+        await this.applyMic(this.micWanted);
+      }
+    } catch (err) {
+      this.micWanted = false;
+      this.micOn = false;
+      this.localLevel = 0;
+      this.pushLevel(0, true);
+      throw err;
+    } finally {
+      this.micBusy = false;
+    }
+  }
+
+  private liveTrack() {
+    return this.stream?.getAudioTracks().find((t) => t.readyState === "live") ?? null;
+  }
+
+  private async applyMic(on: boolean) {
     if (on) {
-      if (!this.stream) {
+      if (!this.liveTrack()) {
+        this.stream?.getTracks().forEach((t) => t.stop());
         this.stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        await this.syncSenders();
+        this.hookAnalyser();
+        if (!this.micWanted) {
+          for (const t of this.stream.getAudioTracks()) t.enabled = false;
+          this.micOn = false;
+          this.localLevel = 0;
+          this.pushLevel(0, true);
+          return;
+        }
       }
       this.micOn = true;
-      this.hookAnalyser();
-      await this.syncSenders();
+      for (const t of this.stream!.getAudioTracks()) t.enabled = true;
+      if (!this.analyser) this.hookAnalyser();
     } else {
       this.micOn = false;
       this.localLevel = 0;
       this.pushLevel(0, true);
-      this.unhookAnalyser();
-      this.stream?.getTracks().forEach((t) => t.stop());
-      this.stream = null;
-      await this.syncSenders();
+      if (this.stream) {
+        for (const t of this.stream.getAudioTracks()) t.enabled = false;
+      }
     }
   }
 

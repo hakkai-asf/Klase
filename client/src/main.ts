@@ -11,8 +11,10 @@ import { VoiceMesh } from "./voice";
 import type { Room } from "colyseus.js";
 
 const app = document.getElementById("app")!;
+let joining = false;
 
 function startLanding(err = "") {
+  joining = false;
   renderLanding(
     app,
     (payload) => void enterWorld(payload.name, payload.look, payload.accessToken),
@@ -43,6 +45,8 @@ async function accountJoin(mode: "in" | "up", email: string, password: string, n
 }
 
 async function enterWorld(name: string, look: Look, accessToken?: string) {
+  if (joining) return;
+  joining = true;
   disposeLandingPreviews();
   look = normalizeLook(look);
   const picked = await pickRoom(name, accessToken);
@@ -80,21 +84,69 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
 
   const ui = renderGameShell(app);
   const selfId = room.sessionId;
+  const muted = new Set<string>();
+  let world: World | undefined;
+  let voice: VoiceMesh | undefined;
+  let leaveReason = "";
+  let left = false;
+
+  room.onMessage("chat", (line: ChatLine) => {
+    addChat(ui.chat, ui.log, line, selfId, muted);
+    if (line.kind === "chat" && !muted.has(line.from)) world?.showSpeech(line.from, line.text);
+  });
+  room.onMessage("chat-history", (lines: ChatLine[]) => {
+    if (!Array.isArray(lines)) return;
+    for (const line of lines) addChat(ui.chat, ui.log, line, selfId, muted);
+  });
+  room.send("need-history");
+  room.onMessage("dropped", (data: { reason?: string }) => {
+    if (data?.reason === "idle") leaveReason = "idle";
+  });
+  let lastPoke = 0;
+  const bumpActivity = () => {
+    if (document.visibilityState !== "visible") return;
+    const t = Date.now();
+    if (t - lastPoke < 4000) return;
+    lastPoke = t;
+    room.send("poke");
+  };
+  window.addEventListener("mousemove", bumpActivity);
+  window.addEventListener("keydown", bumpActivity);
+  window.addEventListener("pointerdown", bumpActivity);
+  room.onLeave((code) => {
+    left = true;
+    window.removeEventListener("mousemove", bumpActivity);
+    window.removeEventListener("keydown", bumpActivity);
+    window.removeEventListener("pointerdown", bumpActivity);
+    voice?.dispose();
+    if (leaveReason === "idle" || code === 4002) {
+      startLanding("You were disconnected for being idle (1 minute).");
+    } else if (code === 4000) {
+      startLanding("You were removed from the classroom.");
+    } else if (code === 4001) {
+      startLanding("This account is banned.");
+    } else {
+      startLanding("You left the classroom.");
+    }
+  });
+
   const results = await Promise.allSettled([preloadAvatars(), preloadClassroom()]);
   for (const r of results) {
     if (r.status === "rejected") console.warn("Asset preload failed", r.reason);
   }
-  const world = new World(ui.canvas, selfId, name, look, isTouchUi() ? { sitBtn: ui.sitBtn } : undefined);
+  if (left) return;
+  world = new World(ui.canvas, selfId, name, look, isTouchUi() ? { sitBtn: ui.sitBtn } : undefined);
+  voice = new VoiceMesh(room, selfId);
+  voice.localMuted = muted;
+  const scene = world;
+  const mesh = voice;
   if (isTouchUi()) {
-    bindJoystick(ui.joyBase, ui.joyKnob, (x, y) => world.setStick(x, y));
+    bindJoystick(ui.joyBase, ui.joyKnob, (x, y) => scene.setStick(x, y));
     ui.sitBtn.addEventListener("pointerdown", (e) => {
       e.preventDefault();
-      world.interact();
+      scene.interact();
     });
   }
-  const muted = new Set<string>();
-  const voice = new VoiceMesh(room, selfId);
-  voice.localMuted = muted;
   let currentLook = { ...look };
   let panelOpen: "look" | "players" | null = null;
 
@@ -125,7 +177,7 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
     const mutedIds: string[] = [];
     for (const p of snapshot()) {
       seen.add(p.sessionId);
-      world.upsert(
+      scene.upsert(
         p.sessionId,
         p.name,
         { hat: p.hat, top: p.top, accessory: p.accessory, body: p.body === "y" ? "y" : "x" },
@@ -136,9 +188,9 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
       );
       if (p.serverMuted) mutedIds.push(p.sessionId);
     }
-    voice.setServerMuted(mutedIds);
-    for (const id of world.ids()) {
-      if (!seen.has(id) && id !== selfId) world.remove(id);
+    mesh.setServerMuted(mutedIds);
+    for (const id of scene.ids()) {
+      if (!seen.has(id) && id !== selfId) scene.remove(id);
     }
     const me = snapshot().find((p) => p.sessionId === selfId);
     const n = snapshot().length;
@@ -170,12 +222,6 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
   room.state.players.onRemove(() => syncAvatars());
   room.onStateChange(() => syncAvatars());
   syncAvatars();
-
-  room.onMessage("chat", (line: ChatLine) => addChat(ui.chat, ui.log, line, selfId, muted));
-  room.onLeave(() => {
-    voice.dispose();
-    startLanding("You left the classroom.");
-  });
 
   const sendChat = () => {
     const text = ui.input.value.trim();
@@ -211,9 +257,9 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
 
   ui.micBtn.addEventListener("click", async () => {
     try {
-      await voice.setMic(!voice.micOn);
-      ui.micBtn.textContent = voice.micOn ? "Mic on" : "Mic off";
-      ui.micBtn.classList.toggle("primary", voice.micOn);
+      await mesh.setMic(!mesh.micOn);
+      ui.micBtn.textContent = mesh.micOn ? "Mic on" : "Mic off";
+      ui.micBtn.classList.toggle("primary", mesh.micOn);
     } catch {
       startLanding("Microphone permission was denied.");
     }
@@ -227,7 +273,7 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
       (next) => {
         currentLook = next;
         localStorage.setItem("klase-look", JSON.stringify(next));
-        world.applyLocalLook(next);
+        scene.applyLocalLook(next);
         room.send("customize", next);
       },
       () => {
@@ -258,17 +304,18 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
 
   let last = performance.now();
   const loop = (now: number) => {
+    if (left) return;
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
-    const ev = world.step(dt);
+    const ev = scene.step(dt);
     if (ev?.type === "move") room.send("move", { x: ev.x, z: ev.z, rotY: ev.rotY });
     if (ev?.type === "sit") room.send("sit", { seatId: ev.seatId });
     if (ev?.type === "stand") {
       room.send("stand");
-      room.send("move", { x: world.localX, z: world.localZ, rotY: world.localRot });
+      room.send("move", { x: scene.localX, z: scene.localZ, rotY: scene.localRot });
     }
     const me = snapshot().find((p) => p.sessionId === selfId);
-    voice.tick(world.positions(), Boolean(me?.serverMuted));
+    mesh.tick(scene.positions(), Boolean(me?.serverMuted));
     requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);

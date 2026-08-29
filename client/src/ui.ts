@@ -1,4 +1,4 @@
-import { BODY_LABELS, BODIES, WEARABLE_LABELS, WEARABLES, normalizeLook, type BodyId, type Look, type WearableSlot } from "@klase/shared";
+import { BODY_LABELS, BODIES, CHAT_LOG_MAX, WEARABLE_LABELS, WEARABLES, normalizeLook, type BodyId, type Look, type WearableSlot } from "@klase/shared";
 import type { RemotePlayer } from "./net";
 import { authEnabled } from "./auth";
 import { paintBodyPortrait, preloadAvatars } from "./game/avatar";
@@ -83,7 +83,17 @@ export function renderLanding(
   const err = el("div", initialError ? "error-banner" : "error-banner hidden", initialError);
   const actions = el("div", "landing-actions");
   const go = el("button", "clay-btn primary", "Join as guest");
+  const lockJoin = (btn: HTMLButtonElement) => {
+    if (btn.disabled) return false;
+    btn.disabled = true;
+    return true;
+  };
   go.addEventListener("click", () => {
+    if (!lockJoin(go)) return;
+    card.querySelectorAll("button").forEach((b) => {
+      (b as HTMLButtonElement).disabled = true;
+    });
+    go.textContent = "Joining…";
     const n = name.value.trim() || "Guest";
     localStorage.setItem("klase-name", n);
     const next = { ...storedLook(), body };
@@ -107,12 +117,20 @@ export function renderLanding(
     const acct = el("div", "landing-actions");
     const signIn = el("button", "clay-btn", "Sign in");
     const signUp = el("button", "clay-btn", "Create account");
-    signIn.addEventListener("click", () =>
-      onAccount("in", email.value.trim(), pass.value, name.value.trim() || "Student"),
-    );
-    signUp.addEventListener("click", () =>
-      onAccount("up", email.value.trim(), pass.value, name.value.trim() || "Student"),
-    );
+    signIn.addEventListener("click", () => {
+      if (!lockJoin(signIn)) return;
+      signIn.textContent = "Joining…";
+      signUp.disabled = true;
+      go.disabled = true;
+      onAccount("in", email.value.trim(), pass.value, name.value.trim() || "Student");
+    });
+    signUp.addEventListener("click", () => {
+      if (!lockJoin(signUp)) return;
+      signUp.textContent = "Joining…";
+      signIn.disabled = true;
+      go.disabled = true;
+      onAccount("up", email.value.trim(), pass.value, name.value.trim() || "Student");
+    });
     acct.append(signIn, signUp);
     card.append(acct);
   }
@@ -200,7 +218,7 @@ export function addChat(
   if (line.kind === "chat" && muted.has(line.from)) return;
   const b = el("div", "bubble");
   if (line.from === selfId) b.classList.add("mine");
-  if (line.kind === "join-owner" || line.kind === "system") b.classList.add("system");
+  if (line.kind === "join-owner" || line.kind === "join" || line.kind === "system") b.classList.add("system");
   if (line.kind === "join-admin") b.classList.add("admin");
   if (line.kind === "chat") {
     const who = el("strong", "", line.name);
@@ -209,6 +227,7 @@ export function addChat(
     b.textContent = line.text;
   }
   log.append(b);
+  while (log.childElementCount > CHAT_LOG_MAX) log.firstElementChild?.remove();
   log.scrollTop = log.scrollHeight;
   chat.classList.remove("collapsed");
   syncChatVisibility(chat, log);

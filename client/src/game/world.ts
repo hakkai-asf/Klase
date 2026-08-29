@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { MOVE_SPEED, SEAT_REACH, type Look, type Seat } from "@klase/shared";
-import { applyLook, createAvatar, poseWalk } from "./avatar";
+import { applyLook, createAvatar, drawSpeech, poseWalk } from "./avatar";
 import { buildClassroom, findClearStand, resolveMove, type AABB } from "./classroom";
 
 type AvatarHandle = ReturnType<typeof createAvatar> & {
@@ -159,6 +159,14 @@ export class World {
     a.look = { ...look };
   }
 
+  showSpeech(id: string, text: string) {
+    const a = this.avatars.get(id);
+    if (!a || !text.trim()) return;
+    drawSpeech(a.speechCanvas, a.speechTex, text);
+    a.speechSprite.visible = true;
+    a.speechUntil = performance.now() + 4000;
+  }
+
   private occupiedSeats() {
     const taken = new Set<string>();
     for (const [id, a] of this.avatars) {
@@ -299,6 +307,11 @@ export class World {
       }
       const moving = !seated && Math.hypot(a.root.position.x - px, a.root.position.z - pz) > 0.002;
       poseWalk(a, dt, moving, seated);
+    }
+
+    const now = performance.now();
+    for (const a of this.avatars.values()) {
+      if (a.speechSprite.visible && now >= a.speechUntil) a.speechSprite.visible = false;
     }
 
     const player = new THREE.Vector3(this.localX, 0.75, this.localZ);

@@ -549,6 +549,21 @@ function nametagSprite(name: string, height: number) {
   return { canvas, tex, sprite };
 }
 
+function speechSprite(height: number) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 160;
+  const tex = new THREE.CanvasTexture(canvas);
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }),
+  );
+  sprite.position.y = height + 0.62;
+  sprite.scale.set(1.85, 0.58, 1);
+  sprite.visible = false;
+  sprite.renderOrder = 12;
+  return { canvas, tex, sprite };
+}
+
 function primitiveAvatar(look: Look, nametag: string) {
   const root = new THREE.Group();
   const body = new THREE.Group();
@@ -576,7 +591,8 @@ function primitiveAvatar(look: Look, nametag: string) {
   sockets.accessory.position.set(0, 0.95, -0.22);
   body.add(sockets.hat, sockets.top, sockets.accessory);
   const tag = nametagSprite(nametag, 1.85);
-  root.add(tag.sprite);
+  const speech = speechSprite(1.85);
+  root.add(tag.sprite, speech.sprite);
   applyLook(sockets, look);
   return {
     root,
@@ -584,6 +600,10 @@ function primitiveAvatar(look: Look, nametag: string) {
     sockets,
     canvas: tag.canvas,
     tex: tag.tex,
+    speechCanvas: speech.canvas,
+    speechTex: speech.tex,
+    speechSprite: speech.sprite,
+    speechUntil: 0,
     look: { ...look },
     limbs: { lArm, rArm, lLeg, rLeg },
     walkT: 0,
@@ -618,7 +638,8 @@ export function createAvatar(look: Look, nametag: string) {
 
   const sockets = attachSockets(model);
   const tag = nametagSprite(nametag, measureBox(model).max.y);
-  root.add(tag.sprite);
+  const speech = speechSprite(measureBox(model).max.y);
+  root.add(tag.sprite, speech.sprite);
   applyLook(sockets, look);
 
   const mixer = new THREE.AnimationMixer(model);
@@ -657,6 +678,10 @@ export function createAvatar(look: Look, nametag: string) {
     sockets,
     canvas: tag.canvas,
     tex: tag.tex,
+    speechCanvas: speech.canvas,
+    speechTex: speech.tex,
+    speechSprite: speech.sprite,
+    speechUntil: 0,
     look: { ...look },
     limbs: {
       lArm: new THREE.Group(),
@@ -849,6 +874,59 @@ export function drawName(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, na
   ctx.font = "700 28px Nunito, sans-serif";
   ctx.textAlign = "center";
   ctx.fillText(name.slice(0, 18), 128, 40);
+  tex.needsUpdate = true;
+}
+
+export function drawSpeech(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, text: string) {
+  const ctx = canvas.getContext("2d")!;
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  const raw = text.replace(/\s+/g, " ").trim().slice(0, 120);
+  ctx.font = "700 28px Nunito, sans-serif";
+  const maxWidth = w - 48;
+  const words = raw.split(" ");
+  const lines: string[] = [];
+  let cur = "";
+  for (const word of words) {
+    const test = cur ? `${cur} ${word}` : word;
+    if (ctx.measureText(test).width > maxWidth && cur) {
+      lines.push(cur);
+      cur = word;
+      if (lines.length === 3) break;
+    } else {
+      cur = test;
+    }
+  }
+  if (lines.length < 3 && cur) lines.push(cur);
+  if (lines.length === 3 && (cur !== lines[2] || words.join(" ") !== raw)) {
+    let last = lines[2] ?? "";
+    while (last.length && ctx.measureText(`${last}…`).width > maxWidth) last = last.slice(0, -1);
+    lines[2] = `${last}…`;
+  }
+  const lineH = 34;
+  const padY = 18;
+  const boxH = padY * 2 + lines.length * lineH;
+  const boxY = h - boxH - 18;
+  ctx.fillStyle = "rgba(255, 255, 255, 0.94)";
+  ctx.strokeStyle = "rgba(40, 42, 55, 0.12)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.roundRect(16, boxY, w - 32, boxH, 18);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(w / 2 - 14, boxY + boxH);
+  ctx.lineTo(w / 2, boxY + boxH + 14);
+  ctx.lineTo(w / 2 + 14, boxY + boxH);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#2a2d3a";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  lines.forEach((line, i) => {
+    ctx.fillText(line, w / 2, boxY + padY + lineH * i + lineH / 2);
+  });
   tex.needsUpdate = true;
 }
 

@@ -1,5 +1,5 @@
 import { Room, Client, ServerError } from "@colyseus/core";
-import { CHAT_RADIUS, REGULAR_CAP, SEAT_REACH, WEARABLES, classroomSeats, normalizeLook } from "@klase/shared";
+import { CHAT_LOG_MAX, CHAT_RADIUS, IDLE_MS, REGULAR_CAP, SEAT_REACH, WEARABLES, classroomSeats, normalizeLook } from "@klase/shared";
 import { ClassroomState, Player } from "./schema.js";
 import { filterProfanity } from "./chatFilter.js";
 import { assertCanModerate, banName, ownerName, resolveIdentity } from "./roles.js";
@@ -13,8 +13,21 @@ function dist(a: Player, b: Player) {
   return Math.hypot(a.x - b.x, a.z - b.z);
 }
 
+type ChatLine = { from: string; name: string; text: string; kind: string };
+
 export class ClassroomRoom extends Room<ClassroomState> {
   maxClients = 48;
+  private chatLog: ChatLine[] = [];
+  private lastActive = new Map<string, number>();
+
+  private touch(sessionId: string) {
+    this.lastActive.set(sessionId, Date.now());
+  }
+
+  private pushChat(line: ChatLine) {
+    this.chatLog.push(line);
+    if (this.chatLog.length > CHAT_LOG_MAX) this.chatLog.splice(0, this.chatLog.length - CHAT_LOG_MAX);
+  }
 
   onCreate(options: { roomKey?: string }) {
     this.setState(new ClassroomState());
@@ -28,6 +41,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
       p.x = Math.max(-9.2, Math.min(9.2, data.x));
       p.z = Math.max(-7.2, Math.min(7.2, data.z));
       p.rotY = Number(data.rotY) || 0;
+      this.touch(client.sessionId);
     });
 
     const seats = classroomSeats();
@@ -45,12 +59,23 @@ export class ClassroomRoom extends Room<ClassroomState> {
       p.x = seat.x;
       p.z = seat.z;
       p.rotY = seat.rotY;
+      this.touch(client.sessionId);
     });
 
     this.onMessage("stand", (client) => {
       const p = this.state.players.get(client.sessionId);
       if (!p) return;
       p.seatId = "";
+      this.touch(client.sessionId);
+    });
+
+    this.onMessage("poke", (client) => {
+      if (this.state.players.has(client.sessionId)) this.touch(client.sessionId);
+    });
+
+    this.onMessage("need-history", (client) => {
+      if (!this.state.players.has(client.sessionId)) return;
+      client.send("chat-history", this.chatLog.slice());
     });
 
     this.onMessage("chat", (client, data: { text?: string }) => {
@@ -59,16 +84,19 @@ export class ClassroomRoom extends Room<ClassroomState> {
       const raw = String(data?.text ?? "").slice(0, 240).trim();
       if (!raw) return;
       const text = filterProfanity(raw);
+      this.touch(client.sessionId);
+      const line: ChatLine = {
+        from: client.sessionId,
+        name: p.name,
+        text,
+        kind: "chat",
+      };
+      this.pushChat(line);
       for (const other of this.clients) {
         const op = this.state.players.get(other.sessionId);
         if (!op) continue;
         if (other.sessionId === client.sessionId || dist(p, op) <= CHAT_RADIUS) {
-          other.send("chat", {
-            from: client.sessionId,
-            name: p.name,
-            text,
-            kind: "chat",
-          });
+          other.send("chat", line);
         }
       }
     });
@@ -86,6 +114,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
       p.top = allowed(WEARABLES.top, look.top);
       p.accessory = allowed(WEARABLES.accessory, look.accessory);
       p.body = look.body;
+      this.touch(client.sessionId);
       if (p.userId) void saveLook(p.userId, look);
     });
 
@@ -134,6 +163,16 @@ export class ClassroomRoom extends Room<ClassroomState> {
         }
       },
     );
+
+    this.clock.setInterval(() => {
+      const now = Date.now();
+      for (const client of [...this.clients]) {
+        const t = this.lastActive.get(client.sessionId) ?? now;
+        if (now - t < IDLE_MS) continue;
+        client.send("dropped", { reason: "idle" });
+        client.leave(4002);
+      }
+    }, 1000);
   }
 
   async onAuth(
@@ -166,26 +205,36 @@ export class ClassroomRoom extends Room<ClassroomState> {
     p.body = ident.look.body;
     p.seatId = "";
     this.state.players.set(client.sessionId, p);
+    this.touch(client.sessionId);
     this.syncMeta();
 
-    if (ident.role === "owner") {
-      this.broadcast("chat", {
-        from: "system",
-        name: "Klase",
-        text: `Owner ${supabaseEnabled() ? ident.name : ownerName()} has joined`,
-        kind: "join-owner",
-      });
-    } else if (ident.role === "admin") {
-      this.broadcast("chat", {
-        from: "system",
-        name: "Klase",
-        text: `Admin ${ident.name} has joined`,
-        kind: "join-admin",
-      });
-    }
+    const joinLine: ChatLine =
+      ident.role === "owner"
+        ? {
+            from: "system",
+            name: "Klase",
+            text: `Owner ${supabaseEnabled() ? ident.name : ownerName()} has joined`,
+            kind: "join-owner",
+          }
+        : ident.role === "admin"
+          ? {
+              from: "system",
+              name: "Klase",
+              text: `Admin ${ident.name} has joined`,
+              kind: "join-admin",
+            }
+          : {
+              from: "system",
+              name: "Klase",
+              text: `${ident.name} has joined`,
+              kind: "join",
+            };
+    this.pushChat(joinLine);
+    this.broadcast("chat", joinLine, { except: client });
   }
 
   onLeave(client: Client) {
+    this.lastActive.delete(client.sessionId);
     this.state.players.delete(client.sessionId);
     this.syncMeta();
   }

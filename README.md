@@ -28,18 +28,57 @@ Copy `.env.example` to `.env` (repo root or `server/`) when you want Supabase ac
 - Players — local mute; kick/ban/global mute/promote if admin or owner
 - E — sit / stand on desktop; Space also stands
 
-## Deploy (Vercel + a game server)
+## Deploy (beginner): Render + Vercel
 
-The **web client** can go on Vercel. The **Colyseus game server cannot** — it needs an always-on WebSocket process (Railway, Render, Fly.io, or a VPS). Without that, guest join on Vercel fails (the site is only static files).
+You do **not** need Supabase for guest join. Skip those keys until you want email accounts.
 
-1. Host the server: `npm run start -w server`. The host must set `PORT`.
-2. In the Vercel project → Environment Variables (Production):
-   - `VITE_COLYSEUS_URL` = `wss://your-server.example.com` (**wss**, not `ws`)
-   - Optional: `VITE_API_URL` = `https://your-server.example.com` (otherwise derived from the ws URL: `wss` → `https`)
-3. **Redeploy** the client after adding those variables. Vite bakes them in at build time.
-4. Root directory = repo root (uses `vercel.json`). Output directory = `dist`.
+**Vercel** hosts the website. **Render** hosts the game server (who is in the room). Both are required for [klase-tan.vercel.app](https://klase-tan.vercel.app) to join.
 
-Local play is unchanged: `npm run dev`.
+### 1. Push this repo to GitHub `main`
+
+Render and Vercel both deploy from GitHub.
+
+### 2. Create a Render web service
+
+1. Sign up at [render.com](https://render.com) with GitHub and allow the **Klase** repo.
+2. **New** → **Web Service** → connect **Klase**.
+3. Set:
+
+| Field | Value |
+|---|---|
+| Name | `klase-server` |
+| Language | Node |
+| Branch | `main` |
+| Root Directory | leave **empty** (whole repo) |
+| Build Command | `npm install` |
+| Start Command | `npm run start -w server` |
+| Instance | Free |
+
+4. Environment: add `NODE_VERSION` = `20`. Do **not** set `SUPABASE_*`. Render sets `PORT` for you.
+5. Deploy. In **Settings**, Health Check Path = `/health`.
+6. When logs show `Klase server on :…`, copy the URL, e.g. `https://klase-server.onrender.com`. Open `https://YOUR-SERVICE.onrender.com/health` — you should see `{"ok":true}`.
+
+Free Render **sleeps** after ~15 minutes. The first join after sleep can take 30–60 seconds.
+
+### 3. Point Vercel at Render
+
+Vite bakes env vars at **build** time. You must redeploy after adding them.
+
+1. Vercel project → **Settings** → **Environment Variables** → Production:
+
+| Name | Value |
+|---|---|
+| `VITE_COLYSEUS_URL` | `wss://YOUR-SERVICE.onrender.com` (must be **wss**, not `ws`) |
+| `VITE_API_URL` | `https://YOUR-SERVICE.onrender.com` |
+
+No trailing slash. Use your real Render hostname.
+
+2. **Deployments** → **Redeploy** (or push a new commit). Wait until it succeeds.
+3. Hard-refresh the Vercel site and **Join as guest**.
+
+Vercel: Root Directory empty (repo root), Output Directory `dist`.
+
+Local play is unchanged: `npm run dev` (no Render needed).
 
 ## Stack
 

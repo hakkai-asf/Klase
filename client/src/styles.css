@@ -36,6 +36,7 @@ html, body, #app {
   font-family: var(--font);
   color: var(--klase-ink);
   background: var(--klase-page);
+  overscroll-behavior: none;
 }
 
 button, input, select { font-family: inherit; }
@@ -199,6 +200,7 @@ button, input, select { font-family: inherit; }
   display: block;
   width: 100%;
   height: 100%;
+  touch-action: none;
 }
 
 .hud-top {
@@ -401,5 +403,59 @@ button, input, select { font-family: inherit; }
 }
 
 .sit-prompt[hidden] { display: none; }
+
+.joy-wrap {
+  display: none;
+}
+
+.touch-ui .joy-wrap {
+  display: flex;
+  position: absolute;
+  left: max(1rem, env(safe-area-inset-left));
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  z-index: 5;
+  align-items: flex-end;
+  gap: 0.85rem;
+  pointer-events: auto;
+}
+
+.joy-base {
+  width: 7.4rem;
+  height: 7.4rem;
+  border-radius: 50%;
+  background: rgba(247, 246, 251, 0.55);
+  box-shadow: var(--klase-shadow);
+  touch-action: none;
+  position: relative;
+}
+
+.joy-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 3.1rem;
+  height: 3.1rem;
+  margin: -1.55rem 0 0 -1.55rem;
+  border-radius: 50%;
+  background: var(--klase-cream);
+  box-shadow: var(--klase-shadow);
+  pointer-events: none;
+}
+
+.joy-sit {
+  min-width: 4.4rem;
+  height: 2.6rem;
+  padding: 0 0.9rem;
+  font-size: 0.95rem;
+}
+
+.touch-ui .chat-dock.game-chat {
+  bottom: calc(8.8rem + env(safe-area-inset-bottom, 0px));
+}
+
+.touch-ui .hud-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
 
 .hidden { display: none !important; }

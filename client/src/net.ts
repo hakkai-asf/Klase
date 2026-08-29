@@ -2,6 +2,10 @@ import { Client, Room } from "colyseus.js";
 import type { Look } from "@klase/shared";
 
 const WS = import.meta.env.VITE_COLYSEUS_URL ?? "ws://localhost:2567";
+const API = (
+  import.meta.env.VITE_API_URL ??
+  (import.meta.env.VITE_COLYSEUS_URL ? String(import.meta.env.VITE_COLYSEUS_URL).replace(/^ws/i, "http") : "")
+).replace(/\/$/, "");
 
 export type RemotePlayer = {
   sessionId: string;
@@ -25,7 +29,7 @@ export async function pickRoom(
   accessToken?: string,
 ): Promise<{ roomKey: string } | { error: string }> {
   try {
-    const res = await fetch("/api/find-room", {
+    const res = await fetch(`${API}/api/find-room`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, accessToken }),

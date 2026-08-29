@@ -13,4 +13,8 @@ export default defineConfig({
       "/health": { target: "http://localhost:2567", changeOrigin: true },
     },
   },
+  build: {
+    outDir: "dist",
+    emptyOutDir: true,
+  },
 });

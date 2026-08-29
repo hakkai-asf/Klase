@@ -2,6 +2,7 @@ import { BODY_LABELS, BODIES, WEARABLE_LABELS, WEARABLES, normalizeLook, type Bo
 import type { RemotePlayer } from "./net";
 import { authEnabled } from "./auth";
 import { paintBodyPortrait, preloadAvatars } from "./game/avatar";
+import { isTouchUi } from "./joystick";
 
 export type ChatLine = {
   from: string;
@@ -132,7 +133,7 @@ export function renderLanding(
 
 export function renderGameShell(root: HTMLElement) {
   root.innerHTML = "";
-  const shell = el("div", "game-root");
+  const shell = el("div", isTouchUi() ? "game-root touch-ui" : "game-root");
   const canvas = document.createElement("canvas");
   const top = el("div", "hud-top");
   const roomChip = el("div", "hud-chip", "Connecting…");
@@ -154,9 +155,35 @@ export function renderGameShell(root: HTMLElement) {
   chat.append(log, row);
 
   const layer = el("div", "panel-layer hidden");
-  shell.append(canvas, top, chat, layer);
+
+  const joyWrap = el("div", "joy-wrap");
+  const joyBase = el("div", "joy-base");
+  const joyKnob = el("div", "joy-knob");
+  joyBase.append(joyKnob);
+  const sitBtn = el("button", "joy-sit clay-btn", "Sit") as HTMLButtonElement;
+  sitBtn.type = "button";
+  sitBtn.hidden = true;
+  joyWrap.append(joyBase, sitBtn);
+
+  shell.append(canvas, top, chat, joyWrap, layer);
   root.append(shell);
-  return { canvas, roomChip, micBtn, chatBtn, chat, playersBtn, lookBtn, log, input, send, layer };
+  return {
+    canvas,
+    roomChip,
+    micBtn,
+    chatBtn,
+    chat,
+    playersBtn,
+    lookBtn,
+    log,
+    input,
+    send,
+    layer,
+    joyWrap,
+    joyBase,
+    joyKnob,
+    sitBtn,
+  };
 }
 
 export function syncChatVisibility(chat: HTMLElement, log: HTMLElement) {

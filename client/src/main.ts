@@ -5,6 +5,7 @@ import { preloadAvatars } from "./game/avatar";
 import { preloadClassroom } from "./game/classroom";
 import { joinClassroom, pickRoom, type RemotePlayer } from "./net";
 import { addChat, disposeLandingPreviews, renderGameShell, renderLanding, showCustomize, showPlayers, type ChatLine } from "./ui";
+import { bindJoystick, isTouchUi } from "./joystick";
 import { currentSession, loadSavedLook, signIn, signUp } from "./auth";
 import { VoiceMesh } from "./voice";
 import type { Room } from "colyseus.js";
@@ -77,7 +78,14 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
   for (const r of results) {
     if (r.status === "rejected") console.warn("Asset preload failed", r.reason);
   }
-  const world = new World(ui.canvas, selfId, name, look);
+  const world = new World(ui.canvas, selfId, name, look, isTouchUi() ? { sitBtn: ui.sitBtn } : undefined);
+  if (isTouchUi()) {
+    bindJoystick(ui.joyBase, ui.joyKnob, (x, y) => world.setStick(x, y));
+    ui.sitBtn.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      world.interact();
+    });
+  }
   const muted = new Set<string>();
   const voice = new VoiceMesh(room, selfId);
   voice.localMuted = muted;

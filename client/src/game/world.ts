@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { MOVE_SPEED, SEAT_REACH, type Look, type Seat } from "@klase/shared";
 import { applyLook, createAvatar, poseWalk } from "./avatar";
-import { buildClassroom, resolveMove, type AABB } from "./classroom";
+import { buildClassroom, findClearStand, resolveMove, type AABB } from "./classroom";
 
 type AvatarHandle = ReturnType<typeof createAvatar> & {
   target: THREE.Vector3;
@@ -31,6 +31,10 @@ export class World {
   private keys = new Set<string>();
   private justPressed = new Set<string>();
   private localSeatId = "";
+  private sitBtn: HTMLButtonElement | null = null;
+  private touchUi = false;
+  private stickX = 0;
+  private stickY = 0;
   private sitPrompt: HTMLElement;
   private promptPos = new THREE.Vector3();
   private moveAcc = 0;
@@ -38,7 +42,13 @@ export class World {
   private camForward = new THREE.Vector3();
   private camRight = new THREE.Vector3();
 
-  constructor(canvas: HTMLCanvasElement, localId: string, localName: string, look: Look) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    localId: string,
+    localName: string,
+    look: Look,
+    hud?: { sitBtn?: HTMLButtonElement | null },
+  ) {
     this.localId = localId;
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 80);
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -48,9 +58,11 @@ export class World {
     const built = buildClassroom(this.scene);
     this.colliders = built.colliders;
     this.seats = built.seats;
+    this.sitBtn = hud?.sitBtn ?? null;
+    this.touchUi = Boolean(this.sitBtn);
     this.sitPrompt = document.createElement("div");
     this.sitPrompt.className = "sit-prompt";
-    this.sitPrompt.textContent = "E";
+    this.sitPrompt.textContent = this.touchUi ? "Sit" : "E";
     this.sitPrompt.hidden = true;
     canvas.parentElement?.append(this.sitPrompt);
     this.upsert(localId, localName, look, this.localX, this.localZ, this.localRot, "");
@@ -131,6 +143,15 @@ export class World {
     return out;
   }
 
+  setStick(x: number, y: number) {
+    this.stickX = x;
+    this.stickY = y;
+  }
+
+  interact() {
+    this.justPressed.add("e");
+  }
+
   applyLocalLook(look: Look) {
     const a = this.avatars.get(this.localId);
     if (!a) return;
@@ -163,11 +184,19 @@ export class World {
   }
 
   private updateSitPrompt(seat: Seat | null) {
-    if (!seat || this.localSeatId) {
+    const canSit = Boolean(seat) && !this.localSeatId;
+    const seated = Boolean(this.localSeatId);
+    if (this.sitBtn) {
+      this.sitPrompt.hidden = true;
+      this.sitBtn.hidden = !(canSit || seated);
+      this.sitBtn.textContent = seated ? "Stand" : "Sit";
+      return;
+    }
+    if (!canSit) {
       this.sitPrompt.hidden = true;
       return;
     }
-    this.promptPos.set(seat.x, 1.05, seat.z).project(this.camera);
+    this.promptPos.set(seat!.x, 1.05, seat!.z).project(this.camera);
     if (this.promptPos.z > 1) {
       this.sitPrompt.hidden = true;
       return;
@@ -193,8 +222,14 @@ export class World {
     let event: WorldEvent | null = null;
     if (this.localSeatId) {
       if (pressedE || pressedSpace) {
+        const others = [...this.avatars.entries()]
+          .filter(([id]) => id !== this.localId)
+          .map(([, a]) => ({ x: a.root.position.x, z: a.root.position.z }));
+        const rot = this.localRot;
+        const clear = findClearStand(this.localX, this.localZ, rot, this.colliders, others);
         this.localSeatId = "";
-        this.localZ += 0.4;
+        this.localX = clear.x;
+        this.localZ = clear.z;
         const local = this.avatars.get(this.localId);
         if (local) local.seatId = "";
         event = { type: "stand" };
@@ -220,6 +255,8 @@ export class World {
       if (this.keys.has("s") || this.keys.has("arrowdown")) sy -= 1;
       if (this.keys.has("d") || this.keys.has("arrowright")) sx += 1;
       if (this.keys.has("a") || this.keys.has("arrowleft")) sx -= 1;
+      sx += this.stickX;
+      sy += this.stickY;
 
       if (sx || sy) {
         const len = Math.hypot(sx, sy) || 1;

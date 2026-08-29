@@ -222,19 +222,19 @@ export function buildClassroom(scene: THREE.Scene): { colliders: AABB[]; seats: 
     makeVisible(teacher);
     commitCollider(colliders, teacher);
 
-    const shelf = place(scene, kit.bookshelf, 0, -6.2, Math.PI / 2, { height: 2.45, depth: 0.58 });
+    const shelf = place(scene, kit.bookshelf, 0, -6.2, -Math.PI / 2, { height: 2.45, depth: 0.58 });
     makeVisible(shelf);
     flushToLeftWall(shelf, innerX);
     commitCollider(colliders, shelf);
 
     for (const z of [0.55, 5.25]) {
-      const extra = place(scene, kit.shelf2, 0, z, Math.PI / 2, { height: 1.85, depth: 0.5 });
+      const extra = place(scene, kit.shelf2, 0, z, -Math.PI / 2, { height: 1.85, depth: 0.5 });
       makeVisible(extra);
       flushToLeftWall(extra, innerX);
       commitCollider(colliders, extra);
     }
     for (const x of [-4.2, 4.2]) {
-      const extra = place(scene, kit.shelf2, x, 0, 0, { height: 1.85, depth: 0.5 });
+      const extra = place(scene, kit.shelf2, x, 0, Math.PI, { height: 1.85, depth: 0.5 });
       makeVisible(extra);
       flushToBackWall(extra, innerZ);
       commitCollider(colliders, extra);
@@ -257,9 +257,9 @@ export function buildClassroom(scene: THREE.Scene): { colliders: AABB[]; seats: 
         const z = DESK_GRID.originZ + row * DESK_GRID.spacingZ;
         const desk = place(scene, kit.schoolDesk, x, z, DESK_GRID.rotY, { height: 1.15, depth: 1.55 });
         const box = aabbOf(desk);
-        // Chair sits on +Z of the combo; collide with the desk half only so sit/stand isn't inside a solid.
+        // After yaw π the chair is on −Z; keep collision on the desk half.
         const midZ = (box.minZ + box.maxZ) / 2;
-        colliders.push({ ...box, maxZ: midZ + 0.08 });
+        colliders.push({ ...box, minZ: midZ - 0.08 });
       }
     }
   } else {

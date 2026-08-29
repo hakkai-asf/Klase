@@ -21,10 +21,24 @@ Copy `.env.example` to `.env` (repo root or `server/`) when you want Supabase ac
 ## Controls
 
 - WASD / arrows — move (screen-relative on the isometric floor)
+- Phone / tablet — on-screen joystick (bottom left). Sit / Stand appears next to it when you can use a chair
 - Mic — proximity voice, off by default
 - Chat — nearby players only
 - Look — hat / top / accessory
 - Players — local mute; kick/ban/global mute/promote if admin or owner
+- E — sit / stand on desktop; Space also stands
+
+## Deploy (Vercel + a game server)
+
+The **web client** can go on Vercel. The **Colyseus game server cannot** — it needs a always-on WebSocket process (Railway, Render, Fly.io, or a VPS).
+
+1. Host the server (`npm run dev -w server` in production: `npm run start -w server` after a server start script, or `node` via the server package). Set `PORT` from the host.
+2. In the Vercel project, set:
+   - `VITE_COLYSEUS_URL` = `wss://your-server.example.com`
+   - Root directory = repo root (uses `vercel.json`)
+3. Deploy. The client calls `/api/find-room` on that same server origin (ws → http/https).
+
+Local play is unchanged: `npm run dev`.
 
 ## Stack
 

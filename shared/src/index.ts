@@ -80,13 +80,13 @@ export const DESK_GRID = {
   originZ: -1.7,
   spacingX: 3.7,
   spacingZ: 3.05,
-  /** Combo is ~6° off axis; this squares it to the room. */
-  rotY: (-5.62 * Math.PI) / 180,
-  /** Chair seat relative to the centered, height-fitted school-desk. */
+  /** Combo faces the board (−Z). */
+  rotY: Math.PI,
+  /** Chair seat in local space after the combo is centered. */
   seatLocalX: 0,
-  seatLocalZ: 0.38,
-  /** Mixamo sit faces +Z; this turns the avatar toward the desk and board. */
-  sitRotY: Math.PI,
+  seatLocalZ: 0.32,
+  /** Mixamo Sitting Idle faces +Z; do not add extra yaw or the pose reads as falling. */
+  sitRotY: 0,
 };
 
 export const SEAT_REACH = 1.25;

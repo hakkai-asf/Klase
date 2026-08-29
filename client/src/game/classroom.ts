@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { CLASSROOM, DESK_GRID, classroomSeats, type Seat } from "@klase/shared";
+import { CLASSROOM, DESK_GRID, PLAYER_RADIUS, classroomSeats, type Seat } from "@klase/shared";
 
 export type { Seat };
 export type AABB = { minX: number; maxX: number; minZ: number; maxZ: number };
@@ -288,14 +288,12 @@ export function buildClassroom(scene: THREE.Scene): { colliders: AABB[]; seats: 
   return { colliders, seats };
 }
 
-const RADIUS = 0.42;
-
 function blocked(
   px: number,
   pz: number,
   boxes: AABB[],
   others: { x: number; z: number }[],
-  radius = RADIUS,
+  radius = PLAYER_RADIUS,
 ) {
   if (
     boxes.some(
@@ -310,11 +308,18 @@ function blocked(
   return others.some((o) => Math.hypot(px - o.x, pz - o.z) < radius * 2.15);
 }
 
-export function resolveMove(x: number, z: number, dx: number, dz: number, boxes: AABB[]) {
+export function resolveMove(
+  x: number,
+  z: number,
+  dx: number,
+  dz: number,
+  boxes: AABB[],
+  others: { x: number; z: number }[] = [],
+) {
   let nx = x + dx;
   let nz = z + dz;
-  if (blocked(nx, z, boxes, [])) nx = x;
-  if (blocked(nx, nz, boxes, [])) nz = z;
+  if (blocked(nx, z, boxes, others)) nx = x;
+  if (blocked(nx, nz, boxes, others)) nz = z;
   return { x: nx, z: nz };
 }
 

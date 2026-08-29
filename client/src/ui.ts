@@ -35,6 +35,20 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") 
   return n;
 }
 
+const MIC_ON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>`;
+const MIC_OFF = `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M4 4l16 16"/></svg>`;
+
+export function setMicButton(btn: HTMLElement, on: boolean, error = "") {
+  btn.classList.toggle("primary", on);
+  btn.classList.toggle("mic-on", on);
+  btn.classList.toggle("warn", Boolean(error));
+  btn.setAttribute("aria-pressed", on ? "true" : "false");
+  const label = error || (on ? "Microphone on" : "Microphone off");
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+  btn.innerHTML = on ? MIC_ON : MIC_OFF;
+}
+
 export function renderLanding(
   root: HTMLElement,
   onJoin: (payload: JoinPayload) => void,
@@ -156,7 +170,9 @@ export function renderGameShell(root: HTMLElement) {
   const top = el("div", "hud-top");
   const roomChip = el("div", "hud-chip", "Connecting…");
   const actions = el("div", "hud-actions");
-  const micBtn = el("button", "clay-btn", "Mic off");
+  const micBtn = el("button", "clay-btn mic-btn");
+  micBtn.type = "button";
+  setMicButton(micBtn, false);
   const playersBtn = el("button", "clay-btn", "Players");
   const lookBtn = el("button", "clay-btn", "Look");
   const chatBtn = el("button", "clay-btn", "Chat");

@@ -4,7 +4,7 @@ import { World } from "./game/world";
 import { preloadAvatars } from "./game/avatar";
 import { preloadClassroom } from "./game/classroom";
 import { joinClassroom, pickRoom, type RemotePlayer } from "./net";
-import { addChat, disposeLandingPreviews, renderGameShell, renderLanding, showCustomize, showPlayers, type ChatLine } from "./ui";
+import { addChat, disposeLandingPreviews, renderGameShell, renderLanding, setMicButton, showCustomize, showPlayers, type ChatLine } from "./ui";
 import { bindJoystick, isTouchUi } from "./joystick";
 import { currentSession, loadSavedLook, signIn, signUp } from "./auth";
 import { VoiceMesh } from "./voice";
@@ -120,7 +120,7 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
     window.removeEventListener("pointerdown", bumpActivity);
     voice?.dispose();
     if (leaveReason === "idle" || code === 4002) {
-      startLanding("You were disconnected for being idle (1 minute).");
+      startLanding("You were disconnected for being idle (3 minutes).");
     } else if (code === 4000) {
       startLanding("You were removed from the classroom.");
     } else if (code === 4001) {
@@ -255,13 +255,13 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
     e.preventDefault();
   });
 
+  ui.canvas.addEventListener("pointerdown", () => void mesh.unlock());
   ui.micBtn.addEventListener("click", async () => {
     try {
       await mesh.setMic(!mesh.micOn);
-      ui.micBtn.textContent = mesh.micOn ? "Mic on" : "Mic off";
-      ui.micBtn.classList.toggle("primary", mesh.micOn);
+      setMicButton(ui.micBtn, mesh.micOn);
     } catch {
-      startLanding("Microphone permission was denied.");
+      setMicButton(ui.micBtn, false, "Microphone permission was denied");
     }
   });
 

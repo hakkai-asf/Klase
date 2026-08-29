@@ -1,5 +1,5 @@
 import { Room, Client, ServerError } from "@colyseus/core";
-import { CHAT_LOG_MAX, CHAT_RADIUS, IDLE_MS, REGULAR_CAP, SEAT_REACH, WEARABLES, classroomSeats, normalizeLook } from "@klase/shared";
+import { CHAT_LOG_MAX, CHAT_RADIUS, IDLE_MS, PLAYER_RADIUS, REGULAR_CAP, SEAT_REACH, WEARABLES, classroomSeats, normalizeLook } from "@klase/shared";
 import { ClassroomState, Player } from "./schema.js";
 import { filterProfanity } from "./chatFilter.js";
 import { assertCanModerate, banName, ownerName, resolveIdentity } from "./roles.js";
@@ -38,8 +38,15 @@ export class ClassroomRoom extends Room<ClassroomState> {
       const p = this.state.players.get(client.sessionId);
       if (!p || p.seatId) return;
       if (typeof data.x !== "number" || typeof data.z !== "number") return;
-      p.x = Math.max(-9.2, Math.min(9.2, data.x));
-      p.z = Math.max(-7.2, Math.min(7.2, data.z));
+      let x = Math.max(-9.2, Math.min(9.2, data.x));
+      let z = Math.max(-7.2, Math.min(7.2, data.z));
+      const others = [...this.state.players.values()].filter((o) => o.sessionId !== p.sessionId);
+      const hits = (px: number, pz: number) =>
+        others.some((o) => Math.hypot(px - o.x, pz - o.z) < PLAYER_RADIUS * 2.15);
+      if (hits(x, p.z)) x = p.x;
+      if (hits(x, z)) z = p.z;
+      p.x = x;
+      p.z = z;
       p.rotY = Number(data.rotY) || 0;
       this.touch(client.sessionId);
     });
@@ -120,7 +127,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
 
     this.onMessage("voice", (client, data: { to?: string; type?: string; payload?: unknown }) => {
       const from = this.state.players.get(client.sessionId);
-      if (!from || from.serverMuted) return;
+      if (!from) return;
       const toId = String(data?.to ?? "");
       const target = this.clients.find((c) => c.sessionId === toId);
       if (!target || toId === client.sessionId) return;

@@ -276,7 +276,10 @@ export class World {
         sy /= len;
         const dx = (this.camForward.x * sy + this.camRight.x * sx) * MOVE_SPEED * dt;
         const dz = (this.camForward.z * sy + this.camRight.z * sx) * MOVE_SPEED * dt;
-        const n = resolveMove(this.localX, this.localZ, dx, dz, this.colliders);
+        const others = [...this.avatars.entries()]
+          .filter(([id]) => id !== this.localId)
+          .map(([, a]) => ({ x: a.root.position.x, z: a.root.position.z }));
+        const n = resolveMove(this.localX, this.localZ, dx, dz, this.colliders, others);
         this.localX = n.x;
         this.localZ = n.z;
         this.localRot = Math.atan2(dx, dz);

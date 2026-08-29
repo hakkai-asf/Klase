@@ -5,14 +5,20 @@ type VoiceMsg = { from: string; type: string; payload?: RTCSessionDescriptionIni
 type Pos = { x: number; z: number };
 
 const ICE = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+const DROP_RADIUS = CHAT_RADIUS + 0.8;
+
+type Peer = {
+  pc: RTCPeerConnection;
+  audio: HTMLAudioElement;
+  polite: boolean;
+};
 
 export class VoiceMesh {
-  private peers = new Map<
-    string,
-    { pc: RTCPeerConnection; gain: GainNode; ctx: AudioContext; polite: boolean }
-  >();
+  private peers = new Map<string, Peer>();
+  private ensuring = new Set<string>();
   private stream: MediaStream | null = null;
   private makingOffer = new Set<string>();
+  private ctx: AudioContext | null = null;
   micOn = false;
   localMuted = new Set<string>();
   serverMutedIds = new Set<string>();
@@ -24,14 +30,27 @@ export class VoiceMesh {
     this.room.onMessage("voice", (msg: VoiceMsg) => void this.onSignal(msg));
   }
 
+  async unlock() {
+    const ctx = this.audioCtx();
+    if (ctx.state === "suspended") await ctx.resume();
+    for (const peer of this.peers.values()) {
+      void peer.audio.play().catch(() => {});
+    }
+  }
+
   async setMic(on: boolean) {
-    this.micOn = on;
-    for (const id of [...this.peers.keys()]) this.close(id);
+    await this.unlock();
     if (on) {
-      this.stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      if (!this.stream) {
+        this.stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      }
+      this.micOn = true;
+      await this.syncSenders();
     } else {
+      this.micOn = false;
       this.stream?.getTracks().forEach((t) => t.stop());
       this.stream = null;
+      await this.syncSenders();
     }
   }
 
@@ -49,54 +68,98 @@ export class VoiceMesh {
     for (const [id, pos] of positions) {
       if (id === this.selfId) continue;
       const d = Math.hypot(me.x - pos.x, me.z - pos.z);
-      if (d > CHAT_RADIUS) continue;
+      const keep = this.peers.has(id) && d <= DROP_RADIUS;
+      if (d > CHAT_RADIUS && !keep) continue;
       nearby.add(id);
       void this.ensure(id);
       const peer = this.peers.get(id);
       if (!peer) continue;
       const silenced = this.localMuted.has(id) || this.serverMutedIds.has(id);
-      peer.gain.gain.value = silenced ? 0 : Math.max(0, 1 - d / CHAT_RADIUS);
+      peer.audio.volume = silenced ? 0 : Math.max(0, 1 - d / CHAT_RADIUS);
+      peer.audio.muted = silenced;
     }
     for (const id of [...this.peers.keys()]) {
-      if (!nearby.has(id)) this.close(id);
+      if (!nearby.has(id)) this.close(id, true);
     }
   }
 
   dispose() {
-    void this.setMic(false);
+    this.micOn = false;
+    this.stream?.getTracks().forEach((t) => t.stop());
+    this.stream = null;
+    for (const id of [...this.peers.keys()]) this.close(id, true);
+    void this.ctx?.close();
+    this.ctx = null;
+  }
+
+  private audioCtx() {
+    if (!this.ctx) this.ctx = new AudioContext();
+    return this.ctx;
+  }
+
+  private async syncSenders() {
+    const track = this.stream?.getAudioTracks()[0] ?? null;
+    for (const peer of this.peers.values()) {
+      const tr = peer.pc.getTransceivers().find((t) => t.receiver.track?.kind === "audio" || t.sender.track?.kind === "audio")
+        ?? peer.pc.getTransceivers()[0];
+      if (!tr) continue;
+      tr.direction = track ? "sendrecv" : "recvonly";
+      try {
+        await tr.sender.replaceTrack(track);
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   private async ensure(id: string) {
-    if (this.peers.has(id)) return;
-    const polite = this.selfId < id;
-    const pc = new RTCPeerConnection(ICE);
-    const ctx = new AudioContext();
-    const gain = ctx.createGain();
-    gain.gain.value = 0;
-    gain.connect(ctx.destination);
+    if (this.peers.has(id) || this.ensuring.has(id)) return;
+    this.ensuring.add(id);
+    try {
+      if (this.peers.has(id)) return;
+      const polite = this.selfId < id;
+      const pc = new RTCPeerConnection(ICE);
+      const audio = new Audio();
+      audio.autoplay = true;
+      audio.setAttribute("playsinline", "");
+      audio.volume = 0;
 
-    pc.onicecandidate = (ev) => {
-      if (ev.candidate) {
-        this.room.send("voice", { to: id, type: "ice", payload: ev.candidate.toJSON() });
-      }
-    };
-    pc.ontrack = (ev) => {
-      const src = ctx.createMediaStreamSource(ev.streams[0]!);
-      src.connect(gain);
-    };
-    if (this.stream) {
-      for (const track of this.stream.getTracks()) pc.addTrack(track, this.stream);
-    } else {
-      pc.addTransceiver("audio", { direction: "recvonly" });
+      const peer: Peer = { pc, audio, polite };
+      this.peers.set(id, peer);
+
+      pc.onicecandidate = (ev) => {
+        if (ev.candidate) {
+          this.room.send("voice", { to: id, type: "ice", payload: ev.candidate.toJSON() });
+        }
+      };
+      pc.onnegotiationneeded = () => {
+        void this.negotiate(id);
+      };
+      pc.ontrack = (ev) => {
+        const stream = ev.streams[0] ?? new MediaStream([ev.track]);
+        audio.srcObject = stream;
+        void audio.play().catch(() => {});
+      };
+
+      const tr = pc.addTransceiver("audio", { direction: this.stream ? "sendrecv" : "recvonly" });
+      const track = this.stream?.getAudioTracks()[0];
+      if (track) await tr.sender.replaceTrack(track);
+    } finally {
+      this.ensuring.delete(id);
     }
+  }
 
-    this.peers.set(id, { pc, gain, ctx, polite });
-
-    if (!polite) {
+  private async negotiate(id: string) {
+    const peer = this.peers.get(id);
+    if (!peer) return;
+    const { pc } = peer;
+    try {
       this.makingOffer.add(id);
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
+      await pc.setLocalDescription(await pc.createOffer());
       this.room.send("voice", { to: id, type: "offer", payload: pc.localDescription });
+    } catch {
+      /* glare / closed */
+    } finally {
       this.makingOffer.delete(id);
     }
   }
@@ -111,12 +174,13 @@ export class VoiceMesh {
       const offerCollision = this.makingOffer.has(msg.from) || pc.signalingState !== "stable";
       if (offerCollision && !polite) return;
       await pc.setRemoteDescription(msg.payload as RTCSessionDescriptionInit);
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
+      await pc.setLocalDescription(await pc.createAnswer());
       this.room.send("voice", { to: msg.from, type: "answer", payload: pc.localDescription });
     }
     if (msg.type === "answer" && msg.payload) {
-      await pc.setRemoteDescription(msg.payload as RTCSessionDescriptionInit);
+      if (pc.signalingState === "have-local-offer") {
+        await pc.setRemoteDescription(msg.payload as RTCSessionDescriptionInit);
+      }
     }
     if (msg.type === "ice" && msg.payload) {
       try {
@@ -125,15 +189,16 @@ export class VoiceMesh {
         /* ignore */
       }
     }
-    if (msg.type === "bye") this.close(msg.from);
+    if (msg.type === "bye") this.close(msg.from, false);
   }
 
-  private close(id: string) {
+  private close(id: string, notify: boolean) {
     const peer = this.peers.get(id);
     if (!peer) return;
-    this.room.send("voice", { to: id, type: "bye" });
-    peer.pc.close();
-    void peer.ctx.close();
     this.peers.delete(id);
+    if (notify) this.room.send("voice", { to: id, type: "bye" });
+    peer.pc.close();
+    peer.audio.pause();
+    peer.audio.srcObject = null;
   }
 }

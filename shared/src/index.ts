@@ -4,8 +4,9 @@ export type RoomCode = (typeof ROOM_CODES)[number];
 export const REGULAR_CAP = 12;
 export const CHAT_RADIUS = 6.5;
 export const MOVE_SPEED = 5.2;
+export const PLAYER_RADIUS = 0.42;
 export const CHAT_LOG_MAX = 40;
-export const IDLE_MS = 60_000;
+export const IDLE_MS = 180_000;
 
 export type Role = "owner" | "admin" | "user";
 

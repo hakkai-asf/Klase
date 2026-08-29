@@ -91,11 +91,13 @@ export const DESK_GRID = {
   seatLocalZ: -0.28,
   /** Mixamo Sitting Idle faces +Z; π turns the avatar toward the desk/board. */
   sitRotY: Math.PI,
+  /** Extra root height so the pelvis rests on the chair, not through it. */
+  sitY: 0.18,
 };
 
 export const SEAT_REACH = 1.25;
 
-export type Seat = { id: string; x: number; z: number; rotY: number };
+export type Seat = { id: string; x: number; z: number; y: number; rotY: number };
 
 export function classroomSeats(): Seat[] {
   const seats: Seat[] = [];
@@ -107,7 +109,7 @@ export function classroomSeats(): Seat[] {
       const oz = DESK_GRID.originZ + row * DESK_GRID.spacingZ;
       const x = ox + DESK_GRID.seatLocalX * c + DESK_GRID.seatLocalZ * s;
       const z = oz - DESK_GRID.seatLocalX * s + DESK_GRID.seatLocalZ * c;
-      seats.push({ id: `s${row}-${col}`, x, z, rotY: DESK_GRID.sitRotY });
+      seats.push({ id: `s${row}-${col}`, x, y: DESK_GRID.sitY, z, rotY: DESK_GRID.sitRotY });
     }
   }
   return seats;

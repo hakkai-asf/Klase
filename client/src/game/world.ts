@@ -183,6 +183,10 @@ export class World {
     return best;
   }
 
+  private seatY(seatId: string) {
+    return this.seats.find((s) => s.id === seatId)?.y ?? 0;
+  }
+
   private updateSitPrompt(seat: Seat | null) {
     const canSit = Boolean(seat) && !this.localSeatId;
     const seated = Boolean(this.localSeatId);
@@ -274,7 +278,7 @@ export class World {
 
     const local = this.avatars.get(this.localId);
     if (local) {
-      local.root.position.set(this.localX, 0, this.localZ);
+      local.root.position.set(this.localX, this.seatY(this.localSeatId), this.localZ);
       local.root.rotation.y = this.localRot;
       poseWalk(local, dt, moved, Boolean(this.localSeatId));
       local.lastX = this.localX;
@@ -287,7 +291,7 @@ export class World {
       const px = a.root.position.x;
       const pz = a.root.position.z;
       if (seated) {
-        a.root.position.set(a.target.x, 0, a.target.z);
+        a.root.position.set(a.target.x, this.seatY(a.seatId), a.target.z);
         a.root.rotation.y = a.targetRot;
       } else {
         a.root.position.lerp(a.target, 1 - Math.pow(0.001, dt));

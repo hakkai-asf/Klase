@@ -100,6 +100,7 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
         accessory: p.accessory,
         body: p.body === "y" ? "y" : "x",
         serverMuted: p.serverMuted,
+        seatId: p.seatId ?? "",
       });
     });
     return list;
@@ -110,7 +111,15 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
     const mutedIds: string[] = [];
     for (const p of snapshot()) {
       seen.add(p.sessionId);
-      world.upsert(p.sessionId, p.name, { hat: p.hat, top: p.top, accessory: p.accessory, body: p.body === "y" ? "y" : "x" }, p.x, p.z, p.rotY);
+      world.upsert(
+        p.sessionId,
+        p.name,
+        { hat: p.hat, top: p.top, accessory: p.accessory, body: p.body === "y" ? "y" : "x" },
+        p.x,
+        p.z,
+        p.rotY,
+        p.seatId ?? "",
+      );
       if (p.serverMuted) mutedIds.push(p.sessionId);
     }
     voice.setServerMuted(mutedIds);
@@ -237,8 +246,13 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
   const loop = (now: number) => {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
-    const mv = world.step(dt);
-    if (mv) room.send("move", mv);
+    const ev = world.step(dt);
+    if (ev?.type === "move") room.send("move", { x: ev.x, z: ev.z, rotY: ev.rotY });
+    if (ev?.type === "sit") room.send("sit", { seatId: ev.seatId });
+    if (ev?.type === "stand") {
+      room.send("stand");
+      room.send("move", { x: world.localX, z: world.localZ, rotY: world.localRot });
+    }
     const me = snapshot().find((p) => p.sessionId === selfId);
     voice.tick(world.positions(), Boolean(me?.serverMuted));
     requestAnimationFrame(loop);

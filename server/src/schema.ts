@@ -14,6 +14,7 @@ export class Player extends Schema {
   body = "x";
   serverMuted = false;
   userId = "";
+  seatId = "";
 }
 defineTypes(Player, {
   sessionId: "string",
@@ -29,6 +30,7 @@ defineTypes(Player, {
   body: "string",
   serverMuted: "boolean",
   userId: "string",
+  seatId: "string",
 });
 
 export class ClassroomState extends Schema {

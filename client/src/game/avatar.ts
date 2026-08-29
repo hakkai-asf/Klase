@@ -13,6 +13,7 @@ const walkUrl = new URL("../../../assets/animations/walking/Walking.glb", import
 const walkStartUrl = new URL("../../../assets/animations/walking/Start Walking.glb", import.meta.url).href;
 const walkStopUrl = new URL("../../../assets/animations/walking/Stop Walking.glb", import.meta.url).href;
 const idleUrl = new URL("../../../assets/animations/idle/Breathing Idle.glb", import.meta.url).href;
+const sitUrl = new URL("../../../assets/animations/sitting/Sitting Idle.glb", import.meta.url).href;
 
 type LocoPhase = "idle" | "start" | "walk" | "stop";
 
@@ -22,6 +23,7 @@ type Rig = {
   idle: THREE.AnimationClip | null;
   start: THREE.AnimationClip | null;
   stop: THREE.AnimationClip | null;
+  sit: THREE.AnimationClip | null;
 };
 
 let rigs: { x: Rig; y: Rig } | null = null;
@@ -156,7 +158,7 @@ async function rigFromGltf(
   }
   const start = adaptClip(startFallback, scene, "WalkStart");
   const stop = adaptClip(stopFallback, scene, "WalkStop");
-  return { template: scene, walk, idle, start, stop };
+  return { template: scene, walk, idle, start, stop, sit: null as THREE.AnimationClip | null };
 }
 
 function cloneModel(template: THREE.Object3D) {
@@ -215,7 +217,7 @@ async function loadGltf(url: string) {
 
 export async function preloadAvatars() {
   if (rigs) return;
-  const [xGltf, yGltf, walkGltf, idleGltf, startGltf, stopGltf, skinnedGltf] = await Promise.all([
+  const [xGltf, yGltf, walkGltf, idleGltf, startGltf, stopGltf, skinnedGltf, sitGltf] = await Promise.all([
     loadGltf(xBotUrl),
     loadGltf(yBotUrl),
     loadGltf(walkUrl),
@@ -223,11 +225,13 @@ export async function preloadAvatars() {
     loadGltf(walkStartUrl),
     loadGltf(walkStopUrl),
     loadGltf(xBotSkinnedUrl),
+    loadGltf(sitUrl),
   ]);
   const walkFallback = firstClip(walkGltf.animations, "Walking.glb");
   const idleFallback = firstClip(idleGltf.animations, "Breathing Idle.glb");
   const startFallback = firstClip(startGltf.animations, "Start Walking.glb");
   const stopFallback = firstClip(stopGltf.animations, "Stop Walking.glb");
+  const sitFallback = firstClip(sitGltf.animations, "Sitting Idle.glb");
   previews = { x: xGltf.scene, y: yGltf.scene };
   const skinnedScene = cloneSkinned(skinnedGltf.scene);
   const skinnedFallback = await rigFromGltf(
@@ -253,6 +257,8 @@ export async function preloadAvatars() {
   const y = ySkinned
     ? await rigFromGltf(yGltf.scene, yGltf.animations, walkFallback, idleFallback, startFallback, stopFallback)
     : skinnedFallback;
+  x.sit = adaptClip(sitFallback, x.template, "Sit");
+  y.sit = y === x ? x.sit : adaptClip(sitFallback, y.template, "Sit");
   rigs = { x, y };
 }
 
@@ -350,6 +356,7 @@ function primitiveAvatar(look: Look, nametag: string) {
     idleAction: null as THREE.AnimationAction | null,
     startAction: null as THREE.AnimationAction | null,
     stopAction: null as THREE.AnimationAction | null,
+    sitAction: null as THREE.AnimationAction | null,
     phase: "idle" as LocoPhase,
     wantMove: false,
     phaseTime: 0,
@@ -394,6 +401,16 @@ export function createAvatar(look: Look, nametag: string) {
     idleAction.play();
   }
 
+  let sitAction: THREE.AnimationAction | null = null;
+  if (rig.sit) {
+    sitAction = mixer.clipAction(rig.sit);
+    sitAction.setLoop(THREE.LoopRepeat, Infinity);
+    sitAction.enabled = true;
+    sitAction.setEffectiveTimeScale(1);
+    sitAction.setEffectiveWeight(0);
+    sitAction.play();
+  }
+
   mixer.update(1 / 30);
 
   return {
@@ -417,6 +434,7 @@ export function createAvatar(look: Look, nametag: string) {
     idleAction,
     startAction: null as THREE.AnimationAction | null,
     stopAction: null as THREE.AnimationAction | null,
+    sitAction,
     phase: "idle" as LocoPhase,
     wantMove: false,
     phaseTime: 0,
@@ -502,19 +520,30 @@ export function poseWalk(
     idleAction?: THREE.AnimationAction | null;
     startAction?: THREE.AnimationAction | null;
     stopAction?: THREE.AnimationAction | null;
+    sitAction?: THREE.AnimationAction | null;
     phase?: LocoPhase;
     wantMove?: boolean;
     phaseTime?: number;
   },
   dt: number,
   moving: boolean,
+  seated = false,
 ) {
   if (avatar.mixer && avatar.walkAction) {
     const k = Math.min(1, 10 * dt);
-    setActionWeight(avatar.walkAction, moving ? 1 : 0, k);
-    setActionWeight(avatar.idleAction ?? null, moving ? 0 : 1, k);
-    setActionWeight(avatar.startAction ?? null, 0, 1);
-    setActionWeight(avatar.stopAction ?? null, 0, 1);
+    if (seated && avatar.sitAction) {
+      setActionWeight(avatar.sitAction, 1, 1);
+      setActionWeight(avatar.walkAction, 0, 1);
+      setActionWeight(avatar.idleAction ?? null, 0, 1);
+      setActionWeight(avatar.startAction ?? null, 0, 1);
+      setActionWeight(avatar.stopAction ?? null, 0, 1);
+    } else {
+      setActionWeight(avatar.sitAction ?? null, 0, k);
+      setActionWeight(avatar.walkAction, moving ? 1 : 0, k);
+      setActionWeight(avatar.idleAction ?? null, moving ? 0 : 1, k);
+      setActionWeight(avatar.startAction ?? null, 0, 1);
+      setActionWeight(avatar.stopAction ?? null, 0, 1);
+    }
     avatar.mixer.update(dt);
     return;
   }

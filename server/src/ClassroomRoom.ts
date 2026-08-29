@@ -1,5 +1,5 @@
 import { Room, Client, ServerError } from "@colyseus/core";
-import { CHAT_RADIUS, REGULAR_CAP, WEARABLES, normalizeLook } from "@klase/shared";
+import { CHAT_RADIUS, REGULAR_CAP, SEAT_REACH, WEARABLES, classroomSeats, normalizeLook } from "@klase/shared";
 import { ClassroomState, Player } from "./schema.js";
 import { filterProfanity } from "./chatFilter.js";
 import { assertCanModerate, banName, ownerName, resolveIdentity } from "./roles.js";
@@ -23,11 +23,34 @@ export class ClassroomRoom extends Room<ClassroomState> {
 
     this.onMessage("move", (client, data: { x: number; z: number; rotY: number }) => {
       const p = this.state.players.get(client.sessionId);
-      if (!p) return;
+      if (!p || p.seatId) return;
       if (typeof data.x !== "number" || typeof data.z !== "number") return;
       p.x = Math.max(-9.2, Math.min(9.2, data.x));
       p.z = Math.max(-7.2, Math.min(7.2, data.z));
       p.rotY = Number(data.rotY) || 0;
+    });
+
+    const seats = classroomSeats();
+    this.onMessage("sit", (client, data: { seatId?: string }) => {
+      const p = this.state.players.get(client.sessionId);
+      if (!p) return;
+      const seat = seats.find((s) => s.id === String(data?.seatId ?? ""));
+      if (!seat) return;
+      const taken = [...this.state.players.values()].some(
+        (o) => o.sessionId !== p.sessionId && o.seatId === seat.id,
+      );
+      if (taken) return;
+      if (Math.hypot(p.x - seat.x, p.z - seat.z) > SEAT_REACH + 0.4) return;
+      p.seatId = seat.id;
+      p.x = seat.x;
+      p.z = seat.z;
+      p.rotY = seat.rotY;
+    });
+
+    this.onMessage("stand", (client) => {
+      const p = this.state.players.get(client.sessionId);
+      if (!p) return;
+      p.seatId = "";
     });
 
     this.onMessage("chat", (client, data: { text?: string }) => {
@@ -141,6 +164,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
     p.top = allowed(WEARABLES.top, ident.look.top);
     p.accessory = allowed(WEARABLES.accessory, ident.look.accessory);
     p.body = ident.look.body;
+    p.seatId = "";
     this.state.players.set(client.sessionId, p);
     this.syncMeta();
 

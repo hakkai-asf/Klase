@@ -73,4 +73,40 @@ export const CLASSROOM = {
   wallThickness: 0.35,
 };
 
+export const DESK_GRID = {
+  rows: 3,
+  cols: 4,
+  originX: -5.6,
+  originZ: -1.7,
+  spacingX: 3.7,
+  spacingZ: 3.05,
+  /** Combo is ~6° off axis; this squares it to the room. */
+  rotY: (-5.62 * Math.PI) / 180,
+  /** Chair seat relative to the centered, height-fitted school-desk. */
+  seatLocalX: 0,
+  seatLocalZ: 0.38,
+  /** Mixamo sit faces +Z; this turns the avatar toward the desk and board. */
+  sitRotY: Math.PI,
+};
+
+export const SEAT_REACH = 1.25;
+
+export type Seat = { id: string; x: number; z: number; rotY: number };
+
+export function classroomSeats(): Seat[] {
+  const seats: Seat[] = [];
+  const c = Math.cos(DESK_GRID.rotY);
+  const s = Math.sin(DESK_GRID.rotY);
+  for (let row = 0; row < DESK_GRID.rows; row++) {
+    for (let col = 0; col < DESK_GRID.cols; col++) {
+      const ox = DESK_GRID.originX + col * DESK_GRID.spacingX;
+      const oz = DESK_GRID.originZ + row * DESK_GRID.spacingZ;
+      const x = ox + DESK_GRID.seatLocalX * c + DESK_GRID.seatLocalZ * s;
+      const z = oz - DESK_GRID.seatLocalX * s + DESK_GRID.seatLocalZ * c;
+      seats.push({ id: `s${row}-${col}`, x, z, rotY: DESK_GRID.sitRotY });
+    }
+  }
+  return seats;
+}
+
 export type ChatKind = "chat" | "system" | "join-owner" | "join-admin";

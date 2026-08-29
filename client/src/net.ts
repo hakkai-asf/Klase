@@ -17,6 +17,7 @@ export type RemotePlayer = {
   body: string;
   serverMuted: boolean;
   userId?: string;
+  seatId: string;
 };
 
 export async function pickRoom(

@@ -1,14 +1,16 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { CLASSROOM } from "@klase/shared";
+import { CLASSROOM, DESK_GRID, classroomSeats, type Seat } from "@klase/shared";
 
+export type { Seat };
 export type AABB = { minX: number; maxX: number; minZ: number; maxZ: number };
 
 const schoolDeskUrl = new URL("../../../assets/furnitures/school-desk.glb", import.meta.url).href;
-const teacherDeskUrl = new URL("../../../assets/furnitures/teacher-desk.glb", import.meta.url).href;
+const teacherDeskUrl = new URL("../../../assets/furnitures/desk.glb", import.meta.url).href;
 const whiteboardUrl = new URL("../../../assets/furnitures/whiteboard.glb", import.meta.url).href;
 const windowsUrl = new URL("../../../assets/furnitures/windows.glb", import.meta.url).href;
 const bookshelfUrl = new URL("../../../assets/furnitures/bookshelf.glb", import.meta.url).href;
+const shelf2Url = new URL("../../../assets/furnitures/shelf2.glb", import.meta.url).href;
 const floorUrl = new URL("../../../assets/textures/floor-texture.jpg", import.meta.url).href;
 
 type Kit = {
@@ -17,6 +19,7 @@ type Kit = {
   whiteboard: THREE.Object3D;
   windows: THREE.Object3D;
   bookshelf: THREE.Object3D;
+  shelf2: THREE.Object3D;
   floorTex: THREE.Texture;
 };
 
@@ -26,12 +29,13 @@ export async function preloadClassroom() {
   if (kit) return;
   const gltf = new GLTFLoader();
   const tex = new THREE.TextureLoader();
-  const [school, teacher, board, win, shelf, floorTex] = await Promise.all([
+  const [school, teacher, board, win, shelf, shelf2, floorTex] = await Promise.all([
     gltf.loadAsync(schoolDeskUrl),
     gltf.loadAsync(teacherDeskUrl),
     gltf.loadAsync(whiteboardUrl),
     gltf.loadAsync(windowsUrl),
     gltf.loadAsync(bookshelfUrl),
+    gltf.loadAsync(shelf2Url),
     tex.loadAsync(floorUrl),
   ]);
   floorTex.colorSpace = THREE.SRGBColorSpace;
@@ -45,6 +49,7 @@ export async function preloadClassroom() {
     whiteboard: board.scene,
     windows: win.scene,
     bookshelf: shelf.scene,
+    shelf2: shelf2.scene,
     floorTex,
   };
 }
@@ -124,7 +129,8 @@ function makeVisible(root: THREE.Object3D) {
     const next = src.map((mat) => {
       const std = (mat as THREE.MeshStandardMaterial).clone();
       std.side = THREE.DoubleSide;
-      const glass = std.transparent || std.opacity < 0.95 || std.transmission > 0;
+      const glass =
+        std.transparent || std.opacity < 0.95 || ("transmission" in std && Number(std.transmission) > 0);
       if (glass) {
         std.transparent = true;
         std.opacity = 0.38;
@@ -159,8 +165,9 @@ function flushToLeftWall(obj: THREE.Object3D, innerX: number) {
   obj.updateMatrixWorld(true);
 }
 
-export function buildClassroom(scene: THREE.Scene): AABB[] {
+export function buildClassroom(scene: THREE.Scene): { colliders: AABB[]; seats: Seat[] } {
   const colliders: AABB[] = [];
+  const seats = classroomSeats();
   const { width: w, depth: d, wallHeight: h, wallThickness: t } = CLASSROOM;
 
   const floorMat = kit
@@ -210,8 +217,8 @@ export function buildClassroom(scene: THREE.Scene): AABB[] {
     makeVisible(board);
     flushToBackWall(board, innerZ);
 
-    // Desk mesh is modeled ~14.6° off the XZ axes; counter-rotate so it sits square.
-    const teacher = place(scene, kit.teacherDesk, 0, innerZ + 1.9, (-14.61 * Math.PI) / 180, { height: 0.92 });
+    // Cluster PCA is ~0°; the old 14.6° offset was from outlier verts in the huge-scale file.
+    const teacher = place(scene, kit.teacherDesk, 0, innerZ + 1.9, 0, { height: 0.92 });
     makeVisible(teacher);
     commitCollider(colliders, teacher);
 
@@ -219,6 +226,19 @@ export function buildClassroom(scene: THREE.Scene): AABB[] {
     makeVisible(shelf);
     flushToLeftWall(shelf, innerX);
     commitCollider(colliders, shelf);
+
+    for (const z of [0.55, 5.25]) {
+      const extra = place(scene, kit.shelf2, 0, z, Math.PI / 2, { height: 1.85, depth: 0.5 });
+      makeVisible(extra);
+      flushToLeftWall(extra, innerX);
+      commitCollider(colliders, extra);
+    }
+    for (const x of [-4.2, 4.2]) {
+      const extra = place(scene, kit.shelf2, x, 0, 0, { height: 1.85, depth: 0.5 });
+      makeVisible(extra);
+      flushToBackWall(extra, innerZ);
+      commitCollider(colliders, extra);
+    }
 
     for (const x of [-6.55, 6.55]) {
       const win = place(scene, kit.windows, x, 0, 0, { height: 1.95, y: 0.62 });
@@ -231,12 +251,15 @@ export function buildClassroom(scene: THREE.Scene): AABB[] {
       flushToLeftWall(win, innerX);
     }
 
-    for (let row = 0; row < 3; row++) {
-      for (let col = 0; col < 4; col++) {
-        const x = -5.6 + col * 3.7;
-        const z = -1.7 + row * 3.05;
-        const desk = place(scene, kit.schoolDesk, x, z, Math.PI, { height: 1.15, depth: 1.55 });
-        commitCollider(colliders, desk);
+    for (let row = 0; row < DESK_GRID.rows; row++) {
+      for (let col = 0; col < DESK_GRID.cols; col++) {
+        const x = DESK_GRID.originX + col * DESK_GRID.spacingX;
+        const z = DESK_GRID.originZ + row * DESK_GRID.spacingZ;
+        const desk = place(scene, kit.schoolDesk, x, z, DESK_GRID.rotY, { height: 1.15, depth: 1.55 });
+        const box = aabbOf(desk);
+        // Chair sits on +Z of the combo; collide with the desk half only so sit/stand isn't inside a solid.
+        const midZ = (box.minZ + box.maxZ) / 2;
+        colliders.push({ ...box, maxZ: midZ + 0.08 });
       }
     }
   } else {
@@ -262,23 +285,68 @@ export function buildClassroom(scene: THREE.Scene): AABB[] {
   sun.shadow.mapSize.set(1024, 1024);
   scene.add(sun);
 
-  return colliders;
+  return { colliders, seats };
 }
 
 const RADIUS = 0.42;
 
+function blocked(
+  px: number,
+  pz: number,
+  boxes: AABB[],
+  others: { x: number; z: number }[],
+  radius = RADIUS,
+) {
+  if (
+    boxes.some(
+      (b) =>
+        px + radius > b.minX &&
+        px - radius < b.maxX &&
+        pz + radius > b.minZ &&
+        pz - radius < b.maxZ,
+    )
+  )
+    return true;
+  return others.some((o) => Math.hypot(px - o.x, pz - o.z) < radius * 2.15);
+}
+
 export function resolveMove(x: number, z: number, dx: number, dz: number, boxes: AABB[]) {
   let nx = x + dx;
   let nz = z + dz;
-  const hit = (px: number, pz: number) =>
-    boxes.some(
-      (b) =>
-        px + RADIUS > b.minX &&
-        px - RADIUS < b.maxX &&
-        pz + RADIUS > b.minZ &&
-        pz - RADIUS < b.maxZ,
-    );
-  if (hit(nx, z)) nx = x;
-  if (hit(nx, nz)) nz = z;
+  if (blocked(nx, z, boxes, [])) nx = x;
+  if (blocked(nx, nz, boxes, [])) nz = z;
   return { x: nx, z: nz };
+}
+
+/** Step behind the chair (opposite facing), then try a ring, skipping colliders and other players. */
+export function findClearStand(
+  x: number,
+  z: number,
+  rotY: number,
+  boxes: AABB[],
+  others: { x: number; z: number }[],
+) {
+  const backX = -Math.sin(rotY);
+  const backZ = -Math.cos(rotY);
+  const rightX = Math.cos(rotY);
+  const rightZ = -Math.sin(rotY);
+  const spots: [number, number][] = [];
+  for (const dist of [0.95, 1.2, 1.5, 1.85]) {
+    spots.push([x + backX * dist, z + backZ * dist]);
+    spots.push([x + backX * dist + rightX * 0.75, z + backZ * dist + rightZ * 0.75]);
+    spots.push([x + backX * dist - rightX * 0.75, z + backZ * dist - rightZ * 0.75]);
+  }
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    spots.push([x + Math.cos(a) * 1.35, z + Math.sin(a) * 1.35]);
+  }
+  for (const [px, pz] of spots) {
+    const cx = Math.max(-9.2, Math.min(9.2, px));
+    const cz = Math.max(-7.2, Math.min(7.2, pz));
+    if (!blocked(cx, cz, boxes, others)) return { x: cx, z: cz };
+  }
+  return {
+    x: Math.max(-9.2, Math.min(9.2, x + backX * 1.6)),
+    z: Math.max(-7.2, Math.min(7.2, z + backZ * 1.6)),
+  };
 }

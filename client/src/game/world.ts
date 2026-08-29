@@ -17,9 +17,9 @@ export type WorldEvent =
 const ISO = new THREE.Vector3(12, 15, 12);
 const FRUSTUM = 3.85;
 const LOOK_SENS = 0.0022;
+const LOOK_SENS_TOUCH = 0.0038;
 const PITCH_MAX = 1.15;
 const EYE_STAND = 1.55;
-const EYE_SIT = 1.15;
 const EYE_FWD = 0.12;
 
 export class World {
@@ -55,6 +55,7 @@ export class World {
   private lastPtrY = 0;
   private fpWalls: THREE.Group;
   private mouseHint: HTMLElement;
+  private onFirstPersonChange?: (on: boolean) => void;
 
   get camera(): THREE.Camera {
     return this.firstPerson ? this.fpCam : this.isoCam;
@@ -65,7 +66,7 @@ export class World {
     localId: string,
     localName: string,
     look: Look,
-    hud?: { sitBtn?: HTMLButtonElement | null },
+    hud?: { sitBtn?: HTMLButtonElement | null; onFirstPersonChange?: (on: boolean) => void },
   ) {
     this.localId = localId;
     this.isoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 80);
@@ -81,6 +82,7 @@ export class World {
     this.fpWalls = built.fpWalls;
     this.sitBtn = hud?.sitBtn ?? null;
     this.touchUi = Boolean(this.sitBtn);
+    this.onFirstPersonChange = hud?.onFirstPersonChange;
     this.sitPrompt = document.createElement("div");
     this.sitPrompt.className = "sit-prompt";
     this.sitPrompt.textContent = this.touchUi ? "Sit" : "E";
@@ -88,7 +90,7 @@ export class World {
     canvas.parentElement?.append(this.sitPrompt);
     this.mouseHint = document.createElement("div");
     this.mouseHint.className = "fp-mouse-hint";
-    this.mouseHint.textContent = "V or Esc — toggle mouse";
+    this.mouseHint.textContent = "Esc — toggle mouse · V — classroom view";
     this.mouseHint.hidden = true;
     canvas.parentElement?.append(this.mouseHint);
     this.upsert(localId, localName, look, this.localX, this.localZ, this.localRot, "");
@@ -101,9 +103,15 @@ export class World {
       if (!e.repeat) this.justPressed.add(key);
       this.keys.add(key);
       if (key === "e" || key === " ") e.preventDefault();
-      if (key === "v" && this.firstPerson && !this.touchUi) {
+      if (this.touchUi || !this.firstPerson) return;
+      if (key === "v") {
         e.preventDefault();
-        this.togglePointerLock();
+        this.setFirstPerson(false);
+        return;
+      }
+      if (key === "escape" && document.pointerLockElement !== this.renderer.domElement) {
+        e.preventDefault();
+        void this.renderer.domElement.requestPointerLock();
       }
     });
     window.addEventListener("keyup", (e) => this.keys.delete(e.key.toLowerCase()));
@@ -141,16 +149,11 @@ export class World {
     } else if (!this.touchUi) {
       void canvas.requestPointerLock();
     }
-  }
-
-  private togglePointerLock() {
-    const canvas = this.renderer.domElement;
-    if (document.pointerLockElement === canvas) document.exitPointerLock();
-    else void canvas.requestPointerLock();
+    this.onFirstPersonChange?.(on);
   }
 
   private poseFp() {
-    const eyeY = this.localSeatId ? this.seatY(this.localSeatId) + EYE_SIT : EYE_STAND;
+    const eyeY = EYE_STAND;
     const fx = Math.sin(this.localRot) * EYE_FWD;
     const fz = Math.cos(this.localRot) * EYE_FWD;
     this.fpCam.position.set(this.localX + fx, eyeY, this.localZ + fz);
@@ -247,8 +250,9 @@ export class World {
 
   private applyLookDelta(dx: number, dy: number) {
     if (!dx && !dy) return;
-    this.localRot -= dx * LOOK_SENS;
-    this.pitch -= dy * LOOK_SENS;
+    const sens = this.touchUi ? LOOK_SENS_TOUCH : LOOK_SENS;
+    this.localRot -= dx * sens;
+    this.pitch -= dy * sens;
     this.pitch = Math.max(-PITCH_MAX, Math.min(PITCH_MAX, this.pitch));
     this.lookDirty = true;
   }
@@ -327,6 +331,17 @@ export class World {
       this.sitBtn.textContent = seated ? "Stand" : "Sit";
       return;
     }
+    if (seated) {
+      this.sitPrompt.hidden = false;
+      this.sitPrompt.classList.add("stand-hud");
+      this.sitPrompt.classList.toggle("above-fp-hint", this.firstPerson);
+      this.sitPrompt.textContent = "E or Space — stand up";
+      this.sitPrompt.style.left = "";
+      this.sitPrompt.style.top = "";
+      return;
+    }
+    this.sitPrompt.classList.remove("stand-hud", "above-fp-hint");
+    this.sitPrompt.textContent = "E";
     if (!canSit) {
       this.sitPrompt.hidden = true;
       return;

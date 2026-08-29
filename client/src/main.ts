@@ -140,7 +140,10 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
     if (r.status === "rejected") console.warn("Asset preload failed", r.reason);
   }
   if (left) return;
-  world = new World(ui.canvas, selfId, name, look, isTouchUi() ? { sitBtn: ui.sitBtn } : undefined);
+  world = new World(ui.canvas, selfId, name, look, {
+    sitBtn: isTouchUi() ? ui.sitBtn : null,
+    onFirstPersonChange: (on) => setViewButton(ui.viewBtn, on, isTouchUi()),
+  });
   voice = new VoiceMesh(room, selfId);
   voice.localMuted = muted;
   const scene = world;

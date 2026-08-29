@@ -418,6 +418,22 @@ button, input, select { font-family: inherit; }
 
 .sit-prompt[hidden] { display: none; }
 
+.sit-prompt.stand-hud {
+  left: 50%;
+  top: auto;
+  bottom: 1.15rem;
+  transform: translateX(-50%);
+  min-width: 0;
+  height: auto;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.sit-prompt.stand-hud.above-fp-hint {
+  bottom: 3.35rem;
+}
+
 .joy-wrap {
   display: none;
 }

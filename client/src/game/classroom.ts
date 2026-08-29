@@ -102,16 +102,61 @@ function place(
   z: number,
   rotY: number,
   opts: { height?: number; width?: number; depth?: number; y?: number },
-  colliders: AABB[],
-  collide = true,
 ) {
   const prop = prepareProp(src, opts);
   prop.position.set(x, opts.y ?? 0, z);
   prop.rotation.y = rotY;
   scene.add(prop);
   prop.updateMatrixWorld(true);
-  if (collide) colliders.push(aabbOf(prop));
   return prop;
+}
+
+function commitCollider(colliders: AABB[], obj: THREE.Object3D) {
+  obj.updateMatrixWorld(true);
+  colliders.push(aabbOf(obj));
+}
+
+function makeVisible(root: THREE.Object3D) {
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const src = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    const next = src.map((mat) => {
+      const std = (mat as THREE.MeshStandardMaterial).clone();
+      std.side = THREE.DoubleSide;
+      const glass = std.transparent || std.opacity < 0.95 || std.transmission > 0;
+      if (glass) {
+        std.transparent = true;
+        std.opacity = 0.38;
+        std.color.set(0x8ec4e8);
+        std.emissive.set(0x5aa0d0);
+        std.emissiveIntensity = 0.22;
+        std.depthWrite = false;
+      } else {
+        std.transparent = false;
+        std.opacity = 1;
+        std.depthWrite = true;
+      }
+      return std;
+    });
+    mesh.material = Array.isArray(mesh.material) ? next : next[0]!;
+  });
+}
+
+/** Push an object so its back face sits on the inner -Z wall. */
+function flushToBackWall(obj: THREE.Object3D, innerZ: number) {
+  obj.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(obj);
+  obj.position.z += innerZ - box.min.z + 0.03;
+  obj.updateMatrixWorld(true);
+}
+
+/** Push an object so its back face sits on the inner -X wall. */
+function flushToLeftWall(obj: THREE.Object3D, innerX: number) {
+  obj.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(obj);
+  obj.position.x += innerX - box.min.x + 0.03;
+  obj.updateMatrixWorld(true);
 }
 
 export function buildClassroom(scene: THREE.Scene): AABB[] {
@@ -156,23 +201,42 @@ export function buildClassroom(scene: THREE.Scene): AABB[] {
     maxZ: d / 2 + 2,
   });
 
-  const back = -d / 2 + 0.22;
-  const left = -w / 2 + 0.22;
+  const innerZ = -d / 2 + t;
+  const innerX = -w / 2 + t;
 
   if (kit) {
-    place(scene, kit.whiteboard, 0, back, Math.PI / 2, { height: 1.9, width: 4.2, y: 0.85 }, colliders, false);
-    place(scene, kit.teacherDesk, 0, -5.55, Math.PI, { height: 0.95, width: 2.4 }, colliders);
-    place(scene, kit.bookshelf, left + 0.55, -5.4, Math.PI / 2, { height: 2.55, depth: 0.7 }, colliders);
-    place(scene, kit.windows, -7.1, back, 0, { height: 1.85, y: 0.55 }, colliders, false);
-    place(scene, kit.windows, 7.1, back, 0, { height: 1.85, y: 0.55 }, colliders, false);
-    place(scene, kit.windows, left, -1.4, Math.PI / 2, { height: 1.85, y: 0.55 }, colliders, false);
-    place(scene, kit.windows, left, 2.6, Math.PI / 2, { height: 1.85, y: 0.55 }, colliders, false);
+    // Whiteboard GLB faces −X; yaw −90° puts the writing surface into the room.
+    const board = place(scene, kit.whiteboard, 0, 0, -Math.PI / 2, { height: 2.05, y: 0.92 });
+    makeVisible(board);
+    flushToBackWall(board, innerZ);
+
+    // Desk mesh is modeled ~14.6° off the XZ axes; counter-rotate so it sits square.
+    const teacher = place(scene, kit.teacherDesk, 0, innerZ + 1.9, (-14.61 * Math.PI) / 180, { height: 0.92 });
+    makeVisible(teacher);
+    commitCollider(colliders, teacher);
+
+    const shelf = place(scene, kit.bookshelf, 0, -6.2, Math.PI / 2, { height: 2.45, depth: 0.58 });
+    makeVisible(shelf);
+    flushToLeftWall(shelf, innerX);
+    commitCollider(colliders, shelf);
+
+    for (const x of [-6.55, 6.55]) {
+      const win = place(scene, kit.windows, x, 0, 0, { height: 1.95, y: 0.62 });
+      makeVisible(win);
+      flushToBackWall(win, innerZ);
+    }
+    for (const z of [-1.15, 2.85]) {
+      const win = place(scene, kit.windows, 0, z, Math.PI / 2, { height: 1.95, y: 0.62 });
+      makeVisible(win);
+      flushToLeftWall(win, innerX);
+    }
 
     for (let row = 0; row < 3; row++) {
       for (let col = 0; col < 4; col++) {
         const x = -5.6 + col * 3.7;
-        const z = -2.35 + row * 3.05;
-        place(scene, kit.schoolDesk, x, z, Math.PI, { height: 1.15, depth: 1.55 }, colliders);
+        const z = -1.7 + row * 3.05;
+        const desk = place(scene, kit.schoolDesk, x, z, Math.PI, { height: 1.15, depth: 1.55 });
+        commitCollider(colliders, desk);
       }
     }
   } else {

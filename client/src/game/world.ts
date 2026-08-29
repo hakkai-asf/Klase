@@ -16,11 +16,17 @@ export type WorldEvent =
 
 const ISO = new THREE.Vector3(12, 15, 12);
 const FRUSTUM = 3.85;
+const LOOK_SENS = 0.0022;
+const PITCH_MAX = 1.15;
+const EYE_STAND = 1.55;
+const EYE_SIT = 1.15;
 
 export class World {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
-  readonly camera: THREE.OrthographicCamera;
+  readonly isoCam: THREE.OrthographicCamera;
+  readonly fpCam: THREE.PerspectiveCamera;
+  firstPerson = false;
   readonly localId: string;
   localX = 0;
   localZ = 5.5;
@@ -41,6 +47,16 @@ export class World {
   private lookAt = new THREE.Vector3(0, 0.75, 0);
   private camForward = new THREE.Vector3();
   private camRight = new THREE.Vector3();
+  private pitch = 0;
+  private lookDirty = false;
+  private dragging = false;
+  private lastPtrX = 0;
+  private lastPtrY = 0;
+  private fpWalls: THREE.Group;
+
+  get camera(): THREE.Camera {
+    return this.firstPerson ? this.fpCam : this.isoCam;
+  }
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -50,7 +66,9 @@ export class World {
     hud?: { sitBtn?: HTMLButtonElement | null },
   ) {
     this.localId = localId;
-    this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 80);
+    this.isoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 80);
+    this.fpCam = new THREE.PerspectiveCamera(70, 1, 0.08, 80);
+    this.fpCam.rotation.order = "YXZ";
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
@@ -58,6 +76,16 @@ export class World {
     const built = buildClassroom(this.scene);
     this.colliders = built.colliders;
     this.seats = built.seats;
+    this.fpWalls = built.fpWalls;
+    this.sitBtn = hud?.sitBtn ?? null;
+    this.touchUi = Boolean(this.sitBtn);
+    this.sitPrompt = document.createElement("div");
+    this.sitPrompt.className = "sit-prompt";
+    this.sitPrompt.textContent = this.touchUi ? "Sit" : "E";
+    this.sitPrompt.hidden = true;
+    canvas.parentElement?.append(this.sitPrompt);
+    this.upsert(localId, localName, look, this.localX, this.localZ, this.localRot, "");
+    this.bindLook(canvas);
     this.sitBtn = hud?.sitBtn ?? null;
     this.touchUi = Boolean(this.sitBtn);
     this.sitPrompt = document.createElement("div");
@@ -85,12 +113,37 @@ export class World {
     const w = wrap.clientWidth;
     const h = wrap.clientHeight;
     const aspect = w / Math.max(h, 1);
-    this.camera.left = -FRUSTUM * aspect;
-    this.camera.right = FRUSTUM * aspect;
-    this.camera.top = FRUSTUM;
-    this.camera.bottom = -FRUSTUM;
-    this.camera.updateProjectionMatrix();
+    this.isoCam.left = -FRUSTUM * aspect;
+    this.isoCam.right = FRUSTUM * aspect;
+    this.isoCam.top = FRUSTUM;
+    this.isoCam.bottom = -FRUSTUM;
+    this.isoCam.updateProjectionMatrix();
+    this.fpCam.aspect = aspect;
+    this.fpCam.updateProjectionMatrix();
     this.renderer.setSize(w, h, false);
+  }
+
+  setFirstPerson(on: boolean) {
+    this.firstPerson = on;
+    this.fpWalls.visible = on;
+    this.pitch = 0;
+    const local = this.avatars.get(this.localId);
+    if (local) local.root.visible = !on;
+    this.poseFp();
+    const canvas = this.renderer.domElement;
+    if (!on) {
+      this.dragging = false;
+      if (document.pointerLockElement === canvas) document.exitPointerLock();
+    } else if (!this.touchUi) {
+      void canvas.requestPointerLock();
+    }
+  }
+
+  private poseFp() {
+    const eyeY = this.localSeatId ? this.seatY(this.localSeatId) + EYE_SIT : EYE_STAND;
+    this.fpCam.position.set(this.localX, eyeY, this.localZ);
+    this.fpCam.rotation.set(this.pitch, this.localRot + Math.PI, 0);
+    this.fpCam.updateMatrixWorld();
   }
 
   upsert(id: string, name: string, look: Look, x: number, z: number, rotY: number, seatId = "") {
@@ -109,6 +162,7 @@ export class World {
       };
       this.scene.add(a.root);
       this.avatars.set(id, a);
+      if (id === this.localId) a.root.visible = !this.firstPerson;
     } else if (
       a.look.hat !== look.hat ||
       a.look.top !== look.top ||
@@ -146,6 +200,45 @@ export class World {
   setStick(x: number, y: number) {
     this.stickX = x;
     this.stickY = y;
+  }
+
+  private bindLook(canvas: HTMLCanvasElement) {
+    canvas.addEventListener("click", () => {
+      if (!this.firstPerson || this.touchUi) return;
+      if (document.pointerLockElement !== canvas) void canvas.requestPointerLock();
+    });
+    document.addEventListener("mousemove", (e) => {
+      if (!this.firstPerson) return;
+      if (document.pointerLockElement !== canvas) return;
+      this.applyLookDelta(e.movementX, e.movementY);
+    });
+    canvas.addEventListener("pointerdown", (e) => {
+      if (!this.firstPerson || !this.touchUi) return;
+      if (e.pointerType === "mouse") return;
+      this.dragging = true;
+      this.lastPtrX = e.clientX;
+      this.lastPtrY = e.clientY;
+      canvas.setPointerCapture(e.pointerId);
+    });
+    canvas.addEventListener("pointermove", (e) => {
+      if (!this.firstPerson || !this.dragging) return;
+      this.applyLookDelta(e.clientX - this.lastPtrX, e.clientY - this.lastPtrY);
+      this.lastPtrX = e.clientX;
+      this.lastPtrY = e.clientY;
+    });
+    const endDrag = () => {
+      this.dragging = false;
+    };
+    canvas.addEventListener("pointerup", endDrag);
+    canvas.addEventListener("pointercancel", endDrag);
+  }
+
+  private applyLookDelta(dx: number, dy: number) {
+    if (!dx && !dy) return;
+    this.localRot -= dx * LOOK_SENS;
+    this.pitch -= dy * LOOK_SENS;
+    this.pitch = Math.max(-PITCH_MAX, Math.min(PITCH_MAX, this.pitch));
+    this.lookDirty = true;
   }
 
   interact() {
@@ -238,6 +331,7 @@ export class World {
   }
 
   step(dt: number): WorldEvent | null {
+    if (this.firstPerson) this.poseFp();
     this.camera.getWorldDirection(this.camForward);
     this.camForward.y = 0;
     if (this.camForward.lengthSq() > 0.0001) this.camForward.normalize();
@@ -298,13 +392,14 @@ export class World {
         const n = resolveMove(this.localX, this.localZ, dx, dz, this.colliders, others);
         this.localX = n.x;
         this.localZ = n.z;
-        this.localRot = Math.atan2(dx, dz);
+        if (!this.firstPerson) this.localRot = Math.atan2(dx, dz);
         moved = true;
       }
     }
 
     const local = this.avatars.get(this.localId);
     if (local) {
+      local.root.visible = !this.firstPerson;
       local.root.position.set(this.localX, this.seatY(this.localSeatId), this.localZ);
       local.root.rotation.y = this.localRot;
       poseWalk(local, dt, moved, Boolean(this.localSeatId));
@@ -338,19 +433,27 @@ export class World {
       layoutHeadSprites(a);
     }
 
-    const player = new THREE.Vector3(this.localX, 0.75, this.localZ);
-    const desired = player.clone();
-    this.lookAt.lerp(desired, Math.min(1, 6 * dt));
-    this.camera.position.copy(this.lookAt).add(ISO);
-    this.camera.lookAt(this.lookAt);
-    this.camera.updateMatrixWorld();
+    const cam = this.camera;
+    if (this.firstPerson) {
+      this.poseFp();
+    } else {
+      const player = new THREE.Vector3(this.localX, 0.75, this.localZ);
+      this.lookAt.lerp(player, Math.min(1, 6 * dt));
+      this.isoCam.position.copy(this.lookAt).add(ISO);
+      this.isoCam.lookAt(this.lookAt);
+      this.isoCam.updateMatrixWorld();
+    }
     this.updateSitPrompt(this.localSeatId ? null : this.nearestSeat());
-    this.renderer.render(this.scene, this.camera);
+    this.renderer.render(this.scene, cam);
 
     if (event) return event;
     this.moveAcc += dt;
     if (moved && this.moveAcc > 0.05) {
       this.moveAcc = 0;
+      return { type: "move", x: this.localX, z: this.localZ, rotY: this.localRot };
+    }
+    if (this.lookDirty) {
+      this.lookDirty = false;
       return { type: "move", x: this.localX, z: this.localZ, rotY: this.localRot };
     }
     return null;

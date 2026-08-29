@@ -4,7 +4,7 @@ import { World } from "./game/world";
 import { preloadAvatars } from "./game/avatar";
 import { preloadClassroom } from "./game/classroom";
 import { joinClassroom, pickRoom, type RemotePlayer } from "./net";
-import { addChat, disposeLandingPreviews, renderGameShell, renderLanding, setMicButton, setMuteAllButton, showCustomize, showPlayers, type ChatLine } from "./ui";
+import { addChat, disposeLandingPreviews, renderGameShell, renderLanding, setMicButton, setMuteAllButton, setViewButton, showCustomize, showPlayers, type ChatLine } from "./ui";
 import { bindJoystick, isTouchUi } from "./joystick";
 import { currentSession, loadSavedLook, signIn, signUp } from "./auth";
 import { VoiceMesh } from "./voice";
@@ -276,6 +276,10 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
     }
   });
   ui.muteAllBtn.addEventListener("click", () => setMuteAll(!mesh.muteAll));
+  ui.viewBtn.addEventListener("click", () => {
+    scene.setFirstPerson(!scene.firstPerson);
+    setViewButton(ui.viewBtn, scene.firstPerson);
+  });
 
   ui.lookBtn.addEventListener("click", () => {
     panelOpen = "look";

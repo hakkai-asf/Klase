@@ -165,7 +165,7 @@ function flushToLeftWall(obj: THREE.Object3D, innerX: number) {
   obj.updateMatrixWorld(true);
 }
 
-export function buildClassroom(scene: THREE.Scene): { colliders: AABB[]; seats: Seat[] } {
+export function buildClassroom(scene: THREE.Scene): { colliders: AABB[]; seats: Seat[]; fpWalls: THREE.Group } {
   const colliders: AABB[] = [];
   const seats = classroomSeats();
   const { width: w, depth: d, wallHeight: h, wallThickness: t } = CLASSROOM;
@@ -207,6 +207,23 @@ export function buildClassroom(scene: THREE.Scene): { colliders: AABB[]; seats: 
     minZ: d / 2 - t,
     maxZ: d / 2 + 2,
   });
+
+  const fpWalls = new THREE.Group();
+  fpWalls.visible = false;
+  const addFpWall = (x: number, z: number, sx: number, sz: number) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(sx, h, sz), wallMat);
+    mesh.position.set(x, h / 2, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    fpWalls.add(mesh);
+  };
+  addFpWall(w / 2 - t / 2, 0, t, d);
+  addFpWall(0, d / 2 - t / 2, w, t);
+  const ceiling = new THREE.Mesh(new THREE.BoxGeometry(w, t, d), wallMat);
+  ceiling.position.set(0, h, 0);
+  ceiling.receiveShadow = true;
+  fpWalls.add(ceiling);
+  scene.add(fpWalls);
 
   const innerZ = -d / 2 + t;
   const innerX = -w / 2 + t;
@@ -285,7 +302,7 @@ export function buildClassroom(scene: THREE.Scene): { colliders: AABB[]; seats: 
   sun.shadow.mapSize.set(1024, 1024);
   scene.add(sun);
 
-  return { colliders, seats };
+  return { colliders, seats, fpWalls };
 }
 
 function blocked(

@@ -62,6 +62,13 @@ export function setMuteAllButton(btn: HTMLElement, muted: boolean) {
   btn.innerHTML = muted ? SPEAKER_OFF : SPEAKER_ON;
 }
 
+export function setViewButton(btn: HTMLElement, firstPerson: boolean) {
+  btn.textContent = firstPerson ? "Classroom" : "1st person";
+  btn.title = firstPerson ? "Classroom view" : "First person";
+  btn.setAttribute("aria-pressed", firstPerson ? "true" : "false");
+  btn.classList.toggle("primary", firstPerson);
+}
+
 export function renderLanding(
   root: HTMLElement,
   onJoin: (payload: JoinPayload) => void,
@@ -189,10 +196,13 @@ export function renderGameShell(root: HTMLElement) {
   const muteAllBtn = el("button", "clay-btn icon-btn");
   muteAllBtn.type = "button";
   setMuteAllButton(muteAllBtn, false);
+  const viewBtn = el("button", "clay-btn", "1st person");
+  viewBtn.type = "button";
+  viewBtn.title = "First person";
   const playersBtn = el("button", "clay-btn", "Players");
   const lookBtn = el("button", "clay-btn", "Look");
   const chatBtn = el("button", "clay-btn", "Chat");
-  actions.append(micBtn, muteAllBtn, chatBtn, playersBtn, lookBtn);
+  actions.append(micBtn, muteAllBtn, chatBtn, playersBtn, lookBtn, viewBtn);
   top.append(roomChip, actions);
 
   const chat = el("div", "chat-dock game-chat empty");
@@ -226,6 +236,7 @@ export function renderGameShell(root: HTMLElement) {
     chat,
     playersBtn,
     lookBtn,
+    viewBtn,
     log,
     input,
     send,

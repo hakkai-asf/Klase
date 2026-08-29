@@ -28,15 +28,21 @@ export async function pickRoom(
   name: string,
   accessToken?: string,
 ): Promise<{ roomKey: string } | { error: string }> {
+  if (import.meta.env.PROD && !API) return { error: "SERVER" };
   try {
     const res = await fetch(`${API}/api/find-room`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, accessToken }),
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) return { error: data.error ?? "ROOM_FULL" };
-    if (!data.roomKey) return { error: "SERVER" };
+    const data = (await res.json().catch(() => null)) as { error?: string; roomKey?: string } | null;
+    if (!res.ok) {
+      const code = data?.error;
+      if (res.status === 409 || code === "ROOM_FULL") return { error: "ROOM_FULL" };
+      if (code === "BANNED" || code === "AUTH") return { error: code };
+      return { error: "SERVER" };
+    }
+    if (!data?.roomKey) return { error: "SERVER" };
     return { roomKey: data.roomKey };
   } catch {
     return { error: "SERVER" };

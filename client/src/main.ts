@@ -55,7 +55,9 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
           : picked.error === "AUTH"
             ? "Sign-in expired. Try again."
             : picked.error === "SERVER"
-              ? "Could not reach the Klase server. Keep npm run dev running, then try again."
+              ? import.meta.env.PROD
+                ? "Game server is not configured. Host Colyseus (Railway, Render, or Fly), set VITE_COLYSEUS_URL on Vercel, then redeploy."
+                : "Could not reach the Klase server. Keep npm run dev running, then try again."
             : "Could not join right now. Try again.";
     startLanding(err);
     return;
@@ -68,7 +70,11 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
     const msg = String(e);
     if (msg.includes("ROOM_FULL")) startLanding("All classrooms are full. Try again in a bit.");
     else if (msg.includes("BANNED")) startLanding("This name or account is banned.");
-    else startLanding("Could not join. Is the Klase server running?");
+    else startLanding(
+      import.meta.env.PROD
+        ? "Could not join the game server. Check VITE_COLYSEUS_URL (wss://…) and that the Colyseus host is running."
+        : "Could not join. Is the Klase server running?",
+    );
     return;
   }
 

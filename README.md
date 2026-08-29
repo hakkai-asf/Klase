@@ -30,13 +30,14 @@ Copy `.env.example` to `.env` (repo root or `server/`) when you want Supabase ac
 
 ## Deploy (Vercel + a game server)
 
-The **web client** can go on Vercel. The **Colyseus game server cannot** — it needs a always-on WebSocket process (Railway, Render, Fly.io, or a VPS).
+The **web client** can go on Vercel. The **Colyseus game server cannot** — it needs an always-on WebSocket process (Railway, Render, Fly.io, or a VPS). Without that, guest join on Vercel fails (the site is only static files).
 
-1. Host the server (`npm run dev -w server` in production: `npm run start -w server` after a server start script, or `node` via the server package). Set `PORT` from the host.
-2. In the Vercel project, set:
-   - `VITE_COLYSEUS_URL` = `wss://your-server.example.com`
-   - Root directory = repo root (uses `vercel.json`)
-3. Deploy. The client calls `/api/find-room` on that same server origin (ws → http/https).
+1. Host the server: `npm run start -w server`. The host must set `PORT`.
+2. In the Vercel project → Environment Variables (Production):
+   - `VITE_COLYSEUS_URL` = `wss://your-server.example.com` (**wss**, not `ws`)
+   - Optional: `VITE_API_URL` = `https://your-server.example.com` (otherwise derived from the ws URL: `wss` → `https`)
+3. **Redeploy** the client after adding those variables. Vite bakes them in at build time.
+4. Root directory = repo root (uses `vercel.json`). Output directory = `dist`.
 
 Local play is unchanged: `npm run dev`.
 

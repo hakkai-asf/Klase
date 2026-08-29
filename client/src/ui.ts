@@ -49,6 +49,19 @@ export function setMicButton(btn: HTMLElement, on: boolean, error = "") {
   btn.innerHTML = on ? MIC_ON : MIC_OFF;
 }
 
+const SPEAKER_ON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M5 9v6h4l5 5V4L9 9H5zm11.5 3c0-1.77-1-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.24 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>`;
+const SPEAKER_OFF = `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M5 9v6h4l5 5V4L9 9H5zm11.5 3c0-1.77-1-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.24 2.5-4.02z"/><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M4 4l16 16"/></svg>`;
+
+export function setMuteAllButton(btn: HTMLElement, muted: boolean) {
+  btn.classList.toggle("primary", muted);
+  btn.classList.toggle("warn", muted);
+  btn.setAttribute("aria-pressed", muted ? "true" : "false");
+  const label = muted ? "Unmute all" : "Mute all";
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+  btn.innerHTML = muted ? SPEAKER_OFF : SPEAKER_ON;
+}
+
 export function renderLanding(
   root: HTMLElement,
   onJoin: (payload: JoinPayload) => void,
@@ -173,10 +186,13 @@ export function renderGameShell(root: HTMLElement) {
   const micBtn = el("button", "clay-btn mic-btn");
   micBtn.type = "button";
   setMicButton(micBtn, false);
+  const muteAllBtn = el("button", "clay-btn icon-btn");
+  muteAllBtn.type = "button";
+  setMuteAllButton(muteAllBtn, false);
   const playersBtn = el("button", "clay-btn", "Players");
   const lookBtn = el("button", "clay-btn", "Look");
   const chatBtn = el("button", "clay-btn", "Chat");
-  actions.append(micBtn, chatBtn, playersBtn, lookBtn);
+  actions.append(micBtn, muteAllBtn, chatBtn, playersBtn, lookBtn);
   top.append(roomChip, actions);
 
   const chat = el("div", "chat-dock game-chat empty");
@@ -205,6 +221,7 @@ export function renderGameShell(root: HTMLElement) {
     canvas,
     roomChip,
     micBtn,
+    muteAllBtn,
     chatBtn,
     chat,
     playersBtn,
@@ -292,6 +309,8 @@ export function showPlayers(
   onMuteLocal: (id: string, mute: boolean) => void,
   onModerate: (action: string, targetId: string) => void,
   onClose: () => void,
+  muteAll = false,
+  onMuteAll: (on: boolean) => void = () => {},
 ) {
   layer.classList.remove("hidden");
   layer.innerHTML = "";
@@ -303,6 +322,15 @@ export function showPlayers(
     onClose();
   });
   panel.append(head);
+  const allBtn = el("button", muteAll ? "clay-btn warn" : "clay-btn", muteAll ? "Unmute all" : "Mute all");
+  allBtn.addEventListener("click", () => {
+    onMuteAll(!muteAll);
+    showPlayers(layer, players, selfId, role, muted, onMuteLocal, onModerate, onClose, !muteAll, onMuteAll);
+  });
+  panel.append(allBtn);
+
+  const refresh = () =>
+    showPlayers(layer, players, selfId, role, muted, onMuteLocal, onModerate, onClose, muteAll, onMuteAll);
 
   for (const p of players) {
     const row = el("div", "player-row");
@@ -318,7 +346,7 @@ export function showPlayers(
       const lm = el("button", "clay-btn", localMuted ? "Unmute local" : "Mute local");
       lm.addEventListener("click", () => {
         onMuteLocal(p.sessionId, !localMuted);
-        showPlayers(layer, players, selfId, role, muted, onMuteLocal, onModerate, onClose);
+        refresh();
       });
       mods.append(lm);
       if (role === "owner" || role === "admin") {

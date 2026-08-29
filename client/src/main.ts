@@ -4,7 +4,7 @@ import { World } from "./game/world";
 import { preloadAvatars } from "./game/avatar";
 import { preloadClassroom } from "./game/classroom";
 import { joinClassroom, pickRoom, type RemotePlayer } from "./net";
-import { addChat, disposeLandingPreviews, renderGameShell, renderLanding, setMicButton, showCustomize, showPlayers, type ChatLine } from "./ui";
+import { addChat, disposeLandingPreviews, renderGameShell, renderLanding, setMicButton, setMuteAllButton, showCustomize, showPlayers, type ChatLine } from "./ui";
 import { bindJoystick, isTouchUi } from "./joystick";
 import { currentSession, loadSavedLook, signIn, signUp } from "./auth";
 import { VoiceMesh } from "./voice";
@@ -145,6 +145,10 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
   voice.localMuted = muted;
   const scene = world;
   const mesh = voice;
+  const setMuteAll = (on: boolean) => {
+    mesh.muteAll = on;
+    setMuteAllButton(ui.muteAllBtn, on);
+  };
   if (isTouchUi()) {
     bindJoystick(ui.joyBase, ui.joyKnob, (x, y) => scene.setStick(x, y));
     ui.sitBtn.addEventListener("pointerdown", (e) => {
@@ -215,6 +219,8 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
         () => {
           panelOpen = null;
         },
+        mesh.muteAll,
+        setMuteAll,
       );
     }
   };
@@ -269,6 +275,7 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
       setMicButton(ui.micBtn, false, "Microphone permission was denied");
     }
   });
+  ui.muteAllBtn.addEventListener("click", () => setMuteAll(!mesh.muteAll));
 
   ui.lookBtn.addEventListener("click", () => {
     panelOpen = "look";
@@ -304,6 +311,8 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
       () => {
         panelOpen = null;
       },
+      mesh.muteAll,
+      setMuteAll,
     );
   });
 

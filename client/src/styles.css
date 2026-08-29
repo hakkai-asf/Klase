@@ -226,14 +226,16 @@ button, input, select { font-family: inherit; }
 
 .hud-actions { display: flex; gap: 0.45rem; pointer-events: auto; }
 .hud-actions .clay-btn { padding: 0.45rem 0.8rem; font-size: 0.82rem; border-radius: var(--klase-radius-hud); }
-.hud-actions .clay-btn.mic-btn {
+.hud-actions .clay-btn.mic-btn,
+.hud-actions .clay-btn.icon-btn {
   width: 2.45rem;
   height: 2.45rem;
   padding: 0.4rem;
   display: grid;
   place-items: center;
 }
-.hud-actions .clay-btn.mic-btn svg {
+.hud-actions .clay-btn.mic-btn svg,
+.hud-actions .clay-btn.icon-btn svg {
   width: 1.2rem;
   height: 1.2rem;
   display: block;

@@ -26,6 +26,7 @@ export class VoiceMesh {
   private lastSentAt = 0;
   localLevel = 0;
   micOn = false;
+  muteAll = false;
   localMuted = new Set<string>();
   serverMutedIds = new Set<string>();
 
@@ -76,6 +77,12 @@ export class VoiceMesh {
     this.pushLevel(this.localLevel, false);
     const me = positions.get(this.selfId);
     if (!me) return;
+    if (this.muteAll) {
+      for (const peer of this.peers.values()) {
+        peer.audio.muted = true;
+        peer.audio.volume = 0;
+      }
+    }
     const nearby = new Set<string>();
     for (const [id, pos] of positions) {
       if (id === this.selfId) continue;
@@ -86,7 +93,7 @@ export class VoiceMesh {
       void this.ensure(id);
       const peer = this.peers.get(id);
       if (!peer) continue;
-      const silenced = this.localMuted.has(id) || this.serverMutedIds.has(id);
+      const silenced = this.muteAll || this.localMuted.has(id) || this.serverMutedIds.has(id);
       peer.audio.volume = silenced ? 0 : Math.max(0, 1 - d / CHAT_RADIUS);
       peer.audio.muted = silenced;
     }

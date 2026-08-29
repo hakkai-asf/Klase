@@ -305,7 +305,7 @@ function blocked(
     )
   )
     return true;
-  return others.some((o) => Math.hypot(px - o.x, pz - o.z) < radius * 2.15);
+  return others.some((o) => Math.hypot(px - o.x, pz - o.z) < radius * 2);
 }
 
 export function resolveMove(

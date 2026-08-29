@@ -42,7 +42,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
       let z = Math.max(-7.2, Math.min(7.2, data.z));
       const others = [...this.state.players.values()].filter((o) => o.sessionId !== p.sessionId);
       const hits = (px: number, pz: number) =>
-        others.some((o) => Math.hypot(px - o.x, pz - o.z) < PLAYER_RADIUS * 2.15);
+        others.some((o) => Math.hypot(px - o.x, pz - o.z) < PLAYER_RADIUS * 2);
       if (hits(x, p.z)) x = p.x;
       if (hits(x, z)) z = p.z;
       p.x = x;

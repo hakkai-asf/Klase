@@ -87,7 +87,8 @@ export const DESK_GRID = {
    * desk space and is then rotated by rotY in classroomSeats().
    */
   seatLocalX: 0.08,
-  seatLocalZ: -0.38,
+  /** Chair center is ~+0.33 after yaw π; a bit toward the desk so they sit on the seat, not the backrest. */
+  seatLocalZ: -0.28,
   /** Mixamo Sitting Idle faces +Z; π turns the avatar toward the desk/board. */
   sitRotY: Math.PI,
 };

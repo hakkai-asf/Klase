@@ -58,6 +58,238 @@ function stripRootXZ(clip: THREE.AnimationClip) {
   return next;
 }
 
+/** Mixamo animation-only GLBs omit node.children; this is the standard Mixamo tree. */
+const MIXAMO_PARENT: Record<string, string> = {
+  Spine: "Hips",
+  Spine1: "Spine",
+  Spine2: "Spine1",
+  Neck: "Spine2",
+  Head: "Neck",
+  LeftShoulder: "Spine2",
+  LeftArm: "LeftShoulder",
+  LeftForeArm: "LeftArm",
+  LeftHand: "LeftForeArm",
+  RightShoulder: "Spine2",
+  RightArm: "RightShoulder",
+  RightForeArm: "RightArm",
+  RightHand: "RightForeArm",
+  LeftUpLeg: "Hips",
+  LeftLeg: "LeftUpLeg",
+  LeftFoot: "LeftLeg",
+  LeftToeBase: "LeftFoot",
+  RightUpLeg: "Hips",
+  RightLeg: "RightUpLeg",
+  RightFoot: "RightLeg",
+  RightToeBase: "RightFoot",
+  LeftHandThumb1: "LeftHand",
+  LeftHandThumb2: "LeftHandThumb1",
+  LeftHandThumb3: "LeftHandThumb2",
+  LeftHandIndex1: "LeftHand",
+  LeftHandIndex2: "LeftHandIndex1",
+  LeftHandIndex3: "LeftHandIndex2",
+  LeftHandMiddle1: "LeftHand",
+  LeftHandMiddle2: "LeftHandMiddle1",
+  LeftHandMiddle3: "LeftHandMiddle2",
+  LeftHandRing1: "LeftHand",
+  LeftHandRing2: "LeftHandRing1",
+  LeftHandRing3: "LeftHandRing2",
+  LeftHandPinky1: "LeftHand",
+  LeftHandPinky2: "LeftHandPinky1",
+  LeftHandPinky3: "LeftHandPinky2",
+  RightHandThumb1: "RightHand",
+  RightHandThumb2: "RightHandThumb1",
+  RightHandThumb3: "RightHandThumb2",
+  RightHandIndex1: "RightHand",
+  RightHandIndex2: "RightHandIndex1",
+  RightHandIndex3: "RightHandIndex2",
+  RightHandMiddle1: "RightHand",
+  RightHandMiddle2: "RightHandMiddle1",
+  RightHandMiddle3: "RightHandMiddle2",
+  RightHandRing1: "RightHand",
+  RightHandRing2: "RightHandRing1",
+  RightHandRing3: "RightHandRing2",
+  RightHandPinky1: "RightHand",
+  RightHandPinky2: "RightHandPinky1",
+  RightHandPinky3: "RightHandPinky2",
+};
+
+type GltfNode = {
+  name?: string;
+  translation?: number[];
+  rotation?: number[];
+  scale?: number[];
+};
+
+function mixamoKey(name: string) {
+  return name.replace(/^mixamorig:?/i, "");
+}
+
+function mixamoSource(nodes: GltfNode[], scale: number) {
+  const bones = nodes.map((n) => {
+    const b = new THREE.Bone();
+    b.name = (n.name ?? "").replace(/:/g, "");
+    if (n.translation) b.position.fromArray(n.translation).multiplyScalar(scale);
+    if (n.rotation) b.quaternion.fromArray(n.rotation);
+    if (n.scale) b.scale.fromArray(n.scale);
+    return b;
+  });
+  const byKey = new Map(bones.map((b) => [mixamoKey(b.name), b]));
+  for (const [child, parent] of Object.entries(MIXAMO_PARENT)) {
+    const c = byKey.get(child);
+    const p = byKey.get(parent);
+    if (c && p) p.add(c);
+  }
+  const holder = new THREE.Group();
+  holder.name = "MixamoSitSource";
+  for (const b of bones) {
+    if (!b.parent) holder.add(b);
+  }
+  return holder;
+}
+
+function bakeRestIntoClip(clip: THREE.AnimationClip, nodes: GltfNode[]) {
+  const rest = new Map<string, THREE.Quaternion>();
+  for (const n of nodes) {
+    rest.set((n.name ?? "").replace(/:/g, ""), n.rotation ? new THREE.Quaternion().fromArray(n.rotation) : new THREE.Quaternion());
+  }
+  const q = new THREE.Quaternion();
+  const r = new THREE.Quaternion();
+  for (const track of clip.tracks) {
+    if (!track.name.endsWith(".quaternion")) continue;
+    const restQ = rest.get(track.name.slice(0, -".quaternion".length));
+    if (!restQ) continue;
+    const v = track.values;
+    for (let i = 0; i < v.length; i += 4) {
+      q.set(v[i]!, v[i + 1]!, v[i + 2]!, v[i + 3]!);
+      r.copy(restQ).multiply(q);
+      v[i] = r.x;
+      v[i + 1] = r.y;
+      v[i + 2] = r.z;
+      v[i + 3] = r.w;
+    }
+  }
+  return clip;
+}
+
+function scaleHipPosition(clip: THREE.AnimationClip, scale: number) {
+  for (const track of clip.tracks) {
+    if (!/hips\.position/i.test(track.name)) continue;
+    const v = track.values;
+    for (let i = 0; i < v.length; i++) v[i]! *= scale;
+  }
+}
+
+function orderedBones(bones: THREE.Bone[]) {
+  const set = new Set(bones);
+  const out: THREE.Bone[] = [];
+  const seen = new Set<THREE.Bone>();
+  const visit = (b: THREE.Object3D | null) => {
+    if (!b || !((b as THREE.Bone).isBone) || seen.has(b as THREE.Bone) || !set.has(b as THREE.Bone)) return;
+    if (b.parent && set.has(b.parent as THREE.Bone)) visit(b.parent);
+    seen.add(b as THREE.Bone);
+    out.push(b as THREE.Bone);
+  };
+  for (const b of bones) visit(b);
+  return out;
+}
+
+function bakeSitOntoTarget(sourceRoot: THREE.Object3D, targetRoot: THREE.Object3D, srcClip: THREE.AnimationClip, fps = 18) {
+  const srcBy = new Map<string, THREE.Bone>();
+  sourceRoot.traverse((o) => {
+    if ((o as THREE.Bone).isBone) srcBy.set(o.name, o as THREE.Bone);
+  });
+  const pairs: THREE.Bone[] = [];
+  targetRoot.traverse((o) => {
+    if ((o as THREE.Bone).isBone && srcBy.has(o.name)) pairs.push(o as THREE.Bone);
+  });
+  const bones = orderedBones(pairs);
+  const duration = srcClip.duration;
+  const frames = Math.max(2, Math.round(duration * fps) + 1);
+  const qSrc = new THREE.Quaternion();
+  const qPar = new THREE.Quaternion();
+  const qLoc = new THREE.Quaternion();
+  const srcDir = new THREE.Vector3();
+  const srcPos = new THREE.Vector3();
+  const srcChildPos = new THREE.Vector3();
+  const parentInv = new THREE.Quaternion();
+  const desired = new THREE.Vector3();
+  const tgtAxis = new THREE.Vector3();
+  const pWorld = new THREE.Vector3();
+  const quatTracks = bones.map((b) => ({
+    bone: b,
+    times: new Float32Array(frames),
+    values: new Float32Array(frames * 4),
+  }));
+  const hip = bones.find((b) => /hips$/i.test(b.name));
+  const hipPos = hip ? { times: new Float32Array(frames), values: new Float32Array(frames * 3) } : null;
+  const srcMixer = new THREE.AnimationMixer(sourceRoot);
+  const act = srcMixer.clipAction(srcClip);
+  act.play();
+  for (let f = 0; f < frames; f++) {
+    const t = (f / (frames - 1)) * duration;
+    srcMixer.setTime(Math.min(t, Math.max(0, duration - 1e-4)));
+    sourceRoot.updateMatrixWorld(true);
+    for (const rec of quatTracks) {
+      const src = srcBy.get(rec.bone.name)!;
+      const tgtChild = rec.bone.children.find((c) => (c as THREE.Bone).isBone) as THREE.Bone | undefined;
+      const srcChild = src.children.find((c) => (c as THREE.Bone).isBone) as THREE.Bone | undefined;
+      if (tgtChild && srcChild && tgtChild.position.lengthSq() > 1e-8) {
+        src.getWorldPosition(srcPos);
+        srcChild.getWorldPosition(srcChildPos);
+        srcDir.subVectors(srcChildPos, srcPos).normalize();
+        if (rec.bone.parent) {
+          rec.bone.parent.updateMatrixWorld(true);
+          rec.bone.parent.getWorldQuaternion(qPar);
+          parentInv.copy(qPar).invert();
+          desired.copy(srcDir).applyQuaternion(parentInv);
+        } else {
+          desired.copy(srcDir);
+        }
+        tgtAxis.copy(tgtChild.position).normalize();
+        qLoc.setFromUnitVectors(tgtAxis, desired);
+      } else {
+        src.getWorldQuaternion(qSrc);
+        if (rec.bone.parent) {
+          rec.bone.parent.updateMatrixWorld(true);
+          rec.bone.parent.getWorldQuaternion(qPar);
+          qLoc.copy(qPar).invert().multiply(qSrc);
+        } else {
+          qLoc.copy(qSrc);
+        }
+      }
+      rec.bone.quaternion.copy(qLoc);
+      rec.bone.updateMatrixWorld(true);
+      rec.times[f] = t;
+      qLoc.toArray(rec.values, f * 4);
+    }
+    if (hip && hipPos) {
+      srcBy.get(hip.name)!.getWorldPosition(pWorld);
+      if (hip.parent) hip.parent.worldToLocal(pWorld);
+      hip.position.copy(pWorld);
+      hip.updateMatrixWorld(true);
+      hipPos.times[f] = t;
+      hip.position.toArray(hipPos.values, f * 3);
+    }
+  }
+  srcMixer.stopAllAction();
+  const tracks: THREE.KeyframeTrack[] = quatTracks.map(
+    (rec) => new THREE.QuaternionKeyframeTrack(`${rec.bone.name}.quaternion`, rec.times, rec.values),
+  );
+  if (hip && hipPos) {
+    tracks.unshift(new THREE.VectorKeyframeTrack(`${hip.name}.position`, hipPos.times, hipPos.values));
+  }
+  return new THREE.AnimationClip("Sit", duration, tracks);
+}
+
+function retargetMixamoSit(clip: THREE.AnimationClip, nodes: GltfNode[], target: THREE.Object3D) {
+  const src = mixamoSource(nodes, 0.01);
+  const prepared = bakeRestIntoClip(clip.clone(), nodes);
+  scaleHipPosition(prepared, 0.01);
+  const baked = bakeSitOntoTarget(src, cloneSkinned(target), prepared);
+  baked.name = "Sit";
+  return stripRootXZ(baked);
+}
+
 function nodeNames(root: THREE.Object3D) {
   const names = new Set<string>();
   root.traverse((o) => {
@@ -232,6 +464,7 @@ export async function preloadAvatars() {
   const startFallback = firstClip(startGltf.animations, "Start Walking.glb");
   const stopFallback = firstClip(stopGltf.animations, "Stop Walking.glb");
   const sitFallback = firstClip(sitGltf.animations, "Sitting Idle.glb");
+  const sitNodes = ((sitGltf as { parser?: { json?: { nodes?: GltfNode[] } } }).parser?.json?.nodes ?? []) as GltfNode[];
   previews = { x: xGltf.scene, y: yGltf.scene };
   const skinnedScene = cloneSkinned(skinnedGltf.scene);
   const skinnedFallback = await rigFromGltf(
@@ -257,8 +490,13 @@ export async function preloadAvatars() {
   const y = ySkinned
     ? await rigFromGltf(yGltf.scene, yGltf.animations, walkFallback, idleFallback, startFallback, stopFallback)
     : skinnedFallback;
-  x.sit = adaptClip(sitFallback, x.template, "Sit");
-  y.sit = y === x ? x.sit : adaptClip(sitFallback, y.template, "Sit");
+  x.sit = sitNodes.length ? retargetMixamoSit(sitFallback, sitNodes, x.template) : adaptClip(sitFallback, x.template, "Sit");
+  y.sit =
+    y === x
+      ? x.sit
+      : sitNodes.length
+        ? retargetMixamoSit(sitFallback, sitNodes, y.template)
+        : adaptClip(sitFallback, y.template, "Sit");
   rigs = { x, y };
 }
 
@@ -533,28 +771,48 @@ export function poseWalk(
     const k = Math.min(1, 10 * dt);
     if (seated && avatar.sitAction) {
       const sit = avatar.sitAction;
-      if (sit.getEffectiveWeight() < 0.5) {
+      if (!sit.isRunning() || sit.getEffectiveWeight() < 0.99) {
+        avatar.mixer.stopAllAction();
         sit.reset();
+        sit.enabled = true;
         sit.paused = false;
+        sit.setEffectiveWeight(1);
         sit.play();
       }
       sit.setEffectiveWeight(1);
-      setActionWeight(avatar.walkAction, 0, 1);
-      setActionWeight(avatar.idleAction ?? null, 0, 1);
-      setActionWeight(avatar.startAction ?? null, 0, 1);
-      setActionWeight(avatar.stopAction ?? null, 0, 1);
-      avatar.walkAction.paused = true;
+      sit.paused = false;
+      sit.enabled = true;
+      if (avatar.walkAction) {
+        avatar.walkAction.enabled = false;
+        avatar.walkAction.setEffectiveWeight(0);
+      }
       if (avatar.idleAction) {
-        avatar.idleAction.paused = true;
-        avatar.idleAction.stop();
+        avatar.idleAction.enabled = false;
+        avatar.idleAction.setEffectiveWeight(0);
+      }
+      if (avatar.startAction) {
+        avatar.startAction.enabled = false;
+        avatar.startAction.setEffectiveWeight(0);
+      }
+      if (avatar.stopAction) {
+        avatar.stopAction.enabled = false;
+        avatar.stopAction.setEffectiveWeight(0);
       }
     } else {
-      if (avatar.walkAction) avatar.walkAction.paused = false;
+      if (avatar.walkAction) {
+        avatar.walkAction.enabled = true;
+        avatar.walkAction.paused = false;
+        if (!avatar.walkAction.isScheduled()) avatar.walkAction.play();
+      }
       if (avatar.idleAction) {
+        avatar.idleAction.enabled = true;
         avatar.idleAction.paused = false;
         if (!avatar.idleAction.isRunning()) avatar.idleAction.play();
       }
-      setActionWeight(avatar.sitAction ?? null, 0, k);
+      if (avatar.sitAction) {
+        avatar.sitAction.enabled = false;
+        avatar.sitAction.setEffectiveWeight(0);
+      }
       setActionWeight(avatar.walkAction, moving ? 1 : 0, k);
       setActionWeight(avatar.idleAction ?? null, moving ? 0 : 1, k);
       setActionWeight(avatar.startAction ?? null, 0, 1);

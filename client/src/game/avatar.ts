@@ -43,29 +43,6 @@ function swingLimb(x: number, y: number, radius: number, length: number) {
   return pivot;
 }
 
-function flattenHipsYaw(clip: THREE.AnimationClip) {
-  const e = new THREE.Euler();
-  const q = new THREE.Quaternion();
-  const next = clip.clone();
-  next.tracks = next.tracks.map((track) => {
-    if (!/hips\.quaternion/i.test(track.name)) return track;
-    const t = track.clone();
-    const v = t.values;
-    for (let i = 0; i < v.length; i += 4) {
-      q.set(v[i]!, v[i + 1]!, v[i + 2]!, v[i + 3]!);
-      e.setFromQuaternion(q, "YXZ");
-      e.y = 0;
-      q.setFromEuler(e);
-      v[i] = q.x;
-      v[i + 1] = q.y;
-      v[i + 2] = q.z;
-      v[i + 3] = q.w;
-    }
-    return t;
-  });
-  return next;
-}
-
 function stripRootXZ(clip: THREE.AnimationClip) {
   const next = clip.clone();
   next.tracks = next.tracks.map((track) => {
@@ -282,8 +259,6 @@ export async function preloadAvatars() {
     : skinnedFallback;
   x.sit = adaptClip(sitFallback, x.template, "Sit");
   y.sit = y === x ? x.sit : adaptClip(sitFallback, y.template, "Sit");
-  if (x.sit) x.sit = flattenHipsYaw(x.sit);
-  if (y !== x && y.sit) y.sit = flattenHipsYaw(y.sit);
   rigs = { x, y };
 }
 
@@ -557,17 +532,28 @@ export function poseWalk(
   if (avatar.mixer && avatar.walkAction) {
     const k = Math.min(1, 10 * dt);
     if (seated && avatar.sitAction) {
-      avatar.sitAction.paused = false;
-      avatar.sitAction.setEffectiveWeight(1);
+      const sit = avatar.sitAction;
+      if (sit.getEffectiveWeight() < 0.5) {
+        sit.reset();
+        sit.paused = false;
+        sit.play();
+      }
+      sit.setEffectiveWeight(1);
       setActionWeight(avatar.walkAction, 0, 1);
       setActionWeight(avatar.idleAction ?? null, 0, 1);
       setActionWeight(avatar.startAction ?? null, 0, 1);
       setActionWeight(avatar.stopAction ?? null, 0, 1);
       avatar.walkAction.paused = true;
-      if (avatar.idleAction) avatar.idleAction.paused = true;
+      if (avatar.idleAction) {
+        avatar.idleAction.paused = true;
+        avatar.idleAction.stop();
+      }
     } else {
       if (avatar.walkAction) avatar.walkAction.paused = false;
-      if (avatar.idleAction) avatar.idleAction.paused = false;
+      if (avatar.idleAction) {
+        avatar.idleAction.paused = false;
+        if (!avatar.idleAction.isRunning()) avatar.idleAction.play();
+      }
       setActionWeight(avatar.sitAction ?? null, 0, k);
       setActionWeight(avatar.walkAction, moving ? 1 : 0, k);
       setActionWeight(avatar.idleAction ?? null, moving ? 0 : 1, k);

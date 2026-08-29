@@ -80,13 +80,16 @@ export const DESK_GRID = {
   originZ: -1.7,
   spacingX: 3.7,
   spacingZ: 3.05,
-  /** Combo faces the board (−Z). */
+  /** Combo faces the board (−Z). Do not change furniture yaw. */
   rotY: Math.PI,
-  /** Chair seat in local space after the combo is centered. */
-  seatLocalX: 0,
-  seatLocalZ: 0.32,
-  /** Mixamo Sitting Idle faces +Z; do not add extra yaw or the pose reads as falling. */
-  sitRotY: 0,
+  /**
+   * Chair is on +Z after that yaw (desk on −Z). Offset is in un-rotated
+   * desk space and is then rotated by rotY in classroomSeats().
+   */
+  seatLocalX: 0.08,
+  seatLocalZ: -0.38,
+  /** Mixamo Sitting Idle faces +Z; π turns the avatar toward the desk/board. */
+  sitRotY: Math.PI,
 };
 
 export const SEAT_REACH = 1.25;

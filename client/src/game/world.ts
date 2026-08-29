@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { MOVE_SPEED, SEAT_REACH, type Look, type Seat } from "@klase/shared";
-import { applyLook, createAvatar, drawSpeech, poseWalk } from "./avatar";
+import { applyLook, createAvatar, drawMic, drawSpeech, layoutHeadSprites, poseWalk } from "./avatar";
 import { buildClassroom, findClearStand, resolveMove, type AABB } from "./classroom";
 
 type AvatarHandle = ReturnType<typeof createAvatar> & {
@@ -165,6 +165,22 @@ export class World {
     drawSpeech(a.speechCanvas, a.speechTex, text);
     a.speechSprite.visible = true;
     a.speechUntil = performance.now() + 4000;
+    layoutHeadSprites(a);
+  }
+
+  setVoiceLevel(id: string, level: number) {
+    const a = this.avatars.get(id);
+    if (!a) return;
+    const v = Math.max(0, Math.min(1, level));
+    if (v >= 0.08) {
+      a.voiceUntil = performance.now() + 220;
+      a.micSprite.visible = true;
+      if (Math.abs(v - a.micFill) >= 0.04) {
+        a.micFill = v;
+        drawMic(a.micCanvas, a.micTex, v);
+      }
+    }
+    layoutHeadSprites(a);
   }
 
   private occupiedSeats() {
@@ -315,6 +331,11 @@ export class World {
     const now = performance.now();
     for (const a of this.avatars.values()) {
       if (a.speechSprite.visible && now >= a.speechUntil) a.speechSprite.visible = false;
+      if (a.micSprite.visible && now >= a.voiceUntil) {
+        a.micSprite.visible = false;
+        a.micFill = -1;
+      }
+      layoutHeadSprites(a);
     }
 
     const player = new THREE.Vector3(this.localX, 0.75, this.localZ);

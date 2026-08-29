@@ -138,6 +138,12 @@ export class ClassroomRoom extends Room<ClassroomState> {
       });
     });
 
+    this.onMessage("voice-level", (client, data: { level?: number }) => {
+      if (!this.state.players.has(client.sessionId)) return;
+      const level = Math.max(0, Math.min(1, Number(data?.level) || 0));
+      this.broadcast("voice-level", { from: client.sessionId, level }, { except: client });
+    });
+
     this.onMessage(
       "moderate",
       (client, data: { action?: string; targetId?: string }) => {
@@ -241,9 +247,34 @@ export class ClassroomRoom extends Room<ClassroomState> {
   }
 
   onLeave(client: Client) {
+    const p = this.state.players.get(client.sessionId);
     this.lastActive.delete(client.sessionId);
     this.state.players.delete(client.sessionId);
     this.syncMeta();
+    if (!p) return;
+    const leaveLine: ChatLine =
+      p.role === "owner"
+        ? {
+            from: "system",
+            name: "Klase",
+            text: `Owner ${p.name} has left`,
+            kind: "leave-owner",
+          }
+        : p.role === "admin"
+          ? {
+              from: "system",
+              name: "Klase",
+              text: `Admin ${p.name} has left`,
+              kind: "leave-admin",
+            }
+          : {
+              from: "system",
+              name: "Klase",
+              text: `${p.name} has left`,
+              kind: "leave",
+            };
+    this.pushChat(leaveLine);
+    this.broadcast("chat", leaveLine);
   }
 
   private syncMeta() {

@@ -99,6 +99,11 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
     for (const line of lines) addChat(ui.chat, ui.log, line, selfId, muted);
   });
   room.send("need-history");
+  room.onMessage("voice-level", (msg: { from?: string; level?: number }) => {
+    const from = String(msg?.from ?? "");
+    if (!from) return;
+    world?.setVoiceLevel(from, Number(msg.level) || 0);
+  });
   room.onMessage("dropped", (data: { reason?: string }) => {
     if (data?.reason === "idle") leaveReason = "idle";
   });
@@ -316,6 +321,7 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
     }
     const me = snapshot().find((p) => p.sessionId === selfId);
     mesh.tick(scene.positions(), Boolean(me?.serverMuted));
+    scene.setVoiceLevel(selfId, mesh.localLevel);
     requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);

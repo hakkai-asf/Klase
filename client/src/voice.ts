@@ -19,6 +19,12 @@ export class VoiceMesh {
   private stream: MediaStream | null = null;
   private makingOffer = new Set<string>();
   private ctx: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private analyserSrc: MediaStreamAudioSourceNode | null = null;
+  private levelBuf: Float32Array<ArrayBuffer> | null = null;
+  private lastSentLevel = -1;
+  private lastSentAt = 0;
+  localLevel = 0;
   micOn = false;
   localMuted = new Set<string>();
   serverMutedIds = new Set<string>();
@@ -45,9 +51,13 @@ export class VoiceMesh {
         this.stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       }
       this.micOn = true;
+      this.hookAnalyser();
       await this.syncSenders();
     } else {
       this.micOn = false;
+      this.localLevel = 0;
+      this.pushLevel(0, true);
+      this.unhookAnalyser();
       this.stream?.getTracks().forEach((t) => t.stop());
       this.stream = null;
       await this.syncSenders();
@@ -62,6 +72,8 @@ export class VoiceMesh {
     if (this.stream) {
       for (const t of this.stream.getAudioTracks()) t.enabled = this.micOn && !selfMuted;
     }
+    this.localLevel = this.readLevel(selfMuted);
+    this.pushLevel(this.localLevel, false);
     const me = positions.get(this.selfId);
     if (!me) return;
     const nearby = new Set<string>();
@@ -85,11 +97,58 @@ export class VoiceMesh {
 
   dispose() {
     this.micOn = false;
+    this.localLevel = 0;
+    this.unhookAnalyser();
     this.stream?.getTracks().forEach((t) => t.stop());
     this.stream = null;
     for (const id of [...this.peers.keys()]) this.close(id, true);
     void this.ctx?.close();
     this.ctx = null;
+  }
+
+  private hookAnalyser() {
+    this.unhookAnalyser();
+    if (!this.stream) return;
+    const ctx = this.audioCtx();
+    this.analyser = ctx.createAnalyser();
+    this.analyser.fftSize = 512;
+    this.analyser.smoothingTimeConstant = 0.35;
+    this.analyserSrc = ctx.createMediaStreamSource(this.stream);
+    this.analyserSrc.connect(this.analyser);
+    this.levelBuf = new Float32Array(this.analyser.fftSize) as Float32Array<ArrayBuffer>;
+  }
+
+  private unhookAnalyser() {
+    try {
+      this.analyserSrc?.disconnect();
+    } catch {
+      /* ignore */
+    }
+    this.analyserSrc = null;
+    this.analyser = null;
+    this.levelBuf = null;
+  }
+
+  private readLevel(selfMuted: boolean) {
+    if (!this.micOn || selfMuted || !this.analyser || !this.levelBuf) return 0;
+    this.analyser.getFloatTimeDomainData(this.levelBuf);
+    let sum = 0;
+    for (let i = 0; i < this.levelBuf.length; i++) {
+      const v = this.levelBuf[i]!;
+      sum += v * v;
+    }
+    const rms = Math.sqrt(sum / this.levelBuf.length);
+    return Math.min(1, Math.max(0, (rms - 0.018) / 0.22));
+  }
+
+  private pushLevel(level: number, force: boolean) {
+    const now = performance.now();
+    if (!force && now - this.lastSentAt < 100) return;
+    const crossed = (level >= 0.08) !== (this.lastSentLevel >= 0.08);
+    if (!force && !crossed && Math.abs(level - this.lastSentLevel) < 0.05) return;
+    this.lastSentAt = now;
+    this.lastSentLevel = level;
+    this.room.send("voice-level", { level });
   }
 
   private audioCtx() {

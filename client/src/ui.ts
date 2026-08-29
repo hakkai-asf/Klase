@@ -234,8 +234,8 @@ export function addChat(
   if (line.kind === "chat" && muted.has(line.from)) return;
   const b = el("div", "bubble");
   if (line.from === selfId) b.classList.add("mine");
-  if (line.kind === "join-owner" || line.kind === "join" || line.kind === "system") b.classList.add("system");
-  if (line.kind === "join-admin") b.classList.add("admin");
+  if (line.kind === "join-owner" || line.kind === "join" || line.kind === "leave" || line.kind === "leave-owner" || line.kind === "system") b.classList.add("system");
+  if (line.kind === "join-admin" || line.kind === "leave-admin") b.classList.add("admin");
   if (line.kind === "chat") {
     const who = el("strong", "", line.name);
     b.append(who, document.createTextNode(line.text));

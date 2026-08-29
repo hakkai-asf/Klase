@@ -564,6 +564,77 @@ function speechSprite(height: number) {
   return { canvas, tex, sprite };
 }
 
+function micSprite(height: number) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 96;
+  const tex = new THREE.CanvasTexture(canvas);
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }),
+  );
+  sprite.position.y = height + 0.5;
+  sprite.scale.set(0.32, 0.48, 1);
+  sprite.visible = false;
+  sprite.renderOrder = 11;
+  drawMic(canvas, tex, 0);
+  return { canvas, tex, sprite };
+}
+
+function capsulePath(ctx: CanvasRenderingContext2D, cx: number, top: number, bot: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(cx - r, top + r);
+  ctx.arc(cx, top + r, r, Math.PI, 0);
+  ctx.lineTo(cx + r, bot - r);
+  ctx.arc(cx, bot - r, r, 0, Math.PI);
+  ctx.closePath();
+}
+
+export function drawMic(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, fill: number) {
+  const ctx = canvas.getContext("2d")!;
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  const cx = w / 2;
+  const bodyTop = 10;
+  const bodyBot = 56;
+  const bodyR = 13;
+  const f = Math.max(0, Math.min(1, fill));
+  ctx.save();
+  capsulePath(ctx, cx, bodyTop, bodyBot, bodyR - 2.5);
+  ctx.clip();
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = "#3dba6a";
+  ctx.fillRect(0, bodyBot - (bodyBot - bodyTop) * f, w, (bodyBot - bodyTop) * f);
+  ctx.restore();
+  ctx.strokeStyle = "#4a4e5c";
+  ctx.lineWidth = 2.8;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  capsulePath(ctx, cx, bodyTop, bodyBot, bodyR);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx, bodyBot, bodyR + 7, 0.12 * Math.PI, 0.88 * Math.PI);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx, bodyBot + 7);
+  ctx.lineTo(cx, h - 12);
+  ctx.moveTo(cx - 9, h - 12);
+  ctx.lineTo(cx + 9, h - 12);
+  ctx.stroke();
+  tex.needsUpdate = true;
+}
+
+export function layoutHeadSprites(avatar: {
+  headH: number;
+  micSprite: THREE.Sprite;
+  speechSprite: THREE.Sprite;
+}) {
+  const h = avatar.headH;
+  avatar.micSprite.position.y = h + 0.5;
+  avatar.speechSprite.position.y = avatar.micSprite.visible ? h + 0.98 : h + 0.62;
+}
+
 function primitiveAvatar(look: Look, nametag: string) {
   const root = new THREE.Group();
   const body = new THREE.Group();
@@ -592,7 +663,8 @@ function primitiveAvatar(look: Look, nametag: string) {
   body.add(sockets.hat, sockets.top, sockets.accessory);
   const tag = nametagSprite(nametag, 1.85);
   const speech = speechSprite(1.85);
-  root.add(tag.sprite, speech.sprite);
+  const mic = micSprite(1.85);
+  root.add(tag.sprite, speech.sprite, mic.sprite);
   applyLook(sockets, look);
   return {
     root,
@@ -604,6 +676,12 @@ function primitiveAvatar(look: Look, nametag: string) {
     speechTex: speech.tex,
     speechSprite: speech.sprite,
     speechUntil: 0,
+    headH: 1.85,
+    micCanvas: mic.canvas,
+    micTex: mic.tex,
+    micSprite: mic.sprite,
+    micFill: -1,
+    voiceUntil: 0,
     look: { ...look },
     limbs: { lArm, rArm, lLeg, rLeg },
     walkT: 0,
@@ -637,9 +715,11 @@ export function createAvatar(look: Look, nametag: string) {
   root.add(model);
 
   const sockets = attachSockets(model);
-  const tag = nametagSprite(nametag, measureBox(model).max.y);
-  const speech = speechSprite(measureBox(model).max.y);
-  root.add(tag.sprite, speech.sprite);
+  const headH = measureBox(model).max.y;
+  const tag = nametagSprite(nametag, headH);
+  const speech = speechSprite(headH);
+  const mic = micSprite(headH);
+  root.add(tag.sprite, speech.sprite, mic.sprite);
   applyLook(sockets, look);
 
   const mixer = new THREE.AnimationMixer(model);
@@ -682,6 +762,12 @@ export function createAvatar(look: Look, nametag: string) {
     speechTex: speech.tex,
     speechSprite: speech.sprite,
     speechUntil: 0,
+    headH,
+    micCanvas: mic.canvas,
+    micTex: mic.tex,
+    micSprite: mic.sprite,
+    micFill: -1,
+    voiceUntil: 0,
     look: { ...look },
     limbs: {
       lArm: new THREE.Group(),

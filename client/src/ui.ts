@@ -62,8 +62,8 @@ export function setMuteAllButton(btn: HTMLElement, muted: boolean) {
   btn.innerHTML = muted ? SPEAKER_OFF : SPEAKER_ON;
 }
 
-export function setViewButton(btn: HTMLElement, firstPerson: boolean) {
-  btn.textContent = firstPerson ? "Classroom" : "1st person";
+export function setViewButton(btn: HTMLElement, firstPerson: boolean, compact = false) {
+  btn.textContent = firstPerson ? (compact ? "Iso" : "Classroom") : compact ? "1st" : "1st person";
   btn.title = firstPerson ? "Classroom view" : "First person";
   btn.setAttribute("aria-pressed", firstPerson ? "true" : "false");
   btn.classList.toggle("primary", firstPerson);
@@ -196,9 +196,9 @@ export function renderGameShell(root: HTMLElement) {
   const muteAllBtn = el("button", "clay-btn icon-btn");
   muteAllBtn.type = "button";
   setMuteAllButton(muteAllBtn, false);
-  const viewBtn = el("button", "clay-btn", "1st person");
+  const viewBtn = el("button", "clay-btn");
   viewBtn.type = "button";
-  viewBtn.title = "First person";
+  setViewButton(viewBtn, false, isTouchUi());
   const playersBtn = el("button", "clay-btn", "Players");
   const lookBtn = el("button", "clay-btn", "Look");
   const chatBtn = el("button", "clay-btn", "Chat");

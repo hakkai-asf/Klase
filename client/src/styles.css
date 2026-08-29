@@ -467,9 +467,35 @@ button, input, select { font-family: inherit; }
   bottom: calc(8.8rem + env(safe-area-inset-bottom, 0px));
 }
 
+.touch-ui .hud-top {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.touch-ui .hud-chip {
+  flex: 1 1 100%;
+}
 .touch-ui .hud-actions {
+  width: 100%;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+
+.fp-mouse-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 1.15rem;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 6;
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--klase-radius-hud);
+  box-shadow: var(--klase-shadow);
+  background: var(--klase-surface);
+  font-size: 0.78rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.touch-ui .fp-mouse-hint { display: none !important; }
 
 .hidden { display: none !important; }

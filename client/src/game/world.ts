@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { MOVE_SPEED, SEAT_REACH, type Look, type Seat } from "@klase/shared";
-import { applyLook, createAvatar, drawMic, drawSpeech, layoutHeadSprites, poseWalk } from "./avatar";
+import { applyLook, createAvatar, drawMic, drawSpeech, layoutHeadSprites, poseWalk, setLocalFpPresentation } from "./avatar";
 import { buildClassroom, findClearStand, resolveMove, type AABB } from "./classroom";
 
 type AvatarHandle = ReturnType<typeof createAvatar> & {
@@ -20,6 +20,7 @@ const LOOK_SENS = 0.0022;
 const PITCH_MAX = 1.15;
 const EYE_STAND = 1.55;
 const EYE_SIT = 1.15;
+const EYE_FWD = 0.12;
 
 export class World {
   readonly renderer: THREE.WebGLRenderer;
@@ -53,6 +54,7 @@ export class World {
   private lastPtrX = 0;
   private lastPtrY = 0;
   private fpWalls: THREE.Group;
+  private mouseHint: HTMLElement;
 
   get camera(): THREE.Camera {
     return this.firstPerson ? this.fpCam : this.isoCam;
@@ -84,16 +86,13 @@ export class World {
     this.sitPrompt.textContent = this.touchUi ? "Sit" : "E";
     this.sitPrompt.hidden = true;
     canvas.parentElement?.append(this.sitPrompt);
+    this.mouseHint = document.createElement("div");
+    this.mouseHint.className = "fp-mouse-hint";
+    this.mouseHint.textContent = "V or Esc — toggle mouse";
+    this.mouseHint.hidden = true;
+    canvas.parentElement?.append(this.mouseHint);
     this.upsert(localId, localName, look, this.localX, this.localZ, this.localRot, "");
     this.bindLook(canvas);
-    this.sitBtn = hud?.sitBtn ?? null;
-    this.touchUi = Boolean(this.sitBtn);
-    this.sitPrompt = document.createElement("div");
-    this.sitPrompt.className = "sit-prompt";
-    this.sitPrompt.textContent = this.touchUi ? "Sit" : "E";
-    this.sitPrompt.hidden = true;
-    canvas.parentElement?.append(this.sitPrompt);
-    this.upsert(localId, localName, look, this.localX, this.localZ, this.localRot, "");
 
     window.addEventListener("keydown", (e) => {
       const t = e.target as HTMLElement | null;
@@ -102,6 +101,10 @@ export class World {
       if (!e.repeat) this.justPressed.add(key);
       this.keys.add(key);
       if (key === "e" || key === " ") e.preventDefault();
+      if (key === "v" && this.firstPerson && !this.touchUi) {
+        e.preventDefault();
+        this.togglePointerLock();
+      }
     });
     window.addEventListener("keyup", (e) => this.keys.delete(e.key.toLowerCase()));
     window.addEventListener("resize", () => this.resize());
@@ -128,8 +131,9 @@ export class World {
     this.fpWalls.visible = on;
     this.pitch = 0;
     const local = this.avatars.get(this.localId);
-    if (local) local.root.visible = !on;
+    if (local) setLocalFpPresentation(local, on);
     this.poseFp();
+    this.mouseHint.hidden = !on || this.touchUi;
     const canvas = this.renderer.domElement;
     if (!on) {
       this.dragging = false;
@@ -139,9 +143,17 @@ export class World {
     }
   }
 
+  private togglePointerLock() {
+    const canvas = this.renderer.domElement;
+    if (document.pointerLockElement === canvas) document.exitPointerLock();
+    else void canvas.requestPointerLock();
+  }
+
   private poseFp() {
     const eyeY = this.localSeatId ? this.seatY(this.localSeatId) + EYE_SIT : EYE_STAND;
-    this.fpCam.position.set(this.localX, eyeY, this.localZ);
+    const fx = Math.sin(this.localRot) * EYE_FWD;
+    const fz = Math.cos(this.localRot) * EYE_FWD;
+    this.fpCam.position.set(this.localX + fx, eyeY, this.localZ + fz);
     this.fpCam.rotation.set(this.pitch, this.localRot + Math.PI, 0);
     this.fpCam.updateMatrixWorld();
   }
@@ -162,7 +174,7 @@ export class World {
       };
       this.scene.add(a.root);
       this.avatars.set(id, a);
-      if (id === this.localId) a.root.visible = !this.firstPerson;
+      if (id === this.localId) setLocalFpPresentation(a, this.firstPerson);
     } else if (
       a.look.hat !== look.hat ||
       a.look.top !== look.top ||
@@ -259,6 +271,7 @@ export class World {
     a.speechSprite.visible = true;
     a.speechUntil = performance.now() + 4000;
     layoutHeadSprites(a);
+    if (id === this.localId) setLocalFpPresentation(a, this.firstPerson);
   }
 
   setVoiceLevel(id: string, level: number) {
@@ -274,6 +287,7 @@ export class World {
       }
     }
     layoutHeadSprites(a);
+    if (id === this.localId) setLocalFpPresentation(a, this.firstPerson);
   }
 
   private occupiedSeats() {
@@ -399,7 +413,6 @@ export class World {
 
     const local = this.avatars.get(this.localId);
     if (local) {
-      local.root.visible = !this.firstPerson;
       local.root.position.set(this.localX, this.seatY(this.localSeatId), this.localZ);
       local.root.rotation.y = this.localRot;
       poseWalk(local, dt, moved, Boolean(this.localSeatId));
@@ -432,6 +445,8 @@ export class World {
       }
       layoutHeadSprites(a);
     }
+    const localHud = this.avatars.get(this.localId);
+    if (localHud) setLocalFpPresentation(localHud, this.firstPerson);
 
     const cam = this.camera;
     if (this.firstPerson) {

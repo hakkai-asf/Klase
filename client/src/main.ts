@@ -278,7 +278,7 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
   ui.muteAllBtn.addEventListener("click", () => setMuteAll(!mesh.muteAll));
   ui.viewBtn.addEventListener("click", () => {
     scene.setFirstPerson(!scene.firstPerson);
-    setViewButton(ui.viewBtn, scene.firstPerson);
+    setViewButton(ui.viewBtn, scene.firstPerson, isTouchUi());
   });
 
   ui.lookBtn.addEventListener("click", () => {

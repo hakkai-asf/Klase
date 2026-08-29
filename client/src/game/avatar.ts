@@ -545,6 +545,7 @@ function nametagSprite(name: string, height: number) {
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
   sprite.position.y = height + 0.18;
   sprite.scale.set(1.4, 0.35, 1);
+  sprite.name = "nametag";
   drawName(canvas, tex, name);
   return { canvas, tex, sprite };
 }
@@ -561,6 +562,7 @@ function speechSprite(height: number) {
   sprite.scale.set(1.85, 0.58, 1);
   sprite.visible = false;
   sprite.renderOrder = 12;
+  sprite.name = "speech";
   return { canvas, tex, sprite };
 }
 
@@ -576,6 +578,7 @@ function micSprite(height: number) {
   sprite.scale.set(0.32, 0.48, 1);
   sprite.visible = false;
   sprite.renderOrder = 11;
+  sprite.name = "mic";
   drawMic(canvas, tex, 0);
   return { canvas, tex, sprite };
 }
@@ -635,6 +638,22 @@ export function layoutHeadSprites(avatar: {
   avatar.speechSprite.position.y = avatar.micSprite.visible ? h + 0.98 : h + 0.62;
 }
 
+export function setLocalFpPresentation(
+  avatar: { root: THREE.Object3D; sockets: { hat: THREE.Group } },
+  firstPerson: boolean,
+) {
+  avatar.root.visible = true;
+  avatar.root.traverse((o) => {
+    const sprite = o as THREE.Sprite;
+    if (sprite.isSprite) {
+      if (firstPerson) sprite.visible = false;
+      else if (o.name === "nametag") sprite.visible = true;
+    }
+    if (/head$/i.test(o.name)) o.visible = !firstPerson;
+  });
+  avatar.sockets.hat.visible = !firstPerson;
+}
+
 function primitiveAvatar(look: Look, nametag: string) {
   const root = new THREE.Group();
   const body = new THREE.Group();
@@ -644,6 +663,7 @@ function primitiveAvatar(look: Look, nametag: string) {
   torso.castShadow = true;
   body.add(torso);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 20, 16), mat(SKIN));
+  head.name = "Head";
   head.position.y = 1.48;
   head.castShadow = true;
   body.add(head);

@@ -10,13 +10,14 @@ const schoolDeskUrl = new URL("../../../assets/furnitures/school-desk.glb", impo
 
 const WALL_BAND = 0.5;
 const INTERIOR_FURNITURE_Y = 1.55;
+const CEILING_CAP_Y = 3.5;
+const FLOOR_COLOR = 0xd8d4cc;
 
 const HIDE_MESH = new Set([
   "Material2_1",
   "Material2_2",
   "Material2_3",
   "Material2_4",
-  "Material2_7",
   "Material2_17",
   "Material2_18",
   "Material3",
@@ -76,8 +77,12 @@ function isCeilingGrid(mesh: THREE.Mesh, box: THREE.Box3, size: THREE.Vector3) {
   return /Color_008|Material2_9/i.test(matName(mesh)) || hex < 0x808080;
 }
 
-function isGlass(mesh: THREE.Mesh) {
-  return /Translucent_Glass|Material3_10/i.test(matName(mesh)) || mesh.name === "Material2";
+function isDoorGlass(mesh: THREE.Mesh) {
+  return /Translucent_Glass_Gray_1|Material3_10/i.test(matName(mesh));
+}
+
+function isWindowWall(mesh: THREE.Mesh) {
+  return mesh.name === "Material2" || mesh.name === "Material2_6" || /Translucent_Glass_Gray_2/i.test(matName(mesh));
 }
 
 function pullCeilingGridForward(mesh: THREE.Mesh) {
@@ -104,6 +109,19 @@ function styleGlass(mesh: THREE.Mesh) {
     std.roughness = 0.18;
     std.metalness = 0.08;
     std.side = THREE.FrontSide;
+  }
+}
+
+function pullBoardForward(mesh: THREE.Mesh) {
+  mesh.position.z += 0.03;
+  mesh.renderOrder = 2;
+  const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  for (const mat of mats) {
+    const std = mat as THREE.MeshStandardMaterial;
+    std.side = THREE.FrontSide;
+    std.polygonOffset = true;
+    std.polygonOffsetFactor = -1;
+    std.polygonOffsetUnits = -1;
   }
 }
 
@@ -161,29 +179,34 @@ function stripInteriorFurniture(mesh: THREE.Mesh) {
   const ab = new THREE.Vector3();
   const ac = new THREE.Vector3();
   filterTriangles(mesh, (a, b, c) => {
+    const maxY = Math.max(a.y, b.y, c.y);
+    ab.subVectors(b, a);
+    ac.subVectors(c, a);
+    const area = 0.5 * ab.cross(ac).length();
+    if (maxY < 0.08) return false;
+    if (area < 0.002 && maxY < 0.2) return false;
     const cx = (a.x + b.x + c.x) / 3;
     const cz = (a.z + b.z + c.z) / 3;
-    const maxY = Math.max(a.y, b.y, c.y);
     const nearWall = Math.abs(cx) > hx || Math.abs(cz) > hz;
     if (nearWall) return true;
     if (maxY < INTERIOR_FURNITURE_Y) return false;
     const sx = Math.max(a.x, b.x, c.x) - Math.min(a.x, b.x, c.x);
     const sz = Math.max(a.z, b.z, c.z) - Math.min(a.z, b.z, c.z);
-    ab.subVectors(b, a);
-    ac.subVectors(c, a);
-    const area = 0.5 * ab.cross(ac).length();
-    if (area < 0.002) return false;
     if (Math.min(sx, sz) < 0.03 && Math.max(sx, sz) < 2) return false;
     return true;
   });
 }
 
+function stripCeilingCap(mesh: THREE.Mesh) {
+  filterTriangles(mesh, (a, b, c) => (a.y + b.y + c.y) / 3 <= CEILING_CAP_Y);
+}
+
 function addPlainFloor(scene: THREE.Scene) {
   const { width: w, depth: d } = CLASSROOM;
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(w, d),
+    new THREE.PlaneGeometry(w * 3, d * 3),
     new THREE.MeshStandardMaterial({
-      color: 0xd8d4cc,
+      color: FLOOR_COLOR,
       roughness: 0.92,
       metalness: 0,
       polygonOffset: true,
@@ -331,8 +354,17 @@ export function buildClassroom(scene: THREE.Scene): { colliders: AABB[]; seats: 
         mesh.visible = false;
         return;
       }
-      if (isGlass(mesh)) {
+      if (isDoorGlass(mesh)) {
         styleGlass(mesh);
+        return;
+      }
+      if (isWindowWall(mesh)) {
+        if (mesh.name !== "Material2_6") styleGlass(mesh);
+        fpMeshes.push(mesh);
+        return;
+      }
+      if (mesh.name === "Material3_16" || mesh.name === "Material3_17") {
+        pullBoardForward(mesh);
         return;
       }
       const { box, size } = meshBounds(mesh);
@@ -343,6 +375,11 @@ export function buildClassroom(scene: THREE.Scene): { colliders: AABB[]; seats: 
       }
       if (mesh.name === "Material3_2") {
         stripInteriorFurniture(mesh);
+        return;
+      }
+      if (mesh.name === "Material2_7") {
+        stripCeilingCap(mesh);
+        fpMeshes.push(mesh);
       }
     });
     for (const mesh of fpMeshes) fpWalls.attach(mesh);

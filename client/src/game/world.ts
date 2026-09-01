@@ -80,7 +80,7 @@ export class World {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = false;
-    this.scene.background = new THREE.Color(0xeeeae3);
+    this.scene.background = new THREE.Color(0xd8d4cc);
     const built = buildClassroom(this.scene);
     this.colliders = built.colliders;
     this.seats = built.seats;

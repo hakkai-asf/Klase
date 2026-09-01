@@ -8,7 +8,9 @@ export type AABB = { minX: number; maxX: number; minZ: number; maxZ: number };
 const classroomUrl = new URL("../../../assets/classroom/classroom.glb", import.meta.url).href;
 const schoolDeskUrl = new URL("../../../assets/furnitures/school-desk.glb", import.meta.url).href;
 
-const FURNITURE_Y = 1.15;
+const CEILING_CAP_Y = 3.5;
+const SHELL_TRIM_Y = 2.4;
+const TINY_AREA = 0.0004;
 
 type Kit = {
   classroom: THREE.Object3D;
@@ -41,36 +43,40 @@ function isFloorCap(box: THREE.Box3, size: THREE.Vector3) {
 }
 
 function isLowFurniture(box: THREE.Box3, size: THREE.Vector3) {
-  return box.max.y < 1.25 && size.y > 0.03;
+  return box.max.y < 1.7 && size.y > 0.02;
 }
 
-function isEnvelope(box: THREE.Box3, size: THREE.Vector3) {
-  const centerY = (box.min.y + box.max.y) / 2;
-  const ceiling = centerY > 3.2 && size.y < 0.5 && size.x > 8 && size.z > 18;
-  const walls = size.x > 11 && size.z > 22 && size.y > 1.2;
-  return ceiling || walls;
+function isCeilingDetail(box: THREE.Box3, size: THREE.Vector3) {
+  return box.min.y > 3 && size.y < 0.5;
 }
 
-function stripLowGeometry(mesh: THREE.Mesh, yCut = FURNITURE_Y) {
-  mesh.updateMatrixWorld(true);
-  const src = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
-  const pos = src.getAttribute("position");
-  if (!pos) return;
-  const triCount = Math.floor(pos.count / 3);
-  const keepTri = new Array<boolean>(triCount);
-  const world = new THREE.Vector3();
-  let keepN = 0;
-  for (let t = 0; t < triCount; t++) {
-    let allLow = true;
-    for (let k = 0; k < 3; k++) {
-      world.fromBufferAttribute(pos, t * 3 + k);
-      world.applyMatrix4(mesh.matrixWorld);
-      if (world.y >= yCut) allLow = false;
-    }
-    keepTri[t] = !allLow;
-    if (!allLow) keepN++;
+function isCeilingGrid(mesh: THREE.Mesh, box: THREE.Box3, size: THREE.Vector3) {
+  if (!isCeilingDetail(box, size) || size.y > 0.02) return false;
+  const mat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+  const std = mat as THREE.MeshStandardMaterial;
+  const name = `${mesh.name} ${std?.name ?? ""}`;
+  const hex = std?.color?.getHex() ?? 0;
+  return /Color_008|Material2_9/i.test(name) || hex < 0x808080;
+}
+
+function pullCeilingGridForward(mesh: THREE.Mesh) {
+  mesh.position.y -= 0.018;
+  mesh.renderOrder = 20;
+  const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  for (const mat of mats) {
+    const std = mat as THREE.MeshStandardMaterial;
+    std.depthWrite = true;
+    std.polygonOffset = true;
+    std.polygonOffsetFactor = -2;
+    std.polygonOffsetUnits = -2;
   }
-  if (keepN === triCount) return;
+}
+
+function isWallShell(box: THREE.Box3, size: THREE.Vector3) {
+  return size.x > 11 && size.z > 22 && size.y > 1.2 && box.min.y < 1;
+}
+
+function rebuildKept(mesh: THREE.Mesh, src: THREE.BufferGeometry, keepTri: boolean[], keepN: number) {
   if (keepN === 0) {
     mesh.visible = false;
     return;
@@ -82,7 +88,7 @@ function stripLowGeometry(mesh: THREE.Mesh, yCut = FURNITURE_Y) {
     const itemSize = attr.itemSize;
     const arr = new Float32Array(keepN * 3 * itemSize);
     let w = 0;
-    for (let t = 0; t < triCount; t++) {
+    for (let t = 0; t < keepTri.length; t++) {
       if (!keepTri[t]) continue;
       for (let k = 0; k < 3; k++) {
         const srcI = (t * 3 + k) * itemSize;
@@ -93,6 +99,40 @@ function stripLowGeometry(mesh: THREE.Mesh, yCut = FURNITURE_Y) {
   }
   next.computeVertexNormals();
   mesh.geometry = next;
+}
+
+function filterShellGeometry(mesh: THREE.Mesh) {
+  mesh.updateMatrixWorld(true);
+  const src = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+  const pos = src.getAttribute("position");
+  if (!pos) return;
+  const triCount = Math.floor(pos.count / 3);
+  const keepTri = new Array<boolean>(triCount);
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const ab = new THREE.Vector3();
+  const ac = new THREE.Vector3();
+  let keepN = 0;
+  for (let t = 0; t < triCount; t++) {
+    a.fromBufferAttribute(pos, t * 3).applyMatrix4(mesh.matrixWorld);
+    b.fromBufferAttribute(pos, t * 3 + 1).applyMatrix4(mesh.matrixWorld);
+    c.fromBufferAttribute(pos, t * 3 + 2).applyMatrix4(mesh.matrixWorld);
+    const minY = Math.min(a.y, b.y, c.y);
+    const maxY = Math.max(a.y, b.y, c.y);
+    const cy = (a.y + b.y + c.y) / 3;
+    ab.subVectors(b, a);
+    ac.subVectors(c, a);
+    const area = 0.5 * ab.cross(ac).length();
+    const low = maxY < SHELL_TRIM_Y;
+    const ceilingCap = cy > CEILING_CAP_Y;
+    const tiny = minY < 3 && area < TINY_AREA;
+    const keep = !low && !ceilingCap && !tiny;
+    keepTri[t] = keep;
+    if (keep) keepN++;
+  }
+  if (keepN === triCount) return;
+  rebuildKept(mesh, src, keepTri, keepN);
 }
 
 function addPlainFloor(scene: THREE.Scene) {
@@ -241,20 +281,23 @@ export function buildClassroom(scene: THREE.Scene): { colliders: AABB[]; seats: 
     scene.add(room);
     room.updateMatrixWorld(true);
 
-    const envelopes: THREE.Mesh[] = [];
     room.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
       prepRoomMesh(mesh);
       const { box, size } = meshBounds(mesh);
+      if (isCeilingDetail(box, size)) {
+        if (isCeilingGrid(mesh, box, size)) pullCeilingGridForward(mesh);
+        return;
+      }
       if (isFloorCap(box, size) || isLowFurniture(box, size)) {
         mesh.visible = false;
         return;
       }
-      if (box.min.y < 0.3 && box.max.y > 2) stripLowGeometry(mesh);
-      if (isEnvelope(box, size)) envelopes.push(mesh);
+      if (isWallShell(box, size) || (box.min.y < 0.3 && box.max.y > 2)) {
+        filterShellGeometry(mesh);
+      }
     });
-    for (const mesh of envelopes) fpWalls.attach(mesh);
     addPlainFloor(scene);
 
     for (let row = 0; row < DESK_GRID.rows; row++) {

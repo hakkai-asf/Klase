@@ -79,7 +79,7 @@ export class World {
     this.fpCam.rotation.order = "YXZ";
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.enabled = false;
     this.scene.background = new THREE.Color(0xeeeae3);
     const built = buildClassroom(this.scene);
     this.colliders = built.colliders;

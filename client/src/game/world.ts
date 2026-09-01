@@ -33,7 +33,7 @@ export class World {
   firstPerson = false;
   readonly localId: string;
   localX = 0;
-  localZ = 5.5;
+  localZ = 8;
   localRot = Math.PI;
   private colliders: AABB[] = [];
   private seats: Seat[] = [];

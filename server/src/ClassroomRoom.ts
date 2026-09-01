@@ -1,5 +1,5 @@
 import { Room, Client, ServerError } from "@colyseus/core";
-import { CHAT_LOG_MAX, CHAT_RADIUS, IDLE_MS, PLAYER_RADIUS, REGULAR_CAP, SEAT_REACH, WEARABLES, classroomSeats, normalizeLook } from "@klase/shared";
+import { CHAT_LOG_MAX, CHAT_RADIUS, IDLE_MS, PLAYER_RADIUS, REGULAR_CAP, SEAT_REACH, WEARABLES, classroomSeats, clampClassroom, normalizeLook } from "@klase/shared";
 import { ClassroomState, Player } from "./schema.js";
 import { filterChat } from "./chatFilter.js";
 import { assertCanModerate, banName, ownerName, resolveIdentity } from "./roles.js";
@@ -38,8 +38,9 @@ export class ClassroomRoom extends Room<ClassroomState> {
       const p = this.state.players.get(client.sessionId);
       if (!p || p.seatId) return;
       if (typeof data.x !== "number" || typeof data.z !== "number") return;
-      let x = Math.max(-9.2, Math.min(9.2, data.x));
-      let z = Math.max(-7.2, Math.min(7.2, data.z));
+      const clamped = clampClassroom(data.x, data.z);
+      let x = clamped.x;
+      let z = clamped.z;
       const others = [...this.state.players.values()].filter((o) => o.sessionId !== p.sessionId);
       const hits = (px: number, pz: number) =>
         others.some((o) => Math.hypot(px - o.x, pz - o.z) < PLAYER_RADIUS * 2);
@@ -210,7 +211,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
     p.userId = ident.userId;
     p.x = -3 + (i % 6) * 1.2;
     p.y = 0;
-    p.z = 5.5;
+    p.z = 8;
     p.rotY = Math.PI;
     p.hat = allowed(WEARABLES.hat, ident.look.hat);
     p.top = allowed(WEARABLES.top, ident.look.top);

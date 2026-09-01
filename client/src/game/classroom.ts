@@ -1,26 +1,29 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { CLASSROOM, DESK_GRID, PLAYER_RADIUS, classroomSeats, type Seat } from "@klase/shared";
+import { CLASSROOM, DESK_GRID, PLAYER_RADIUS, classroomSeats, clampClassroom, type Seat } from "@klase/shared";
 
 export type { Seat };
 export type AABB = { minX: number; maxX: number; minZ: number; maxZ: number };
 
+const classroomUrl = new URL("../../../assets/classroom/classroom.glb", import.meta.url).href;
 const schoolDeskUrl = new URL("../../../assets/furnitures/school-desk.glb", import.meta.url).href;
-const teacherDeskUrl = new URL("../../../assets/furnitures/desk.glb", import.meta.url).href;
-const whiteboardUrl = new URL("../../../assets/furnitures/whiteboard.glb", import.meta.url).href;
-const windowsUrl = new URL("../../../assets/furnitures/windows.glb", import.meta.url).href;
-const bookshelfUrl = new URL("../../../assets/furnitures/bookshelf.glb", import.meta.url).href;
-const shelf2Url = new URL("../../../assets/furnitures/shelf2.glb", import.meta.url).href;
-const floorUrl = new URL("../../../assets/textures/floor-texture.jpg", import.meta.url).href;
+
+const STUDENT_MESH = new Set([
+  "Material2_3",
+  "Material2_4",
+  "Material3_1",
+  "Material3_3",
+  "Material3_4",
+  "Material3_11",
+  "Material3_12",
+  "Material3_13",
+]);
+const STUDENT_MAT = new Set(["0136_Charcoal_1", "Wood_Veneer_01", "Color_D01"]);
+const TEACHER_MAT = new Set(["Color_M04", "Color_M07", "Color_M08", "Color_M05", "Color_M01"]);
 
 type Kit = {
+  classroom: THREE.Object3D;
   schoolDesk: THREE.Object3D;
-  teacherDesk: THREE.Object3D;
-  whiteboard: THREE.Object3D;
-  windows: THREE.Object3D;
-  bookshelf: THREE.Object3D;
-  shelf2: THREE.Object3D;
-  floorTex: THREE.Texture;
 };
 
 let kit: Kit | null = null;
@@ -28,36 +31,33 @@ let kit: Kit | null = null;
 export async function preloadClassroom() {
   if (kit) return;
   const gltf = new GLTFLoader();
-  const tex = new THREE.TextureLoader();
-  const [school, teacher, board, win, shelf, shelf2, floorTex] = await Promise.all([
-    gltf.loadAsync(schoolDeskUrl),
-    gltf.loadAsync(teacherDeskUrl),
-    gltf.loadAsync(whiteboardUrl),
-    gltf.loadAsync(windowsUrl),
-    gltf.loadAsync(bookshelfUrl),
-    gltf.loadAsync(shelf2Url),
-    tex.loadAsync(floorUrl),
-  ]);
-  floorTex.colorSpace = THREE.SRGBColorSpace;
-  floorTex.wrapS = THREE.RepeatWrapping;
-  floorTex.wrapT = THREE.RepeatWrapping;
-  floorTex.repeat.set(8, 6);
-  floorTex.anisotropy = 8;
-  kit = {
-    schoolDesk: school.scene,
-    teacherDesk: teacher.scene,
-    whiteboard: board.scene,
-    windows: win.scene,
-    bookshelf: shelf.scene,
-    shelf2: shelf2.scene,
-    floorTex,
-  };
+  const [room, school] = await Promise.all([gltf.loadAsync(classroomUrl), gltf.loadAsync(schoolDeskUrl)]);
+  kit = { classroom: room.scene, schoolDesk: school.scene };
 }
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     kit = null;
   });
+}
+
+function matName(mesh: THREE.Mesh) {
+  const mat = mesh.material;
+  if (Array.isArray(mat)) return mat.map((m) => m.name).join(",");
+  return mat?.name ?? "";
+}
+
+function isStudentFurniture(mesh: THREE.Mesh) {
+  return STUDENT_MESH.has(mesh.name) || STUDENT_MAT.has(matName(mesh));
+}
+
+function isEnvelope(mesh: THREE.Mesh) {
+  const box = new THREE.Box3().setFromObject(mesh);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const ceiling = center.y > 3.2 && size.y < 0.5 && size.x > 8 && size.z > 18;
+  const walls = size.x > 11 && size.z > 22 && size.y > 1.2;
+  return ceiling || walls;
 }
 
 function prepareProp(
@@ -116,157 +116,90 @@ function place(
   return prop;
 }
 
-function commitCollider(colliders: AABB[], obj: THREE.Object3D) {
-  obj.updateMatrixWorld(true);
-  colliders.push(aabbOf(obj));
+function addHollowWalls(colliders: AABB[]) {
+  const { width: w, depth: d, wallThickness: t } = CLASSROOM;
+  colliders.push({ minX: -w / 2, maxX: w / 2, minZ: -d / 2, maxZ: -d / 2 + t });
+  colliders.push({ minX: -w / 2, maxX: -w / 2 + t, minZ: -d / 2, maxZ: d / 2 });
+  colliders.push({ minX: w / 2 - t, maxX: w / 2, minZ: -d / 2, maxZ: d / 2 });
+  colliders.push({ minX: -w / 2, maxX: w / 2, minZ: d / 2 - t, maxZ: d / 2 });
 }
 
-function makeVisible(root: THREE.Object3D) {
-  root.traverse((o) => {
-    const mesh = o as THREE.Mesh;
-    if (!mesh.isMesh) return;
-    const src = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    const next = src.map((mat) => {
-      const std = (mat as THREE.MeshStandardMaterial).clone();
-      std.side = THREE.DoubleSide;
-      const glass =
-        std.transparent || std.opacity < 0.95 || ("transmission" in std && Number(std.transmission) > 0);
-      if (glass) {
-        std.transparent = true;
-        std.opacity = 0.38;
-        std.color.set(0x8ec4e8);
-        std.emissive.set(0x5aa0d0);
-        std.emissiveIntensity = 0.22;
-        std.depthWrite = false;
-      } else {
-        std.transparent = false;
-        std.opacity = 1;
-        std.depthWrite = true;
-      }
-      return std;
-    });
-    mesh.material = Array.isArray(mesh.material) ? next : next[0]!;
+function fallbackRoom(scene: THREE.Scene, colliders: AABB[], fpWalls: THREE.Group) {
+  const { width: w, depth: d, wallHeight: h, wallThickness: t } = CLASSROOM;
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, d),
+    new THREE.MeshStandardMaterial({ color: 0xb08968, roughness: 0.85 }),
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  scene.add(floor);
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0xf8f4ec, roughness: 0.88 });
+  const back = new THREE.Mesh(new THREE.BoxGeometry(w, h, t), wallMat);
+  back.position.set(0, h / 2, -d / 2 + t / 2);
+  scene.add(back);
+  const left = new THREE.Mesh(new THREE.BoxGeometry(t, h, d), wallMat);
+  left.position.set(-w / 2 + t / 2, h / 2, 0);
+  scene.add(left);
+  const right = new THREE.Mesh(new THREE.BoxGeometry(t, h, d), wallMat);
+  right.position.set(w / 2 - t / 2, h / 2, 0);
+  fpWalls.add(right);
+  const front = new THREE.Mesh(new THREE.BoxGeometry(w, h, t), wallMat);
+  front.position.set(0, h / 2, d / 2 - t / 2);
+  fpWalls.add(front);
+  const ceiling = new THREE.Mesh(new THREE.BoxGeometry(w, t, d), wallMat);
+  ceiling.position.set(0, h, 0);
+  fpWalls.add(ceiling);
+}
+
+function fitClassroom(root: THREE.Object3D) {
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(root);
+  const c = box.getCenter(new THREE.Vector3());
+  root.position.x -= c.x;
+  root.position.z -= c.z;
+  root.position.y -= box.min.y;
+  root.updateMatrixWorld(true);
+}
+
+function prepRoomMesh(mesh: THREE.Mesh) {
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  const src = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  const next = src.map((mat) => {
+    const std = (mat as THREE.MeshStandardMaterial).clone();
+    std.side = THREE.DoubleSide;
+    return std;
   });
-}
-
-/** Push an object so its back face sits on the inner -Z wall. */
-function flushToBackWall(obj: THREE.Object3D, innerZ: number) {
-  obj.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(obj);
-  obj.position.z += innerZ - box.min.z + 0.03;
-  obj.updateMatrixWorld(true);
-}
-
-/** Push an object so its back face sits on the inner -X wall. */
-function flushToLeftWall(obj: THREE.Object3D, innerX: number) {
-  obj.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(obj);
-  obj.position.x += innerX - box.min.x + 0.03;
-  obj.updateMatrixWorld(true);
+  mesh.material = Array.isArray(mesh.material) ? next : next[0]!;
 }
 
 export function buildClassroom(scene: THREE.Scene): { colliders: AABB[]; seats: Seat[]; fpWalls: THREE.Group } {
   const colliders: AABB[] = [];
   const seats = classroomSeats();
-  const { width: w, depth: d, wallHeight: h, wallThickness: t } = CLASSROOM;
-
-  const floorMat = kit
-    ? new THREE.MeshStandardMaterial({ map: kit.floorTex, roughness: 0.72, metalness: 0.02 })
-    : new THREE.MeshStandardMaterial({ color: 0xb08968, roughness: 0.85 });
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(w, d), floorMat);
-  floor.rotation.x = -Math.PI / 2;
-  floor.receiveShadow = true;
-  scene.add(floor);
-
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0xf8f4ec, roughness: 0.88 });
-  const addWall = (x: number, z: number, sx: number, sz: number) => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(sx, h, sz), wallMat);
-    mesh.position.set(x, h / 2, z);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-    colliders.push({
-      minX: x - sx / 2,
-      maxX: x + sx / 2,
-      minZ: z - sz / 2,
-      maxZ: z + sz / 2,
-    });
-  };
-
-  addWall(0, -d / 2 + t / 2, w, t);
-  addWall(-w / 2 + t / 2, 0, t, d);
-  colliders.push({
-    minX: w / 2 - t,
-    maxX: w / 2 + 2,
-    minZ: -d / 2,
-    maxZ: d / 2,
-  });
-  colliders.push({
-    minX: -w / 2,
-    maxX: w / 2,
-    minZ: d / 2 - t,
-    maxZ: d / 2 + 2,
-  });
-
   const fpWalls = new THREE.Group();
   fpWalls.visible = false;
-  const addFpWall = (x: number, z: number, sx: number, sz: number) => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(sx, h, sz), wallMat);
-    mesh.position.set(x, h / 2, z);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    fpWalls.add(mesh);
-  };
-  addFpWall(w / 2 - t / 2, 0, t, d);
-  addFpWall(0, d / 2 - t / 2, w, t);
-  const ceiling = new THREE.Mesh(new THREE.BoxGeometry(w, t, d), wallMat);
-  ceiling.position.set(0, h, 0);
-  ceiling.receiveShadow = true;
-  fpWalls.add(ceiling);
   scene.add(fpWalls);
-
-  const innerZ = -d / 2 + t;
-  const innerX = -w / 2 + t;
+  addHollowWalls(colliders);
 
   if (kit) {
-    // Whiteboard GLB faces −X; yaw −90° puts the writing surface into the room.
-    const board = place(scene, kit.whiteboard, 0, 0, -Math.PI / 2, { height: 2.05, y: 0.92 });
-    makeVisible(board);
-    flushToBackWall(board, innerZ);
+    const room = kit.classroom.clone(true);
+    fitClassroom(room);
+    scene.add(room);
+    room.updateMatrixWorld(true);
 
-    // Cluster PCA is ~0°; the old 14.6° offset was from outlier verts in the huge-scale file.
-    const teacher = place(scene, kit.teacherDesk, 0, innerZ + 1.9, 0, { height: 0.92 });
-    makeVisible(teacher);
-    commitCollider(colliders, teacher);
-
-    const shelf = place(scene, kit.bookshelf, 0, -6.2, -Math.PI / 2, { height: 2.45, depth: 0.58 });
-    makeVisible(shelf);
-    flushToLeftWall(shelf, innerX);
-    commitCollider(colliders, shelf);
-
-    for (const z of [0.55, 5.25]) {
-      const extra = place(scene, kit.shelf2, 0, z, -Math.PI / 2, { height: 1.85, depth: 0.5 });
-      makeVisible(extra);
-      flushToLeftWall(extra, innerX);
-      commitCollider(colliders, extra);
-    }
-    for (const x of [-4.2, 4.2]) {
-      const extra = place(scene, kit.shelf2, x, 0, Math.PI, { height: 1.85, depth: 0.5 });
-      makeVisible(extra);
-      flushToBackWall(extra, innerZ);
-      commitCollider(colliders, extra);
-    }
-
-    for (const x of [-6.55, 6.55]) {
-      const win = place(scene, kit.windows, x, 0, 0, { height: 1.95, y: 0.62 });
-      makeVisible(win);
-      flushToBackWall(win, innerZ);
-    }
-    for (const z of [-1.15, 2.85]) {
-      const win = place(scene, kit.windows, 0, z, Math.PI / 2, { height: 1.95, y: 0.62 });
-      makeVisible(win);
-      flushToLeftWall(win, innerX);
-    }
+    const envelopes: THREE.Mesh[] = [];
+    room.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      prepRoomMesh(mesh);
+      if (isStudentFurniture(mesh)) {
+        mesh.visible = false;
+        return;
+      }
+      if (isEnvelope(mesh)) envelopes.push(mesh);
+      if (TEACHER_MAT.has(matName(mesh))) colliders.push(aabbOf(mesh, 0.04));
+    });
+    for (const mesh of envelopes) fpWalls.attach(mesh);
 
     for (let row = 0; row < DESK_GRID.rows; row++) {
       for (let col = 0; col < DESK_GRID.cols; col++) {
@@ -274,22 +207,16 @@ export function buildClassroom(scene: THREE.Scene): { colliders: AABB[]; seats: 
         const z = DESK_GRID.originZ + row * DESK_GRID.spacingZ;
         const desk = place(scene, kit.schoolDesk, x, z, DESK_GRID.rotY, { height: 1.15, depth: 1.55 });
         const box = aabbOf(desk);
-        // After yaw π the chair is on −Z; keep collision on the desk half.
         const midZ = (box.minZ + box.maxZ) / 2;
         colliders.push({ ...box, minZ: midZ - 0.08 });
       }
     }
   } else {
-    const board = new THREE.Mesh(
-      new THREE.BoxGeometry(7.5, 2.2, 0.12),
-      new THREE.MeshStandardMaterial({ color: 0x3f6b4e, roughness: 0.6 }),
-    );
-    board.position.set(0, 1.7, -d / 2 + 0.28);
-    scene.add(board);
-    for (let row = 0; row < 3; row++) {
-      for (let col = 0; col < 4; col++) {
-        const x = -6 + col * 4;
-        const z = -3.2 + row * 3.1;
+    fallbackRoom(scene, colliders, fpWalls);
+    for (let row = 0; row < DESK_GRID.rows; row++) {
+      for (let col = 0; col < DESK_GRID.cols; col++) {
+        const x = DESK_GRID.originX + col * DESK_GRID.spacingX;
+        const z = DESK_GRID.originZ + row * DESK_GRID.spacingZ;
         colliders.push({ minX: x - 0.85, maxX: x + 0.85, minZ: z - 0.5, maxZ: z + 0.5 });
       }
     }
@@ -335,6 +262,9 @@ export function resolveMove(
 ) {
   let nx = x + dx;
   let nz = z + dz;
+  const c = clampClassroom(nx, nz);
+  nx = c.x;
+  nz = c.z;
   if (blocked(nx, z, boxes, others)) nx = x;
   if (blocked(nx, nz, boxes, others)) nz = z;
   return { x: nx, z: nz };
@@ -363,12 +293,8 @@ export function findClearStand(
     spots.push([x + Math.cos(a) * 1.35, z + Math.sin(a) * 1.35]);
   }
   for (const [px, pz] of spots) {
-    const cx = Math.max(-9.2, Math.min(9.2, px));
-    const cz = Math.max(-7.2, Math.min(7.2, pz));
-    if (!blocked(cx, cz, boxes, others)) return { x: cx, z: cz };
+    const c = clampClassroom(px, pz);
+    if (!blocked(c.x, c.z, boxes, others)) return c;
   }
-  return {
-    x: Math.max(-9.2, Math.min(9.2, x + backX * 1.6)),
-    z: Math.max(-7.2, Math.min(7.2, z + backZ * 1.6)),
-  };
+  return clampClassroom(x + backX * 1.6, z + backZ * 1.6);
 }

@@ -70,18 +70,27 @@ export const WEARABLE_LABELS: Record<string, string> = {
 };
 
 export const CLASSROOM = {
-  width: 20,
-  depth: 16,
-  wallHeight: 3.2,
+  width: 14.16,
+  depth: 29.28,
+  wallHeight: 4.02,
   wallThickness: 0.35,
 };
+
+export function clampClassroom(x: number, z: number) {
+  const hx = CLASSROOM.width / 2 - CLASSROOM.wallThickness - 0.2;
+  const hz = CLASSROOM.depth / 2 - CLASSROOM.wallThickness - 0.2;
+  return {
+    x: Math.max(-hx, Math.min(hx, x)),
+    z: Math.max(-hz, Math.min(hz, z)),
+  };
+}
 
 export const DESK_GRID = {
   rows: 3,
   cols: 4,
-  originX: -5.6,
-  originZ: -1.7,
-  spacingX: 3.7,
+  originX: -4.7,
+  originZ: -5.8,
+  spacingX: 3.15,
   spacingZ: 3.05,
   /** Combo faces the board (−Z). Do not change furniture yaw. */
   rotY: Math.PI,

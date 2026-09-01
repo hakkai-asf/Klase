@@ -8,15 +8,15 @@ export type AABB = { minX: number; maxX: number; minZ: number; maxZ: number };
 const classroomUrl = new URL("../../../assets/classroom/classroom.glb", import.meta.url).href;
 const schoolDeskUrl = new URL("../../../assets/furnitures/school-desk.glb", import.meta.url).href;
 
-const CEILING_CAP_Y = 3.5;
 const WALL_BAND = 0.5;
-const INTERIOR_FURNITURE_Y = 1.2;
+const INTERIOR_FURNITURE_Y = 1.55;
 
 const HIDE_MESH = new Set([
   "Material2_1",
   "Material2_2",
   "Material2_3",
   "Material2_4",
+  "Material2_7",
   "Material2_17",
   "Material2_18",
   "Material3",
@@ -158,17 +158,24 @@ function filterTriangles(mesh: THREE.Mesh, keepFn: (a: THREE.Vector3, b: THREE.V
 function stripInteriorFurniture(mesh: THREE.Mesh) {
   const hx = CLASSROOM.width / 2 - WALL_BAND;
   const hz = CLASSROOM.depth / 2 - WALL_BAND;
+  const ab = new THREE.Vector3();
+  const ac = new THREE.Vector3();
   filterTriangles(mesh, (a, b, c) => {
     const cx = (a.x + b.x + c.x) / 3;
     const cz = (a.z + b.z + c.z) / 3;
     const maxY = Math.max(a.y, b.y, c.y);
     const nearWall = Math.abs(cx) > hx || Math.abs(cz) > hz;
-    return nearWall || maxY >= INTERIOR_FURNITURE_Y;
+    if (nearWall) return true;
+    if (maxY < INTERIOR_FURNITURE_Y) return false;
+    const sx = Math.max(a.x, b.x, c.x) - Math.min(a.x, b.x, c.x);
+    const sz = Math.max(a.z, b.z, c.z) - Math.min(a.z, b.z, c.z);
+    ab.subVectors(b, a);
+    ac.subVectors(c, a);
+    const area = 0.5 * ab.cross(ac).length();
+    if (area < 0.002) return false;
+    if (Math.min(sx, sz) < 0.03 && Math.max(sx, sz) < 2) return false;
+    return true;
   });
-}
-
-function stripCeilingCap(mesh: THREE.Mesh) {
-  filterTriangles(mesh, (a, b, c) => (a.y + b.y + c.y) / 3 <= CEILING_CAP_Y);
 }
 
 function addPlainFloor(scene: THREE.Scene) {
@@ -336,11 +343,6 @@ export function buildClassroom(scene: THREE.Scene): { colliders: AABB[]; seats: 
       }
       if (mesh.name === "Material3_2") {
         stripInteriorFurniture(mesh);
-        return;
-      }
-      if (mesh.name === "Material2_7") {
-        stripCeilingCap(mesh);
-        fpMeshes.push(mesh);
       }
     });
     for (const mesh of fpMeshes) fpWalls.attach(mesh);

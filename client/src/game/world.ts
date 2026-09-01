@@ -57,6 +57,7 @@ export class World {
   private lastPtrX = 0;
   private lastPtrY = 0;
   private fpWalls: THREE.Group;
+  private isoWalls: THREE.Group;
   private hintWrap: HTMLElement;
   private viewHint: HTMLElement;
   private mouseHint: HTMLElement;
@@ -80,11 +81,12 @@ export class World {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = false;
-    this.scene.background = new THREE.Color(0xd8d4cc);
+    this.scene.background = new THREE.Color(0xe4e8f4);
     const built = buildClassroom(this.scene);
     this.colliders = built.colliders;
     this.seats = built.seats;
     this.fpWalls = built.fpWalls;
+    this.isoWalls = built.isoWalls;
     this.sitBtn = hud?.sitBtn ?? null;
     this.touchUi = Boolean(this.sitBtn);
     this.onFirstPersonChange = hud?.onFirstPersonChange;
@@ -150,6 +152,8 @@ export class World {
   setFirstPerson(on: boolean) {
     this.firstPerson = on;
     this.fpWalls.visible = on;
+    this.isoWalls.visible = !on;
+    this.scene.background = new THREE.Color(on ? 0xf8f4ec : 0xe4e8f4);
     this.pitch = 0;
     const local = this.avatars.get(this.localId);
     if (local) setLocalFpPresentation(local, on);

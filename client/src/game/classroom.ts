@@ -11,7 +11,7 @@ const schoolDeskUrl = new URL("../../../assets/furnitures/school-desk.glb", impo
 const WALL_BAND = 0.5;
 const INTERIOR_FURNITURE_Y = 1.55;
 const CEILING_CAP_Y = 3.5;
-const FLOOR_COLOR = 0xd8d4cc;
+const FLOOR_COLOR = 0xf8f4ec;
 
 const HIDE_MESH = new Set([
   "Material2_1",
@@ -204,15 +204,8 @@ function stripCeilingCap(mesh: THREE.Mesh) {
 function addPlainFloor(scene: THREE.Scene) {
   const { width: w, depth: d } = CLASSROOM;
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(w * 3, d * 3),
-    new THREE.MeshStandardMaterial({
-      color: FLOOR_COLOR,
-      roughness: 0.92,
-      metalness: 0,
-      polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1,
-    }),
+    new THREE.PlaneGeometry(w, d),
+    new THREE.MeshBasicMaterial({ color: FLOOR_COLOR }),
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = 0.002;
@@ -283,6 +276,45 @@ function addHollowWalls(colliders: AABB[]) {
   colliders.push({ minX: -w / 2, maxX: w / 2, minZ: d / 2 - t, maxZ: d / 2 });
 }
 
+function addPillarColliders(colliders: AABB[]) {
+  const hx = CLASSROOM.width / 2;
+  const hz = CLASSROOM.depth / 2;
+  const colW = 0.95;
+  const colAlong = 1.35;
+  for (const z of [-5.05, 5.15]) {
+    colliders.push({ minX: -hx, maxX: -hx + colW, minZ: z - colAlong / 2, maxZ: z + colAlong / 2 });
+    colliders.push({ minX: hx - colW, maxX: hx, minZ: z - colAlong / 2, maxZ: z + colAlong / 2 });
+  }
+  const endAlong = 1.2;
+  colliders.push({ minX: hx - colW, maxX: hx, minZ: -hz, maxZ: -hz + endAlong });
+  colliders.push({ minX: hx - colW, maxX: hx, minZ: hz - endAlong, maxZ: hz });
+  colliders.push({ minX: -hx, maxX: -4.2, minZ: -hz, maxZ: -13.05 });
+  colliders.push({ minX: -hx, maxX: -4.2, minZ: 13.45, maxZ: hz });
+}
+
+function keepFarL(mesh: THREE.Mesh) {
+  const xBand = -CLASSROOM.width / 2 + 1.2;
+  const zBand = -CLASSROOM.depth / 2 + 1.2;
+  filterTriangles(mesh, (a, b, c) => {
+    const cx = (a.x + b.x + c.x) / 3;
+    const cz = (a.z + b.z + c.z) / 3;
+    return cx < xBand || cz < zBand;
+  });
+}
+
+function cloneFarL(mesh: THREE.Mesh, isoWalls: THREE.Group) {
+  const iso = mesh.clone();
+  iso.geometry = mesh.geometry.clone();
+  const mat = mesh.material;
+  iso.material = Array.isArray(mat) ? mat.map((m) => m.clone()) : mat.clone();
+  mesh.updateMatrixWorld(true);
+  iso.matrix.copy(mesh.matrixWorld);
+  iso.matrix.decompose(iso.position, iso.quaternion, iso.scale);
+  isoWalls.add(iso);
+  iso.updateMatrixWorld(true);
+  keepFarL(iso);
+}
+
 function fallbackRoom(scene: THREE.Scene, colliders: AABB[], fpWalls: THREE.Group) {
   const { width: w, depth: d, wallHeight: h, wallThickness: t } = CLASSROOM;
   const floor = new THREE.Mesh(
@@ -331,13 +363,21 @@ function prepRoomMesh(mesh: THREE.Mesh) {
   mesh.material = Array.isArray(mesh.material) ? next : next[0]!;
 }
 
-export function buildClassroom(scene: THREE.Scene): { colliders: AABB[]; seats: Seat[]; fpWalls: THREE.Group } {
+export function buildClassroom(scene: THREE.Scene): {
+  colliders: AABB[];
+  seats: Seat[];
+  fpWalls: THREE.Group;
+  isoWalls: THREE.Group;
+} {
   const colliders: AABB[] = [];
   const seats = classroomSeats();
   const fpWalls = new THREE.Group();
   fpWalls.visible = false;
   scene.add(fpWalls);
+  const isoWalls = new THREE.Group();
+  scene.add(isoWalls);
   addHollowWalls(colliders);
+  addPillarColliders(colliders);
 
   if (kit) {
     const room = kit.classroom.clone(true);
@@ -375,10 +415,13 @@ export function buildClassroom(scene: THREE.Scene): { colliders: AABB[]; seats: 
       }
       if (mesh.name === "Material3_2") {
         stripInteriorFurniture(mesh);
+        cloneFarL(mesh, isoWalls);
+        fpMeshes.push(mesh);
         return;
       }
       if (mesh.name === "Material2_7") {
         stripCeilingCap(mesh);
+        cloneFarL(mesh, isoWalls);
         fpMeshes.push(mesh);
       }
     });
@@ -406,13 +449,13 @@ export function buildClassroom(scene: THREE.Scene): { colliders: AABB[]; seats: 
     }
   }
 
-  scene.add(new THREE.HemisphereLight(0xfff6ea, 0x8a909c, 0.9));
+  scene.add(new THREE.HemisphereLight(0xfff6ea, 0xfff6ea, 0.9));
   const sun = new THREE.DirectionalLight(0xfff4e4, 1.12);
   sun.position.set(10, 16, 10);
   sun.castShadow = false;
   scene.add(sun);
 
-  return { colliders, seats, fpWalls };
+  return { colliders, seats, fpWalls, isoWalls };
 }
 
 function blocked(

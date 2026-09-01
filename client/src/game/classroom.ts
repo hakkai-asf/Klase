@@ -8,18 +8,7 @@ export type AABB = { minX: number; maxX: number; minZ: number; maxZ: number };
 const classroomUrl = new URL("../../../assets/classroom/classroom.glb", import.meta.url).href;
 const schoolDeskUrl = new URL("../../../assets/furnitures/school-desk.glb", import.meta.url).href;
 
-const STUDENT_MESH = new Set([
-  "Material2_3",
-  "Material2_4",
-  "Material3_1",
-  "Material3_3",
-  "Material3_4",
-  "Material3_11",
-  "Material3_12",
-  "Material3_13",
-]);
-const STUDENT_MAT = new Set(["0136_Charcoal_1", "Wood_Veneer_01", "Color_D01"]);
-const TEACHER_MAT = new Set(["Color_M04", "Color_M07", "Color_M08", "Color_M05", "Color_M01"]);
+const FURNITURE_Y = 1.15;
 
 type Kit = {
   classroom: THREE.Object3D;
@@ -41,23 +30,88 @@ if (import.meta.hot) {
   });
 }
 
-function matName(mesh: THREE.Mesh) {
-  const mat = mesh.material;
-  if (Array.isArray(mat)) return mat.map((m) => m.name).join(",");
-  return mat?.name ?? "";
-}
-
-function isStudentFurniture(mesh: THREE.Mesh) {
-  return STUDENT_MESH.has(mesh.name) || STUDENT_MAT.has(matName(mesh));
-}
-
-function isEnvelope(mesh: THREE.Mesh) {
+function meshBounds(mesh: THREE.Mesh) {
   const box = new THREE.Box3().setFromObject(mesh);
   const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
-  const ceiling = center.y > 3.2 && size.y < 0.5 && size.x > 8 && size.z > 18;
+  return { box, size };
+}
+
+function isFloorCap(box: THREE.Box3, size: THREE.Vector3) {
+  return size.y < 0.03 && box.max.y < 0.05 && size.x > 8 && size.z > 8;
+}
+
+function isLowFurniture(box: THREE.Box3, size: THREE.Vector3) {
+  return box.max.y < 1.25 && size.y > 0.03;
+}
+
+function isEnvelope(box: THREE.Box3, size: THREE.Vector3) {
+  const centerY = (box.min.y + box.max.y) / 2;
+  const ceiling = centerY > 3.2 && size.y < 0.5 && size.x > 8 && size.z > 18;
   const walls = size.x > 11 && size.z > 22 && size.y > 1.2;
   return ceiling || walls;
+}
+
+function stripLowGeometry(mesh: THREE.Mesh, yCut = FURNITURE_Y) {
+  mesh.updateMatrixWorld(true);
+  const src = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+  const pos = src.getAttribute("position");
+  if (!pos) return;
+  const triCount = Math.floor(pos.count / 3);
+  const keepTri = new Array<boolean>(triCount);
+  const world = new THREE.Vector3();
+  let keepN = 0;
+  for (let t = 0; t < triCount; t++) {
+    let allLow = true;
+    for (let k = 0; k < 3; k++) {
+      world.fromBufferAttribute(pos, t * 3 + k);
+      world.applyMatrix4(mesh.matrixWorld);
+      if (world.y >= yCut) allLow = false;
+    }
+    keepTri[t] = !allLow;
+    if (!allLow) keepN++;
+  }
+  if (keepN === triCount) return;
+  if (keepN === 0) {
+    mesh.visible = false;
+    return;
+  }
+  const next = new THREE.BufferGeometry();
+  for (const name of Object.keys(src.attributes)) {
+    const attr = src.getAttribute(name);
+    if (!attr) continue;
+    const itemSize = attr.itemSize;
+    const arr = new Float32Array(keepN * 3 * itemSize);
+    let w = 0;
+    for (let t = 0; t < triCount; t++) {
+      if (!keepTri[t]) continue;
+      for (let k = 0; k < 3; k++) {
+        const srcI = (t * 3 + k) * itemSize;
+        for (let c = 0; c < itemSize; c++) arr[w++] = attr.array[srcI + c]!;
+      }
+    }
+    next.setAttribute(name, new THREE.BufferAttribute(arr, itemSize));
+  }
+  next.computeVertexNormals();
+  mesh.geometry = next;
+}
+
+function addPlainFloor(scene: THREE.Scene) {
+  const { width: w, depth: d } = CLASSROOM;
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, d),
+    new THREE.MeshStandardMaterial({
+      color: 0xd8d4cc,
+      roughness: 0.92,
+      metalness: 0,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
+    }),
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = 0.002;
+  floor.receiveShadow = true;
+  scene.add(floor);
 }
 
 function prepareProp(
@@ -192,14 +246,16 @@ export function buildClassroom(scene: THREE.Scene): { colliders: AABB[]; seats: 
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
       prepRoomMesh(mesh);
-      if (isStudentFurniture(mesh)) {
+      const { box, size } = meshBounds(mesh);
+      if (isFloorCap(box, size) || isLowFurniture(box, size)) {
         mesh.visible = false;
         return;
       }
-      if (isEnvelope(mesh)) envelopes.push(mesh);
-      if (TEACHER_MAT.has(matName(mesh))) colliders.push(aabbOf(mesh, 0.04));
+      if (box.min.y < 0.3 && box.max.y > 2) stripLowGeometry(mesh);
+      if (isEnvelope(box, size)) envelopes.push(mesh);
     });
     for (const mesh of envelopes) fpWalls.attach(mesh);
+    addPlainFloor(scene);
 
     for (let row = 0; row < DESK_GRID.rows; row++) {
       for (let col = 0; col < DESK_GRID.cols; col++) {

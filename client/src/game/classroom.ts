@@ -295,11 +295,8 @@ function addPillarColliders(colliders: AABB[]) {
 function keepFarL(mesh: THREE.Mesh) {
   const xBand = -CLASSROOM.width / 2 + 1.2;
   const zBand = -CLASSROOM.depth / 2 + 1.2;
-  filterTriangles(mesh, (a, b, c) => {
-    const cx = (a.x + b.x + c.x) / 3;
-    const cz = (a.z + b.z + c.z) / 3;
-    return cx < xBand || cz < zBand;
-  });
+  const inFarL = (x: number, z: number) => x < xBand || z < zBand || (x < -4.15 && z < -12.95);
+  filterTriangles(mesh, (a, b, c) => inFarL(a.x, a.z) || inFarL(b.x, b.z) || inFarL(c.x, c.z));
 }
 
 function cloneFarL(mesh: THREE.Mesh, isoWalls: THREE.Group) {

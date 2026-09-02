@@ -12,6 +12,92 @@ export type ChatLine = {
 };
 
 export type JoinPayload = { name: string; look: Look; accessToken?: string };
+export type JoinStage = "find" | "join" | "load" | "ready";
+
+const JOIN_STAGE: Record<JoinStage, { cap: number; tau: number; copy: string[] }> = {
+  find: {
+    cap: 0.4,
+    tau: 14,
+    copy: [
+      "Connecting you to a classroom…",
+      "Waking the server — first join can take a minute.",
+      "Finding you a room…",
+    ],
+  },
+  join: {
+    cap: 0.65,
+    tau: 5,
+    copy: ["Joining your classroom…", "Almost there…"],
+  },
+  load: {
+    cap: 0.95,
+    tau: 8,
+    copy: ["Loading the classroom…", "Setting up desks and characters…"],
+  },
+  ready: {
+    cap: 1,
+    tau: 0.35,
+    copy: ["You're in."],
+  },
+};
+
+export function renderJoining(root: HTMLElement) {
+  disposeLandingPreviews();
+  root.innerHTML = "";
+  const wrap = el("div", "landing");
+  const card = el("div", "clay landing-card joining-card");
+  const title = el("h1", "", "Klase");
+  const status = el("p", "lede joining-status", JOIN_STAGE.find.copy[0]!);
+  const dots = el("div", "joining-dots");
+  dots.innerHTML = "<span></span><span></span><span></span>";
+  const track = el("div", "joining-track");
+  const fill = el("div", "joining-fill");
+  track.append(fill);
+  card.append(title, status, dots, track);
+  wrap.append(card);
+  root.append(wrap);
+
+  let stage: JoinStage = "find";
+  let floor = 0;
+  let shown = 0;
+  let stageAt = performance.now();
+  let copyI = 1;
+  let alive = true;
+  let raf = 0;
+  const copyTimer = window.setInterval(() => {
+    if (!alive) return;
+    const lines = JOIN_STAGE[stage].copy;
+    status.textContent = lines[copyI % lines.length]!;
+    copyI += 1;
+  }, 3200);
+
+  const tick = (now: number) => {
+    if (!alive) return;
+    const spec = JOIN_STAGE[stage];
+    const t = (now - stageAt) / 1000;
+    const creep = floor + (spec.cap - floor) * (1 - Math.exp(-t / spec.tau));
+    shown = stage === "ready" ? 1 : Math.max(shown, Math.min(spec.cap - 0.004, creep));
+    fill.style.width = `${Math.round(shown * 1000) / 10}%`;
+    raf = requestAnimationFrame(tick);
+  };
+  raf = requestAnimationFrame(tick);
+
+  return {
+    setStage(next: JoinStage) {
+      if (!alive) return;
+      floor = shown;
+      stage = next;
+      stageAt = performance.now();
+      copyI = 1;
+      status.textContent = JOIN_STAGE[next].copy[0]!;
+    },
+    dispose() {
+      alive = false;
+      cancelAnimationFrame(raf);
+      window.clearInterval(copyTimer);
+    },
+  };
+}
 
 let chooserDispose: (() => void) | null = null;
 

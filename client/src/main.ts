@@ -4,7 +4,7 @@ import { World } from "./game/world";
 import { preloadAvatars } from "./game/avatar";
 import { preloadClassroom } from "./game/classroom";
 import { joinClassroom, pickRoom, type RemotePlayer } from "./net";
-import { addChat, disposeLandingPreviews, renderGameShell, renderLanding, setChatOpen, setMicButton, setMuteAllButton, setViewButton, showCustomize, showPlayers, type ChatLine } from "./ui";
+import { addChat, disposeLandingPreviews, renderGameShell, renderJoining, renderLanding, setChatOpen, setMicButton, setMuteAllButton, setViewButton, showCustomize, showPlayers, type ChatLine } from "./ui";
 import { bindJoystick, isTouchUi } from "./joystick";
 import { currentSession, loadSavedLook, signIn, signUp } from "./auth";
 import { VoiceMesh } from "./voice";
@@ -49,6 +49,12 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
   joining = true;
   disposeLandingPreviews();
   look = normalizeLook(look);
+  const loader = renderJoining(app);
+  const fail = (err: string) => {
+    loader.dispose();
+    startLanding(err);
+  };
+  loader.setStage("find");
   const picked = await pickRoom(name, accessToken);
   if ("error" in picked) {
     const err =
@@ -63,18 +69,19 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
                 ? "Game server is not configured. Host Colyseus (Railway, Render, or Fly), set VITE_COLYSEUS_URL on Vercel, then redeploy."
                 : "Could not reach the Klase server. Keep npm run dev running, then try again."
             : "Could not join right now. Try again.";
-    startLanding(err);
+    fail(err);
     return;
   }
 
   let room: Room;
   try {
+    loader.setStage("join");
     room = await joinClassroom(picked.roomKey, name, look, accessToken);
   } catch (e) {
     const msg = String(e);
-    if (msg.includes("ROOM_FULL")) startLanding("All classrooms are full. Try again in a bit.");
-    else if (msg.includes("BANNED")) startLanding("This name or account is banned.");
-    else startLanding(
+    if (msg.includes("ROOM_FULL")) fail("All classrooms are full. Try again in a bit.");
+    else if (msg.includes("BANNED")) fail("This name or account is banned.");
+    else fail(
       import.meta.env.PROD
         ? "Could not join the game server. Check VITE_COLYSEUS_URL (wss://…) and that the Colyseus host is running."
         : "Could not join. Is the Klase server running?",
@@ -82,7 +89,6 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
     return;
   }
 
-  const ui = renderGameShell(app);
   const selfId = room.sessionId;
   const muted = new Set<string>();
   let world: World | undefined;
@@ -91,6 +97,45 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
   let left = false;
   const CHAT_IDLE_MS = 5000;
   let chatIdle = 0;
+  let lastPoke = 0;
+  const bumpActivity = () => {
+    if (document.visibilityState !== "visible") return;
+    const t = Date.now();
+    if (t - lastPoke < 4000) return;
+    lastPoke = t;
+    room.send("poke");
+  };
+  room.onLeave((code) => {
+    left = true;
+    loader.dispose();
+    window.clearTimeout(chatIdle);
+    window.removeEventListener("mousemove", bumpActivity);
+    window.removeEventListener("keydown", bumpActivity);
+    window.removeEventListener("pointerdown", bumpActivity);
+    voice?.dispose();
+    if (leaveReason === "idle" || code === 4002) {
+      startLanding("You were disconnected for being idle (3 minutes).");
+    } else if (code === 4000) {
+      startLanding("You were removed from the classroom.");
+    } else if (code === 4001) {
+      startLanding("This account is banned.");
+    } else {
+      startLanding("You left the classroom.");
+    }
+  });
+
+  loader.setStage("load");
+  const results = await Promise.allSettled([preloadAvatars(), preloadClassroom()]);
+  for (const r of results) {
+    if (r.status === "rejected") console.warn("Asset preload failed", r.reason);
+  }
+  if (left) return;
+  loader.setStage("ready");
+  await new Promise((r) => window.setTimeout(r, 280));
+  if (left) return;
+  loader.dispose();
+
+  const ui = renderGameShell(app);
   const typing = (t: EventTarget | null) => {
     const el = t as HTMLElement | null;
     return Boolean(el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA"));
@@ -130,39 +175,9 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
   room.onMessage("dropped", (data: { reason?: string }) => {
     if (data?.reason === "idle") leaveReason = "idle";
   });
-  let lastPoke = 0;
-  const bumpActivity = () => {
-    if (document.visibilityState !== "visible") return;
-    const t = Date.now();
-    if (t - lastPoke < 4000) return;
-    lastPoke = t;
-    room.send("poke");
-  };
   window.addEventListener("mousemove", bumpActivity);
   window.addEventListener("keydown", bumpActivity);
   window.addEventListener("pointerdown", bumpActivity);
-  room.onLeave((code) => {
-    left = true;
-    window.clearTimeout(chatIdle);
-    window.removeEventListener("mousemove", bumpActivity);
-    window.removeEventListener("keydown", bumpActivity);
-    window.removeEventListener("pointerdown", bumpActivity);
-    voice?.dispose();
-    if (leaveReason === "idle" || code === 4002) {
-      startLanding("You were disconnected for being idle (3 minutes).");
-    } else if (code === 4000) {
-      startLanding("You were removed from the classroom.");
-    } else if (code === 4001) {
-      startLanding("This account is banned.");
-    } else {
-      startLanding("You left the classroom.");
-    }
-  });
-
-  const results = await Promise.allSettled([preloadAvatars(), preloadClassroom()]);
-  for (const r of results) {
-    if (r.status === "rejected") console.warn("Asset preload failed", r.reason);
-  }
   if (left) return;
   world = new World(ui.canvas, selfId, name, look, {
     sitBtn: isTouchUi() ? ui.sitBtn : null,

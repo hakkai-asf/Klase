@@ -294,15 +294,11 @@ function addPillarColliders(colliders: AABB[]) {
 
 function keepFarL(mesh: THREE.Mesh) {
   filterTriangles(mesh, (a, b, c) => {
-    const minZ = Math.min(a.z, b.z, c.z);
     const maxX = Math.max(a.x, b.x, c.x);
     const maxZ = Math.max(a.z, b.z, c.z);
-    const maxY = Math.max(a.y, b.y, c.y);
     const onLeft = maxX < -4.15;
     const onBoard = maxZ < -12.95;
-    if (!(onLeft || onBoard) || maxY < 0.12) return false;
-    const backDoor = maxX < -4.15 && minZ > -13.2 && maxZ < -10.4;
-    return !backDoor;
+    return (onLeft || onBoard) && Math.max(a.y, b.y, c.y) >= 0.12;
   });
 }
 
@@ -400,11 +396,6 @@ export function buildClassroom(scene: THREE.Scene): {
       }
       if (isDoorGlass(mesh)) {
         styleGlass(mesh);
-        fpMeshes.push(mesh);
-        return;
-      }
-      if (mesh.name === "Material3_8") {
-        fpMeshes.push(mesh);
         return;
       }
       if (isWindowWall(mesh)) {

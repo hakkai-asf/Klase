@@ -106,7 +106,7 @@ export const DESK_GRID = {
   /** Mixamo Sitting Idle faces +Z; π turns the avatar toward the board. */
   sitRotY: Math.PI,
   /** Extra root height so the pelvis rests on the chair, not through it. */
-  sitY: 0.18,
+  sitY: 0.26,
 };
 
 export const SEAT_REACH = 1.25;

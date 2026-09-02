@@ -326,12 +326,18 @@ function stripLeftClerestory(mesh: THREE.Mesh) {
 function addLeftClerestoryPatch(scene: THREE.Scene) {
   const { depth: d, cutZ } = CLASSROOM;
   const minZ = -d / 2;
-  const y0 = 3.02;
+  const y0 = 2.7;
   const y1 = 3.87;
-  const patch = new THREE.Mesh(
-    new THREE.BoxGeometry(0.12, y1 - y0, cutZ - minZ),
-    new THREE.MeshStandardMaterial({ color: 0xeee9e0, roughness: 0.6, metalness: 0 }),
-  );
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xeee9e0,
+    roughness: 0.6,
+    metalness: 0,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+  });
+  const patch = new THREE.Mesh(new THREE.PlaneGeometry(cutZ - minZ, y1 - y0), mat);
+  patch.rotation.y = Math.PI / 2;
   patch.position.set(-6.95, (y0 + y1) / 2, (minZ + cutZ) / 2);
   patch.castShadow = false;
   patch.receiveShadow = false;
@@ -532,7 +538,7 @@ export function buildClassroom(scene: THREE.Scene): {
       for (let col = 0; col < DESK_GRID.cols; col++) {
         const x = DESK_GRID.originX + col * DESK_GRID.spacingX;
         const z = DESK_GRID.originZ + row * DESK_GRID.spacingZ;
-        const chair = place(scene, kit.nuChair, x, z, DESK_GRID.rotY, { height: 0.95 });
+        const chair = place(scene, kit.nuChair, x, z, DESK_GRID.rotY, { height: 1.08 });
         colliders.push(aabbOf(chair, 0.04));
       }
     }

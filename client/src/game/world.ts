@@ -93,7 +93,7 @@ export class World {
     this.renderer.shadowMap.enabled = false;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.08;
+    this.renderer.toneMappingExposure = 1.0;
     this.scene.background = new THREE.Color(0xe4e8f4);
     const built = buildClassroom(this.scene);
     this.colliders = built.colliders;
@@ -103,7 +103,7 @@ export class World {
     this.renderPass = new RenderPass(this.scene, this.isoCam);
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(this.renderPass);
-    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.2, 0.42, 0.86));
+    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.06, 0.22, 0.94));
     this.composer.addPass(new OutputPass());
     this.sitBtn = hud?.sitBtn ?? null;
     this.touchUi = Boolean(this.sitBtn);

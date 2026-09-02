@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { CLASSROOM, DESK_GRID, PLAYER_RADIUS, classroomSeats, clampClassroom, type Seat } from "@klase/shared";
+import { CLASSROOM, DESK_GRID, PLAYER_RADIUS, classroomSeats, clampClassroom, resolvePlayerMove, type Seat } from "@klase/shared";
 
 export type { Seat };
 export type AABB = { minX: number; maxX: number; minZ: number; maxZ: number };
@@ -329,7 +329,7 @@ function addLeftClerestoryPatch(scene: THREE.Scene) {
   const y0 = 2.7;
   const y1 = 3.87;
   const mat = new THREE.MeshStandardMaterial({
-    color: 0xeee9e0,
+    color: 0xf0d7a8,
     roughness: 0.6,
     metalness: 0,
     polygonOffset: true,
@@ -348,7 +348,7 @@ function addCutWall(fpWalls: THREE.Group) {
   const { width: w, wallHeight: h, wallThickness: t, cutZ } = CLASSROOM;
   const wall = new THREE.Mesh(
     new THREE.BoxGeometry(w, h, t),
-    new THREE.MeshStandardMaterial({ color: 0xeee9e0, roughness: 0.6, metalness: 0 }),
+    new THREE.MeshStandardMaterial({ color: 0xf0d7a8, roughness: 0.6, metalness: 0 }),
   );
   wall.position.set(0, h / 2, cutZ - t / 2);
   wall.castShadow = false;
@@ -404,7 +404,7 @@ function fallbackRoom(scene: THREE.Scene, colliders: AABB[], fpWalls: THREE.Grou
   floor.rotation.x = -Math.PI / 2;
   floor.position.z = midZ;
   scene.add(floor);
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0xeee9e0, roughness: 0.6 });
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0xf0d7a8, roughness: 0.6 });
   const back = new THREE.Mesh(new THREE.BoxGeometry(w, h, t), wallMat);
   back.position.set(0, h / 2, -d / 2 + t / 2);
   scene.add(back);
@@ -444,11 +444,11 @@ function strengthenShellColors(mesh: THREE.Mesh) {
     const std = mat as THREE.MeshStandardMaterial;
     const name = `${mesh.name} ${std.name ?? ""}`;
     if (mesh.name === "Material2_7" || /0128_White/i.test(name)) {
-      std.color.set(0xeee9e0);
+      std.color.set(0xf0d7a8);
     } else if (mesh.name === "Material3_8" || /Color_003/i.test(name)) {
-      std.color.set(0x6e6e6e);
+      std.color.set(0xe2c48a);
     } else if (mesh.name === "Material3_9" || /Color_004/i.test(name)) {
-      std.color.set(0x4f4f4f);
+      std.color.set(0xc9aa70);
     }
   }
 }
@@ -562,6 +562,16 @@ export function buildClassroom(scene: THREE.Scene): {
   return { colliders, seats, fpWalls, isoWalls };
 }
 
+function hitsBox(px: number, pz: number, boxes: AABB[], radius = PLAYER_RADIUS) {
+  return boxes.some(
+    (b) =>
+      px + radius > b.minX &&
+      px - radius < b.maxX &&
+      pz + radius > b.minZ &&
+      pz - radius < b.maxZ,
+  );
+}
+
 function blocked(
   px: number,
   pz: number,
@@ -569,16 +579,7 @@ function blocked(
   others: { x: number; z: number }[],
   radius = PLAYER_RADIUS,
 ) {
-  if (
-    boxes.some(
-      (b) =>
-        px + radius > b.minX &&
-        px - radius < b.maxX &&
-        pz + radius > b.minZ &&
-        pz - radius < b.maxZ,
-    )
-  )
-    return true;
+  if (hitsBox(px, pz, boxes, radius)) return true;
   return others.some((o) => Math.hypot(px - o.x, pz - o.z) < radius * 2);
 }
 
@@ -595,9 +596,11 @@ export function resolveMove(
   const c = clampClassroom(nx, nz);
   nx = c.x;
   nz = c.z;
-  if (blocked(nx, z, boxes, others)) nx = x;
-  if (blocked(nx, nz, boxes, others)) nz = z;
-  return { x: nx, z: nz };
+  if (hitsBox(nx, z, boxes)) nx = x;
+  if (hitsBox(nx, nz, boxes)) nz = z;
+  const sep = resolvePlayerMove(x, z, nx, nz, others);
+  if (hitsBox(sep.x, sep.z, boxes)) return { x: nx, z: nz };
+  return sep;
 }
 
 /** Step behind the chair (opposite facing), then try a ring, skipping colliders and other players. */

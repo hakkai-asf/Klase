@@ -1,5 +1,5 @@
 import { Room, Client, ServerError } from "@colyseus/core";
-import { CHAT_LOG_MAX, CHAT_RADIUS, CLASSROOM, IDLE_MS, PLAYER_RADIUS, REGULAR_CAP, SEAT_REACH, WEARABLES, classroomSeats, clampClassroom, normalizeLook } from "@klase/shared";
+import { CHAT_LOG_MAX, CHAT_RADIUS, CLASSROOM, IDLE_MS, PLAYER_RADIUS, REGULAR_CAP, SEAT_REACH, WEARABLES, classroomSeats, clampClassroom, normalizeLook, resolvePlayerMove } from "@klase/shared";
 import { ClassroomState, Player } from "./schema.js";
 import { filterChat } from "./chatFilter.js";
 import { assertCanModerate, banName, ownerName, resolveIdentity } from "./roles.js";
@@ -39,15 +39,12 @@ export class ClassroomRoom extends Room<ClassroomState> {
       if (!p || p.seatId) return;
       if (typeof data.x !== "number" || typeof data.z !== "number") return;
       const clamped = clampClassroom(data.x, data.z);
-      let x = clamped.x;
-      let z = clamped.z;
-      const others = [...this.state.players.values()].filter((o) => o.sessionId !== p.sessionId);
-      const hits = (px: number, pz: number) =>
-        others.some((o) => Math.hypot(px - o.x, pz - o.z) < PLAYER_RADIUS * 2);
-      if (hits(x, p.z)) x = p.x;
-      if (hits(x, z)) z = p.z;
-      p.x = x;
-      p.z = z;
+      const others = [...this.state.players.values()]
+        .filter((o) => o.sessionId !== p.sessionId)
+        .map((o) => ({ x: o.x, z: o.z }));
+      const sep = resolvePlayerMove(p.x, p.z, clamped.x, clamped.z, others);
+      p.x = sep.x;
+      p.z = sep.z;
       p.rotY = Number(data.rotY) || 0;
       this.touch(client.sessionId);
     });

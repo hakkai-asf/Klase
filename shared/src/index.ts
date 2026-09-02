@@ -5,6 +5,8 @@ export const REGULAR_CAP = 12;
 export const CHAT_RADIUS = 6.5;
 export const MOVE_SPEED = 2.6;
 export const PLAYER_RADIUS = 0.2;
+/** Graze slack so exact 2-radius contact does not glue. */
+export const PLAYER_SKIN = 0.02;
 export const CHAT_LOG_MAX = 40;
 export const IDLE_MS = 180_000;
 
@@ -88,6 +90,68 @@ export function clampClassroom(x: number, z: number) {
   };
 }
 
+const PLAYER_HIT = PLAYER_RADIUS * 2 - PLAYER_SKIN;
+const PLAYER_NUDGE = PLAYER_RADIUS * 2 + 0.04;
+
+function playerBlocked(
+  px: number,
+  pz: number,
+  fromX: number,
+  fromZ: number,
+  others: { x: number; z: number }[],
+) {
+  return others.some((o) => {
+    const next = Math.hypot(px - o.x, pz - o.z);
+    if (next >= PLAYER_HIT) return false;
+    const prev = Math.hypot(fromX - o.x, fromZ - o.z);
+    return !(prev < PLAYER_HIT && next > prev);
+  });
+}
+
+/** Push overlapping circles apart to a small gap. Sitters stay in `others` (solid). */
+export function nudgeFromPlayers(x: number, z: number, others: { x: number; z: number }[]) {
+  let px = x;
+  let pz = z;
+  let hit = false;
+  for (const o of others) {
+    let dx = px - o.x;
+    let dz = pz - o.z;
+    let d = Math.hypot(dx, dz);
+    if (d >= PLAYER_HIT) continue;
+    if (d < 1e-5) {
+      dx = 1;
+      dz = 0;
+      d = 1;
+    }
+    const s = PLAYER_NUDGE / d;
+    px = o.x + dx * s;
+    pz = o.z + dz * s;
+    hit = true;
+  }
+  return hit ? clampClassroom(px, pz) : { x, z };
+}
+
+/**
+ * Axis-split player vs player. Overlap may only persist while the step
+ * increases distance; idle overlap nudges apart.
+ */
+export function resolvePlayerMove(
+  x: number,
+  z: number,
+  tryX: number,
+  tryZ: number,
+  others: { x: number; z: number }[],
+) {
+  if (Math.abs(tryX - x) < 1e-8 && Math.abs(tryZ - z) < 1e-8) {
+    return nudgeFromPlayers(x, z, others);
+  }
+  let nx = tryX;
+  let nz = tryZ;
+  if (playerBlocked(nx, z, x, z, others)) nx = x;
+  if (playerBlocked(nx, nz, nx, z, others)) nz = z;
+  return { x: nx, z: nz };
+}
+
 export const DESK_GRID = {
   rows: 3,
   cols: 4,
@@ -99,9 +163,9 @@ export const DESK_GRID = {
   rotY: Math.PI / 2,
   /**
    * Seat pan in un-rotated chair space (Object_23 after fit/center).
-   * A few cm toward the backrest so the pelvis lands on the pan, not the front lip.
+   * Negative X is toward the backrest after rotY π/2.
    */
-  seatLocalX: 0.08,
+  seatLocalX: -0.04,
   seatLocalZ: 0.07,
   /** Mixamo Sitting Idle faces +Z; π turns the avatar toward the board. */
   sitRotY: Math.PI,

@@ -343,6 +343,88 @@ function stripLeftClerestory(mesh: THREE.Mesh) {
   });
 }
 
+function stripFrontDoor(mesh: THREE.Mesh) {
+  if (mesh.name !== "Material3_8" && mesh.name !== "Material2" && mesh.name !== "Material3_10") return;
+  filterTriangles(mesh, (a, b, c) => {
+    const cx = (a.x + b.x + c.x) / 3;
+    const cz = (a.z + b.z + c.z) / 3;
+    return !(cz < -13.5 && cx > 2.9);
+  });
+}
+
+function stripCornerPillar(mesh: THREE.Mesh) {
+  if (mesh.name === "Material3_8") {
+    filterTriangles(mesh, (a, b, c) => {
+      const cx = (a.x + b.x + c.x) / 3;
+      const cz = (a.z + b.z + c.z) / 3;
+      return !(cx < -4 && cz < -12.8);
+    });
+    return;
+  }
+  if (mesh.name !== "Material2_7") return;
+  filterTriangles(mesh, (a, b, c) => {
+    const cx = (a.x + b.x + c.x) / 3;
+    const cz = (a.z + b.z + c.z) / 3;
+    const onOuterRight = cx > 7.02;
+    const onOuterLeft = cx < -6.95;
+    const onOuterBoard = cz < -14.52;
+    const rightBump = cx > 5.72 && cz < -13.02 && !onOuterRight && !onOuterBoard;
+    const leftBump = cx < -4.2 && cz < -12.92 && !onOuterLeft && !onOuterBoard;
+    return !rightBump && !leftBump;
+  });
+}
+
+function addFrontDoorWall(host: THREE.Object3D, wallMat?: THREE.Material) {
+  const src = wallMat as THREE.MeshStandardMaterial | undefined;
+  const mat = src
+    ? src.clone()
+    : new THREE.MeshStandardMaterial({ color: ROOM.wall, roughness: 1, metalness: 0 });
+  mat.polygonOffset = false;
+  mat.side = THREE.FrontSide;
+
+  const floorMat = new THREE.MeshStandardMaterial({ color: ROOM.floor, roughness: 0.85, metalness: 0 });
+
+  const board = new THREE.Mesh(new THREE.PlaneGeometry(4.1, 3.88), mat);
+  board.position.set(5.05, 1.94, -14.478);
+  board.castShadow = false;
+  board.receiveShadow = false;
+  host.add(board);
+
+  const right = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 3.88), mat);
+  right.rotation.y = -Math.PI / 2;
+  right.position.set(6.948, 1.94, -13.72);
+  right.castShadow = false;
+  right.receiveShadow = false;
+  host.add(right);
+
+  const floorR = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 1.7), floorMat);
+  floorR.rotation.x = -Math.PI / 2;
+  floorR.position.set(6.2, 0.001, -13.72);
+  floorR.castShadow = false;
+  floorR.receiveShadow = false;
+  host.add(floorR);
+
+  const boardL = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.88), mat);
+  boardL.position.set(-5.4, 1.94, -14.478);
+  boardL.castShadow = false;
+  boardL.receiveShadow = false;
+  host.add(boardL);
+
+  const left = new THREE.Mesh(new THREE.PlaneGeometry(1.85, 3.88), mat);
+  left.rotation.y = Math.PI / 2;
+  left.position.set(-6.948, 1.94, -13.7);
+  left.castShadow = false;
+  left.receiveShadow = false;
+  host.add(left);
+
+  const floorL = new THREE.Mesh(new THREE.PlaneGeometry(2.9, 1.85), floorMat);
+  floorL.rotation.x = -Math.PI / 2;
+  floorL.position.set(-5.55, 0.001, -13.7);
+  floorL.castShadow = false;
+  floorL.receiveShadow = false;
+  host.add(floorL);
+}
+
 function addLeftClerestoryPatch(scene: THREE.Scene) {
   const { depth: d, cutZ } = CLASSROOM;
   const minZ = -d / 2;
@@ -378,16 +460,12 @@ function addCutWall(fpWalls: THREE.Group) {
 
 function addPillarColliders(colliders: AABB[]) {
   const hx = CLASSROOM.width / 2;
-  const hz = CLASSROOM.depth / 2;
   const colW = 0.95;
   const colAlong = 1.35;
   for (const z of [-5.05]) {
     colliders.push({ minX: -hx, maxX: -hx + colW, minZ: z - colAlong / 2, maxZ: z + colAlong / 2 });
     colliders.push({ minX: hx - colW, maxX: hx, minZ: z - colAlong / 2, maxZ: z + colAlong / 2 });
   }
-  const endAlong = 1.2;
-  colliders.push({ minX: hx - colW, maxX: hx, minZ: -hz, maxZ: -hz + endAlong });
-  colliders.push({ minX: -hx, maxX: -4.2, minZ: -hz, maxZ: -13.05 });
 }
 
 function keepFarL(mesh: THREE.Mesh) {
@@ -480,7 +558,7 @@ function paintRoomSurfaces(mesh: THREE.Mesh) {
 }
 
 function addCeilingWash(scene: THREE.Scene) {
-  const color = 0xf6ddc8;
+  const color = 0xf1dbc8;
   const xs = [-4.21, -1.12, 1.98];
   const zs = [-11.7, -7.06, -2.42];
   for (const x of xs) {
@@ -506,7 +584,7 @@ function lightCeilingFixtures(mesh: THREE.Mesh) {
     std.map = null;
     std.emissiveMap = null;
     std.color.set(0xffffff);
-    std.emissive.set(0xffeedd);
+    std.emissive.set(0xfcecdd);
     std.emissiveIntensity = isHousing ? 0.18 : 0.42;
     std.side = THREE.FrontSide;
     std.metalness = 0;
@@ -571,6 +649,7 @@ export function buildClassroom(scene: THREE.Scene): {
     room.updateMatrixWorld(true);
 
     const fpMeshes: THREE.Mesh[] = [];
+    let shellMat: THREE.Material | undefined;
     room.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
@@ -583,6 +662,8 @@ export function buildClassroom(scene: THREE.Scene): {
       }
       clipMeshMaxZ(mesh, CLASSROOM.cutZ);
       stripEdgeFixtures(mesh);
+      stripFrontDoor(mesh);
+      stripCornerPillar(mesh);
       if (!mesh.visible) return;
       if (mesh.name === "Material2" || mesh.name === "Material2_6") stripLeftClerestory(mesh);
       if (!mesh.visible) return;
@@ -614,12 +695,15 @@ export function buildClassroom(scene: THREE.Scene): {
         stripShellCaps(mesh);
         cloneFarL(mesh, isoWalls);
         fpMeshes.push(mesh);
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        shellMat = mats[0];
       }
     });
     for (const mesh of fpMeshes) fpWalls.attach(mesh);
     addCeilingBacking(fpWalls);
     addCutWall(fpWalls);
     addLeftClerestoryPatch(scene);
+    addFrontDoorWall(scene, shellMat);
 
     for (let row = 0; row < DESK_GRID.rows; row++) {
       for (let col = 0; col < DESK_GRID.cols; col++) {
@@ -640,9 +724,9 @@ export function buildClassroom(scene: THREE.Scene): {
     }
   }
 
-  scene.add(new THREE.HemisphereLight(0xf5e8dc, 0xb8a090, 1.02));
-  scene.add(new THREE.AmbientLight(0xeee4d8, 0.28));
-  const sun = new THREE.DirectionalLight(0xf5e4d4, 0.32);
+  scene.add(new THREE.HemisphereLight(0xf3e7dc, 0xb49e90, 1.02));
+  scene.add(new THREE.AmbientLight(0xece3d8, 0.28));
+  const sun = new THREE.DirectionalLight(0xf2e2d4, 0.32);
   sun.position.set(4, 18, -6);
   sun.castShadow = false;
   scene.add(sun);

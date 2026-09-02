@@ -344,7 +344,7 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
     setViewButton(ui.viewBtn, scene.firstPerson, isTouchUi());
   });
   const applyIsoZoom = () => {
-    const raw = Number(ui.zoomSlider.value) / 100;
+    const raw = 1 - Number(ui.zoomSlider.value) / 100;
     const t = Math.abs(raw - 0.5) <= 0.06 ? 0.5 : raw;
     if (t === 0.5) ui.zoomSlider.value = "50";
     scene.setIsoZoom(t);

@@ -340,6 +340,10 @@ export class World {
     return this.seats.find((s) => s.id === seatId)?.y ?? 0;
   }
 
+  private seatFacing(seatId: string) {
+    return this.seats.find((s) => s.id === seatId)?.rotY ?? this.localRot;
+  }
+
   private tickSpeech(a: AvatarHandle, now: number, dt: number) {
     const target = now < a.speechUntil ? 1 : 0;
     const speed = (target > a.speechFade ? dt / SPEECH_FADE_IN : dt / SPEECH_FADE_OUT);
@@ -404,7 +408,7 @@ export class World {
         const others = [...this.avatars.entries()]
           .filter(([id]) => id !== this.localId)
           .map(([, a]) => ({ x: a.root.position.x, z: a.root.position.z }));
-        const rot = this.localRot;
+        const rot = this.seatFacing(this.localSeatId);
         const clear = findClearStand(this.localX, this.localZ, rot, this.colliders, others);
         this.localSeatId = "";
         this.localX = clear.x;
@@ -457,7 +461,7 @@ export class World {
     const local = this.avatars.get(this.localId);
     if (local) {
       local.root.position.set(this.localX, this.seatY(this.localSeatId), this.localZ);
-      local.root.rotation.y = this.localRot;
+      local.root.rotation.y = this.localSeatId ? this.seatFacing(this.localSeatId) : this.localRot;
       poseWalk(local, dt, moved, Boolean(this.localSeatId));
       local.lastX = this.localX;
       local.lastZ = this.localZ;
@@ -512,6 +516,7 @@ export class World {
     }
     if (this.lookDirty) {
       this.lookDirty = false;
+      if (this.localSeatId) return null;
       return { type: "move", x: this.localX, z: this.localZ, rotY: this.localRot };
     }
     return null;

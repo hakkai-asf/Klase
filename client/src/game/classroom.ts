@@ -9,7 +9,6 @@ const classroomUrl = new URL("../../../assets/classroom/cleaned-classroom.glb", 
 const nuChairUrl = new URL("../../../assets/furnitures/nu-chair.glb", import.meta.url).href;
 
 const CEILING_CAP_Y = 3.5;
-const FLOOR_COLOR = 0xf8f4ec;
 
 type Kit = {
   classroom: THREE.Object3D;
@@ -75,20 +74,6 @@ function pullCeilingGridForward(mesh: THREE.Mesh) {
   }
 }
 
-function styleGlass(mesh: THREE.Mesh) {
-  const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-  for (const mat of mats) {
-    const std = mat as THREE.MeshStandardMaterial;
-    std.color.set(0x6a7680);
-    std.transparent = true;
-    std.opacity = 0.3;
-    std.depthWrite = false;
-    std.roughness = 0.18;
-    std.metalness = 0.08;
-    std.side = THREE.FrontSide;
-  }
-}
-
 function pullBoardForward(mesh: THREE.Mesh) {
   mesh.position.z += 0.03;
   mesh.renderOrder = 2;
@@ -150,19 +135,12 @@ function filterTriangles(mesh: THREE.Mesh, keepFn: (a: THREE.Vector3, b: THREE.V
   rebuildKept(mesh, src, keepTri, keepN);
 }
 
-function stripCeilingCap(mesh: THREE.Mesh) {
-  filterTriangles(mesh, (a, b, c) => (a.y + b.y + c.y) / 3 <= CEILING_CAP_Y);
-}
-
-function addPlainFloor(scene: THREE.Scene) {
-  const { width: w, depth: d } = CLASSROOM;
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(w, d),
-    new THREE.MeshBasicMaterial({ color: FLOOR_COLOR }),
-  );
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.y = 0.002;
-  scene.add(floor);
+function stripShellCaps(mesh: THREE.Mesh) {
+  filterTriangles(mesh, (a, b, c) => {
+    const maxY = Math.max(a.y, b.y, c.y);
+    const avgY = (a.y + b.y + c.y) / 3;
+    return avgY <= CEILING_CAP_Y && maxY >= 0.08;
+  });
 }
 
 function prepareProp(
@@ -349,12 +327,11 @@ export function buildClassroom(scene: THREE.Scene): {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
       prepRoomMesh(mesh);
-      if (mesh.name.endsWith("_1") || mesh.name === "Material3_6") {
+      if (mesh.name.endsWith("_1")) {
         mesh.visible = false;
         return;
       }
       if (isDoorGlass(mesh)) {
-        styleGlass(mesh);
         cloneFarL(mesh, isoWalls);
         fpMeshes.push(mesh);
         return;
@@ -379,13 +356,12 @@ export function buildClassroom(scene: THREE.Scene): {
         return;
       }
       if (mesh.name === "Material2_7") {
-        stripCeilingCap(mesh);
+        stripShellCaps(mesh);
         cloneFarL(mesh, isoWalls);
         fpMeshes.push(mesh);
       }
     });
     for (const mesh of fpMeshes) fpWalls.attach(mesh);
-    addPlainFloor(scene);
 
     for (let row = 0; row < DESK_GRID.rows; row++) {
       for (let col = 0; col < DESK_GRID.cols; col++) {

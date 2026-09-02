@@ -92,16 +92,15 @@ export const DESK_GRID = {
   originZ: -5.8,
   spacingX: 3.15,
   spacingZ: 3.05,
-  /** Combo faces the board (−Z). Do not change furniture yaw. */
-  rotY: Math.PI,
+  /** nu-chair forward is local +X; π/2 maps that to the board (−Z). */
+  rotY: Math.PI / 2,
   /**
-   * Chair is on +Z after that yaw (desk on −Z). Offset is in un-rotated
-   * desk space and is then rotated by rotY in classroomSeats().
+   * Seat pan in un-rotated chair space (Object_23 after fit/center).
+   * A few cm toward the backrest so the pelvis lands on the pan, not the front lip.
    */
   seatLocalX: 0.08,
-  /** Chair center is ~+0.33 after yaw π; a bit toward the desk so they sit on the seat, not the backrest. */
-  seatLocalZ: -0.28,
-  /** Mixamo Sitting Idle faces +Z; π turns the avatar toward the desk/board. */
+  seatLocalZ: 0.07,
+  /** Mixamo Sitting Idle faces +Z; π turns the avatar toward the board. */
   sitRotY: Math.PI,
   /** Extra root height so the pelvis rests on the chair, not through it. */
   sitY: 0.18,

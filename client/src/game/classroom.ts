@@ -5,38 +5,15 @@ import { CLASSROOM, DESK_GRID, PLAYER_RADIUS, classroomSeats, clampClassroom, ty
 export type { Seat };
 export type AABB = { minX: number; maxX: number; minZ: number; maxZ: number };
 
-const classroomUrl = new URL("../../../assets/classroom/classroom.glb", import.meta.url).href;
-const schoolDeskUrl = new URL("../../../assets/furnitures/school-desk.glb", import.meta.url).href;
+const classroomUrl = new URL("../../../assets/classroom/cleaned-classroom.glb", import.meta.url).href;
+const nuChairUrl = new URL("../../../assets/furnitures/nu-chair.glb", import.meta.url).href;
 
-const WALL_BAND = 0.5;
-const INTERIOR_FURNITURE_Y = 1.55;
 const CEILING_CAP_Y = 3.5;
 const FLOOR_COLOR = 0xf8f4ec;
 
-const HIDE_MESH = new Set([
-  "Material2_1",
-  "Material2_2",
-  "Material2_3",
-  "Material2_4",
-  "Material2_17",
-  "Material2_18",
-  "Material3",
-  "Material3_1",
-  "Material3_3",
-  "Material3_4",
-  "Material3_5",
-  "Material3_6",
-  "Material3_9",
-  "Material3_11",
-  "Material3_12",
-  "Material3_13",
-  "Material3_14",
-  "Material3_15",
-]);
-
 type Kit = {
   classroom: THREE.Object3D;
-  schoolDesk: THREE.Object3D;
+  nuChair: THREE.Object3D;
 };
 
 let kit: Kit | null = null;
@@ -44,8 +21,8 @@ let kit: Kit | null = null;
 export async function preloadClassroom() {
   if (kit) return;
   const gltf = new GLTFLoader();
-  const [room, school] = await Promise.all([gltf.loadAsync(classroomUrl), gltf.loadAsync(schoolDeskUrl)]);
-  kit = { classroom: room.scene, schoolDesk: school.scene };
+  const [room, chair] = await Promise.all([gltf.loadAsync(classroomUrl), gltf.loadAsync(nuChairUrl)]);
+  kit = { classroom: room.scene, nuChair: chair.scene };
 }
 
 if (import.meta.hot) {
@@ -78,11 +55,11 @@ function isCeilingGrid(mesh: THREE.Mesh, box: THREE.Box3, size: THREE.Vector3) {
 }
 
 function isDoorGlass(mesh: THREE.Mesh) {
-  return /Translucent_Glass_Gray_1|Material3_10/i.test(matName(mesh));
+  return mesh.name === "Material2" || /Translucent_Glass_Gray_1|Material3_10/i.test(matName(mesh));
 }
 
 function isWindowWall(mesh: THREE.Mesh) {
-  return mesh.name === "Material2" || mesh.name === "Material2_6" || /Translucent_Glass_Gray_2/i.test(matName(mesh));
+  return mesh.name === "Material2_6" || /Translucent_Glass_Gray_2/i.test(matName(mesh));
 }
 
 function pullCeilingGridForward(mesh: THREE.Mesh) {
@@ -171,30 +148,6 @@ function filterTriangles(mesh: THREE.Mesh, keepFn: (a: THREE.Vector3, b: THREE.V
   }
   if (keepN === triCount) return;
   rebuildKept(mesh, src, keepTri, keepN);
-}
-
-function stripInteriorFurniture(mesh: THREE.Mesh) {
-  const hx = CLASSROOM.width / 2 - WALL_BAND;
-  const hz = CLASSROOM.depth / 2 - WALL_BAND;
-  const ab = new THREE.Vector3();
-  const ac = new THREE.Vector3();
-  filterTriangles(mesh, (a, b, c) => {
-    const maxY = Math.max(a.y, b.y, c.y);
-    ab.subVectors(b, a);
-    ac.subVectors(c, a);
-    const area = 0.5 * ab.cross(ac).length();
-    if (maxY < 0.08) return false;
-    if (area < 0.002 && maxY < 0.2) return false;
-    const cx = (a.x + b.x + c.x) / 3;
-    const cz = (a.z + b.z + c.z) / 3;
-    const nearWall = Math.abs(cx) > hx || Math.abs(cz) > hz;
-    if (nearWall) return true;
-    if (maxY < INTERIOR_FURNITURE_Y) return false;
-    const sx = Math.max(a.x, b.x, c.x) - Math.min(a.x, b.x, c.x);
-    const sz = Math.max(a.z, b.z, c.z) - Math.min(a.z, b.z, c.z);
-    if (Math.min(sx, sz) < 0.03 && Math.max(sx, sz) < 2) return false;
-    return true;
-  });
 }
 
 function stripCeilingCap(mesh: THREE.Mesh) {
@@ -396,7 +349,7 @@ export function buildClassroom(scene: THREE.Scene): {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
       prepRoomMesh(mesh);
-      if (HIDE_MESH.has(mesh.name)) {
+      if (mesh.name.endsWith("_1") || mesh.name === "Material3_6") {
         mesh.visible = false;
         return;
       }
@@ -412,23 +365,16 @@ export function buildClassroom(scene: THREE.Scene): {
         return;
       }
       if (isWindowWall(mesh)) {
-        if (mesh.name !== "Material2_6") styleGlass(mesh);
         fpMeshes.push(mesh);
         return;
       }
-      if (mesh.name === "Material3_16" || mesh.name === "Material3_17") {
+      if (mesh.name === "Material3_16") {
         pullBoardForward(mesh);
         return;
       }
       const { box, size } = meshBounds(mesh);
       if (isCeilingDetail(box, size)) {
         if (isCeilingGrid(mesh, box, size)) pullCeilingGridForward(mesh);
-        fpMeshes.push(mesh);
-        return;
-      }
-      if (mesh.name === "Material3_2") {
-        stripInteriorFurniture(mesh);
-        cloneFarL(mesh, isoWalls);
         fpMeshes.push(mesh);
         return;
       }
@@ -445,10 +391,8 @@ export function buildClassroom(scene: THREE.Scene): {
       for (let col = 0; col < DESK_GRID.cols; col++) {
         const x = DESK_GRID.originX + col * DESK_GRID.spacingX;
         const z = DESK_GRID.originZ + row * DESK_GRID.spacingZ;
-        const desk = place(scene, kit.schoolDesk, x, z, DESK_GRID.rotY, { height: 1.15, depth: 1.55 });
-        const box = aabbOf(desk);
-        const midZ = (box.minZ + box.maxZ) / 2;
-        colliders.push({ ...box, minZ: midZ - 0.08 });
+        const chair = place(scene, kit.nuChair, x, z, DESK_GRID.rotY, { height: 0.95 });
+        colliders.push(aabbOf(chair, 0.04));
       }
     }
   } else {
@@ -457,7 +401,7 @@ export function buildClassroom(scene: THREE.Scene): {
       for (let col = 0; col < DESK_GRID.cols; col++) {
         const x = DESK_GRID.originX + col * DESK_GRID.spacingX;
         const z = DESK_GRID.originZ + row * DESK_GRID.spacingZ;
-        colliders.push({ minX: x - 0.85, maxX: x + 0.85, minZ: z - 0.5, maxZ: z + 0.5 });
+        colliders.push({ minX: x - 0.34, maxX: x + 0.34, minZ: z - 0.32, maxZ: z + 0.32 });
       }
     }
   }

@@ -357,7 +357,7 @@ function stripCornerPillar(mesh: THREE.Mesh) {
     filterTriangles(mesh, (a, b, c) => {
       const cx = (a.x + b.x + c.x) / 3;
       const cz = (a.z + b.z + c.z) / 3;
-      return !(cx < -4 && cz < -12.8);
+      return !(cz < -13.4 && (cx > 2.9 || cx < -4));
     });
     return;
   }
@@ -366,13 +366,18 @@ function stripCornerPillar(mesh: THREE.Mesh) {
     const cx = (a.x + b.x + c.x) / 3;
     const cz = (a.z + b.z + c.z) / 3;
     const onOuterRight = cx > 7.02;
-    const onOuterLeft = cx < -6.95;
+    const onOuterLeft = cx < -7.04;
     const onOuterBoard = cz < -14.52;
-    const rightBump = cx > 5.72 && cz < -13.02 && !onOuterRight && !onOuterBoard;
-    const leftBump = cx < -4.2 && cz < -12.92 && !onOuterLeft && !onOuterBoard;
-    return !rightBump && !leftBump;
+    const rightPatch = cx > 3.12 && cz < -12.92 && !onOuterRight && !onOuterBoard;
+    const leftPatch = cx < -4.0 && cz < -12.85 && !onOuterLeft && !onOuterBoard;
+    return !rightPatch && !leftPatch;
   });
 }
+
+/** Fitted GLB inner faces. Covers sit 4 mm into the room so leftover recesses stay hidden. */
+const BOARD_FACE_Z = -14.417;
+const RIGHT_FACE_X = 6.946;
+const LEFT_FACE_X = -6.854;
 
 function addFrontDoorWall(host: THREE.Object3D, wallMat?: THREE.Material) {
   const src = wallMat as THREE.MeshStandardMaterial | undefined;
@@ -384,45 +389,47 @@ function addFrontDoorWall(host: THREE.Object3D, wallMat?: THREE.Material) {
 
   const floorMat = new THREE.MeshStandardMaterial({ color: ROOM.floor, roughness: 0.85, metalness: 0 });
 
-  const board = new THREE.Mesh(new THREE.PlaneGeometry(4.1, 3.88), mat);
-  board.position.set(5.05, 1.94, -14.478);
-  board.castShadow = false;
-  board.receiveShadow = false;
-  host.add(board);
+  const thick = 0.32;
+  const h = 4.2;
+  const y = h / 2 - 0.16;
 
-  const right = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 3.88), mat);
-  right.rotation.y = -Math.PI / 2;
-  right.position.set(6.948, 1.94, -13.72);
-  right.castShadow = false;
-  right.receiveShadow = false;
-  host.add(right);
+  const addBoard = (w: number, x: number) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, thick), mat);
+    mesh.position.set(x, y, BOARD_FACE_Z - thick / 2);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    host.add(mesh);
+  };
+  const addRight = (d: number, z: number) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(thick, h, d), mat);
+    mesh.position.set(RIGHT_FACE_X + thick / 2, y, z);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    host.add(mesh);
+  };
+  const addLeft = (d: number, z: number) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(thick, h, d), mat);
+    mesh.position.set(LEFT_FACE_X - thick / 2, y, z);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    host.add(mesh);
+  };
+  const addFloor = (w: number, d: number, x: number, z: number) => {
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, d), floorMat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(x, 0.004, z);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    host.add(mesh);
+  };
 
-  const floorR = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 1.7), floorMat);
-  floorR.rotation.x = -Math.PI / 2;
-  floorR.position.set(6.2, 0.001, -13.72);
-  floorR.castShadow = false;
-  floorR.receiveShadow = false;
-  host.add(floorR);
+  addBoard(4.3, 5.0);
+  addRight(1.7, -13.58);
+  addFloor(4.4, 1.75, 5.0, -13.55);
 
-  const boardL = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.88), mat);
-  boardL.position.set(-5.4, 1.94, -14.478);
-  boardL.castShadow = false;
-  boardL.receiveShadow = false;
-  host.add(boardL);
-
-  const left = new THREE.Mesh(new THREE.PlaneGeometry(1.85, 3.88), mat);
-  left.rotation.y = Math.PI / 2;
-  left.position.set(-6.948, 1.94, -13.7);
-  left.castShadow = false;
-  left.receiveShadow = false;
-  host.add(left);
-
-  const floorL = new THREE.Mesh(new THREE.PlaneGeometry(2.9, 1.85), floorMat);
-  floorL.rotation.x = -Math.PI / 2;
-  floorL.position.set(-5.55, 0.001, -13.7);
-  floorL.castShadow = false;
-  floorL.receiveShadow = false;
-  host.add(floorL);
+  addBoard(3.5, -5.35);
+  addLeft(1.85, -13.55);
+  addFloor(3.6, 1.85, -5.4, -13.52);
 }
 
 function addLeftClerestoryPatch(scene: THREE.Scene) {

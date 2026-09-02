@@ -482,7 +482,7 @@ function paintRoomSurfaces(mesh: THREE.Mesh) {
 function addCeilingWash(scene: THREE.Scene) {
   const color = 0xf6ddc8;
   const xs = [-4.21, -1.12, 1.98];
-  const zs = [-7.06, -2.42, 1.72];
+  const zs = [-11.7, -7.06, -2.42];
   for (const x of xs) {
     for (const z of zs) {
       if (z > CLASSROOM.cutZ - 0.4) continue;
@@ -523,7 +523,7 @@ function stripEdgeFixtures(mesh: THREE.Mesh) {
   filterTriangles(mesh, (a, b, c) => {
     const cx = (a.x + b.x + c.x) / 3;
     const cz = (a.z + b.z + c.z) / 3;
-    return cx < 4.4 && cz > -10.4;
+    return cx < 4.4 && cz < -0.5;
   });
 }
 

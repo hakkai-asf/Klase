@@ -512,12 +512,12 @@ function pickRig(body?: string): Rig | null {
   return body === "y" ? rigs.y : rigs.x;
 }
 
-function findBone(root: THREE.Object3D, re: RegExp) {
-  let found: THREE.Object3D | null = null;
+function findBone(root: THREE.Object3D, re: RegExp): THREE.Object3D | null {
+  const hit: THREE.Object3D[] = [];
   root.traverse((o) => {
-    if (!found && re.test(o.name)) found = o;
+    if (hit.length === 0 && re.test(o.name)) hit.push(o);
   });
-  return found;
+  return hit[0] ?? null;
 }
 
 function attachSockets(model: THREE.Object3D) {
@@ -660,13 +660,11 @@ export function setLocalFpPresentation(
   const tag = avatar.root.getObjectByName("nametag");
   if (tag) tag.visible = !firstPerson;
 
-  let headBone: THREE.Bone | null = null;
-  avatar.body.traverse((o) => {
-    const bone = o as THREE.Bone;
-    if (!headBone && bone.isBone && /head$/i.test(o.name)) headBone = bone;
-    if (o.name === "Head" && !bone.isBone) o.visible = !hideHead;
-  });
+  const headBone = findBone(avatar.body, /head$/i);
   if (headBone) headBone.scale.setScalar(hideHead ? 0.001 : 1);
+  avatar.body.traverse((o) => {
+    if (o.name === "Head" && !(o as THREE.Bone).isBone) o.visible = !hideHead;
+  });
 }
 
 function primitiveAvatar(look: Look, nametag: string) {

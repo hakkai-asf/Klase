@@ -1081,7 +1081,8 @@ export function applyLook(
 }
 
 export function paintBodyPortrait(img: HTMLImageElement, body: BodyId) {
-  const src = previews?.[body] ?? pickRig(body)?.template;
+  const rig = pickRig(body);
+  const src = rig?.template;
   if (!src) return () => {};
 
   const size = 512;
@@ -1095,33 +1096,49 @@ export function paintBodyPortrait(img: HTMLImageElement, body: BodyId) {
     preserveDrawingBuffer: true,
   });
   renderer.setSize(size, size, false);
-  renderer.setClearColor(0xffffff, 1);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.setClearColor(0x2a211c, 0);
 
   const scene = new THREE.Scene();
-  scene.add(new THREE.HemisphereLight(0xfff4e6, 0x8a909c, 1.05));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.05);
-  sun.position.set(1.2, 2.4, 3.2);
+  scene.add(new THREE.HemisphereLight(0xffe4c8, 0x3a2a22, 1.15));
+  const sun = new THREE.DirectionalLight(0xfff1e0, 1.35);
+  sun.position.set(1.6, 2.2, 2.4);
   scene.add(sun);
-  scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+  const fill = new THREE.DirectionalLight(0xffc090, 0.55);
+  fill.position.set(-1.4, 1.2, 1.6);
+  scene.add(fill);
+  scene.add(new THREE.AmbientLight(0xffe8d4, 0.35));
 
   const model = cloneModel(src);
   fitToHeight(model, 1.7);
-  model.rotation.y = 0;
+  model.rotation.y = 0.35;
+  if (body === "y") {
+    model.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const srcMat = mesh.material;
+      const list = (Array.isArray(srcMat) ? srcMat : [srcMat]).map((mat) => {
+        const next = (mat as THREE.MeshStandardMaterial).clone();
+        next.color?.offsetHSL(0.035, 0.12, 0.06);
+        return next;
+      });
+      mesh.material = Array.isArray(srcMat) ? list : list[0]!;
+    });
+  }
   scene.add(model);
 
-  const rig = pickRig(body);
   if (isSkinned(model) && rig?.idle) {
     const mixer = new THREE.AnimationMixer(model);
     const idle = mixer.clipAction(rig.idle);
     idle.play();
-    mixer.update(0.08);
+    mixer.update(0.35);
     mixer.stopAllAction();
   }
   model.updateMatrixWorld(true);
 
   const camera = new THREE.PerspectiveCamera(26, 1, 0.05, 30);
-  camera.position.set(0, 1.42, 2.05);
-  camera.lookAt(0, 1.36, 0);
+  camera.position.set(0.78, 1.38, 1.92);
+  camera.lookAt(0, 1.22, 0);
   renderer.render(scene, camera);
   img.src = canvas.toDataURL("image/png");
   img.alt = body === "y" ? "Y Bot" : "X Bot";

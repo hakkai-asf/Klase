@@ -41,20 +41,27 @@ const JOIN_STAGE: Record<JoinStage, { cap: number; tau: number; copy: string[] }
   },
 };
 
+function menuBrand(lede: string) {
+  const brand = el("div", "menu-brand");
+  brand.append(el("h1", "", "Klase"), el("p", "lede", lede));
+  return brand;
+}
+
 export function renderJoining(root: HTMLElement) {
   disposeLandingPreviews();
   root.innerHTML = "";
   const wrap = el("div", "landing");
-  const card = el("div", "clay landing-card joining-card");
-  const title = el("h1", "", "Klase");
+  const shell = el("div", "menu-shell");
   const status = el("p", "lede joining-status", JOIN_STAGE.find.copy[0]!);
   const dots = el("div", "joining-dots");
   dots.innerHTML = "<span></span><span></span><span></span>";
   const track = el("div", "joining-track");
   const fill = el("div", "joining-fill");
   track.append(fill);
-  card.append(title, status, dots, track);
-  wrap.append(card);
+  const nav = el("div", "menu-nav");
+  nav.append(status, dots, track);
+  shell.append(menuBrand("Connecting you to a classroom."), nav);
+  wrap.append(shell);
   root.append(wrap);
 
   let stage: JoinStage = "find";
@@ -164,109 +171,151 @@ export function renderLanding(
   disposeLandingPreviews();
   root.innerHTML = "";
   const wrap = el("div", "landing");
-  const card = el("div", "clay landing-card");
-  card.innerHTML = `
-    <h1>Klase</h1>
-    <p class="lede">Walk a shared classroom. Chat with people near you.</p>
-  `;
-  card.append(el("label", "", "Character"));
-  const pick = el("div", "char-pick");
-  const look = storedLook();
-  let body: BodyId = look.body;
-  const portraits = new Map<BodyId, HTMLImageElement>();
-  for (const id of BODIES) {
-    const btn = el("button", `char-card char-${id}${body === id ? " on" : ""}`) as HTMLButtonElement;
-    btn.type = "button";
-    const frame = el("div", "char-frame");
-    const img = el("img") as HTMLImageElement;
-    img.alt = BODY_LABELS[id];
-    frame.append(img);
-    const caption = el("span", "", BODY_LABELS[id]);
-    btn.append(frame, caption);
-    btn.addEventListener("click", () => {
-      body = id;
-      look.body = id;
-      localStorage.setItem("klase-look", JSON.stringify(look));
-      pick.querySelectorAll(".char-card").forEach((n) => n.classList.remove("on"));
-      btn.classList.add("on");
-    });
-    pick.append(btn);
-    portraits.set(id, img);
-  }
-  card.append(pick);
-  card.append(el("label", "", "Display name"));
-  const name = el("input", "clay-input") as HTMLInputElement;
-  name.id = "name";
-  name.maxLength = 24;
-  name.placeholder = "Guest";
-  name.value = localStorage.getItem("klase-name") ?? "";
-  const err = el("div", initialError ? "error-banner" : "error-banner hidden", initialError);
-  const actions = el("div", "landing-actions");
-  const go = el("button", "clay-btn primary", "Join as guest");
+  root.append(wrap);
+
+  type MenuScreen = "menu" | "play" | "account";
+  const startScreen: MenuScreen = /sign|account|email|password/i.test(initialError)
+    ? "account"
+    : initialError
+      ? "play"
+      : "menu";
+
   const lockJoin = (btn: HTMLButtonElement) => {
     if (btn.disabled) return false;
     btn.disabled = true;
     return true;
   };
-  go.addEventListener("click", () => {
-    if (!lockJoin(go)) return;
-    card.querySelectorAll("button").forEach((b) => {
-      (b as HTMLButtonElement).disabled = true;
-    });
-    go.textContent = "Joining…";
-    const n = name.value.trim() || "Guest";
-    localStorage.setItem("klase-name", n);
-    const next = { ...storedLook(), body };
-    localStorage.setItem("klase-look", JSON.stringify(next));
-    onJoin({ name: n, look: next });
-  });
-  actions.append(go);
-  card.append(name, err, actions);
 
-  if (authEnabled()) {
-    card.append(el("label", "", "Email"));
+  const paintPortraits = (host: HTMLElement, portraits: Map<BodyId, HTMLImageElement>) => {
+    void preloadAvatars()
+      .then(() => {
+        if (!host.isConnected) return;
+        const stops = BODIES.map((id) => paintBodyPortrait(portraits.get(id)!, id));
+        chooserDispose = () => {
+          for (const stop of stops) stop();
+        };
+      })
+      .catch((e) => console.warn("Character preview failed", e));
+  };
+
+  const show = (screen: MenuScreen) => {
+    disposeLandingPreviews();
+    wrap.innerHTML = "";
+    const shell = el("div", "menu-shell");
+    const nav = el("div", "menu-nav");
+
+    if (screen === "menu") {
+      shell.append(menuBrand("Walk a shared classroom. Chat with people near you."));
+      const play = el("button", "clay-btn primary", "Play") as HTMLButtonElement;
+      play.type = "button";
+      play.addEventListener("click", () => show("play"));
+      nav.append(play);
+      if (authEnabled()) {
+        const acct = el("button", "clay-btn", "Account") as HTMLButtonElement;
+        acct.type = "button";
+        acct.addEventListener("click", () => show("account"));
+        nav.append(acct);
+      }
+      shell.append(nav);
+      wrap.append(shell);
+      return;
+    }
+
+    if (screen === "play") {
+      shell.append(menuBrand("Pick a body and a name, then jump in."));
+      const look = storedLook();
+      let body: BodyId = look.body;
+      const portraits = new Map<BodyId, HTMLImageElement>();
+      const pick = el("div", "char-pick");
+      for (const id of BODIES) {
+        const btn = el("button", `char-card char-${id}${body === id ? " on" : ""}`) as HTMLButtonElement;
+        btn.type = "button";
+        const frame = el("div", "char-frame");
+        const img = el("img") as HTMLImageElement;
+        img.alt = BODY_LABELS[id];
+        frame.append(img);
+        btn.append(frame, el("span", "", BODY_LABELS[id]));
+        btn.addEventListener("click", () => {
+          body = id;
+          look.body = id;
+          localStorage.setItem("klase-look", JSON.stringify(look));
+          pick.querySelectorAll(".char-card").forEach((n) => n.classList.remove("on"));
+          btn.classList.add("on");
+        });
+        pick.append(btn);
+        portraits.set(id, img);
+      }
+      nav.append(el("label", "", "Character"), pick);
+      nav.append(el("label", "", "Display name"));
+      const name = el("input", "clay-input") as HTMLInputElement;
+      name.id = "name";
+      name.maxLength = 24;
+      name.placeholder = "Guest";
+      name.value = localStorage.getItem("klase-name") ?? "";
+      nav.append(name);
+      if (initialError) nav.append(el("div", "error-banner", initialError));
+      const go = el("button", "clay-btn primary", "Join as guest") as HTMLButtonElement;
+      go.type = "button";
+      go.addEventListener("click", () => {
+        if (!lockJoin(go)) return;
+        nav.querySelectorAll("button").forEach((b) => {
+          (b as HTMLButtonElement).disabled = true;
+        });
+        go.textContent = "Joining…";
+        const n = name.value.trim() || "Guest";
+        localStorage.setItem("klase-name", n);
+        const next = { ...storedLook(), body };
+        localStorage.setItem("klase-look", JSON.stringify(next));
+        onJoin({ name: n, look: next });
+      });
+      const back = el("button", "clay-btn", "Back") as HTMLButtonElement;
+      back.type = "button";
+      back.addEventListener("click", () => show("menu"));
+      nav.append(go, back);
+      shell.append(nav);
+      wrap.append(shell);
+      paintPortraits(wrap, portraits);
+      return;
+    }
+
+    shell.append(menuBrand("Sign in to keep your look and name."));
+    const name = el("input", "clay-input") as HTMLInputElement;
+    name.maxLength = 24;
+    name.placeholder = "Display name";
+    name.value = localStorage.getItem("klase-name") ?? "";
     const email = el("input", "clay-input") as HTMLInputElement;
     email.type = "email";
     email.autocomplete = "email";
-    card.append(email);
-    card.append(el("label", "", "Password"));
+    email.placeholder = "Email";
     const pass = el("input", "clay-input") as HTMLInputElement;
     pass.type = "password";
     pass.autocomplete = "current-password";
-    card.append(pass);
-    const acct = el("div", "landing-actions");
-    const signIn = el("button", "clay-btn", "Sign in");
-    const signUp = el("button", "clay-btn", "Create account");
+    pass.placeholder = "Password";
+    nav.append(el("label", "", "Display name"), name, el("label", "", "Email"), email, el("label", "", "Password"), pass);
+    if (initialError) nav.append(el("div", "error-banner", initialError));
+    const signIn = el("button", "clay-btn primary", "Sign in") as HTMLButtonElement;
+    const signUp = el("button", "clay-btn", "Create account") as HTMLButtonElement;
     signIn.addEventListener("click", () => {
       if (!lockJoin(signIn)) return;
       signIn.textContent = "Joining…";
       signUp.disabled = true;
-      go.disabled = true;
       onAccount("in", email.value.trim(), pass.value, name.value.trim() || "Student");
     });
     signUp.addEventListener("click", () => {
       if (!lockJoin(signUp)) return;
       signUp.textContent = "Joining…";
       signIn.disabled = true;
-      go.disabled = true;
       onAccount("up", email.value.trim(), pass.value, name.value.trim() || "Student");
     });
-    acct.append(signIn, signUp);
-    card.append(acct);
-  }
+    const back = el("button", "clay-btn", "Back") as HTMLButtonElement;
+    back.type = "button";
+    back.addEventListener("click", () => show("menu"));
+    nav.append(signIn, signUp, back);
+    shell.append(nav);
+    wrap.append(shell);
+  };
 
-  wrap.append(card);
-  root.append(wrap);
-
-  void preloadAvatars()
-    .then(() => {
-      if (!wrap.isConnected) return;
-      const stops = BODIES.map((id) => paintBodyPortrait(portraits.get(id)!, id));
-      chooserDispose = () => {
-        for (const stop of stops) stop();
-      };
-    })
-    .catch((e) => console.warn("Character preview failed", e));
+  show(startScreen);
 }
 
 export function renderGameShell(root: HTMLElement) {

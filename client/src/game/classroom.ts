@@ -294,14 +294,16 @@ function addPillarColliders(colliders: AABB[]) {
 
 function keepFarL(mesh: THREE.Mesh) {
   filterTriangles(mesh, (a, b, c) => {
+    const minX = Math.min(a.x, b.x, c.x);
     const minZ = Math.min(a.z, b.z, c.z);
     const maxX = Math.max(a.x, b.x, c.x);
     const maxZ = Math.max(a.z, b.z, c.z);
     const onLeft = maxX < -4.15;
     const onBoard = maxZ < -12.95;
-    if (!(onLeft || onBoard) || Math.max(a.y, b.y, c.y) < 0.12) return false;
-    const backDoor = maxX < -4.15 && minZ > 10.9 && maxZ < 13.6;
-    return !backDoor;
+    const onFront = minZ > 14.2 && minX > 3.4 && maxX < 5.6;
+    if (!(onLeft || onBoard || onFront) || Math.max(a.y, b.y, c.y) < 0.12) return false;
+    const rightBackDoor = minX > 3.4 && maxX < 5.6 && maxZ < -13.0;
+    return !rightBackDoor;
   });
 }
 

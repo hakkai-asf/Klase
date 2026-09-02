@@ -471,8 +471,8 @@ function paintRoomSurfaces(mesh: THREE.Mesh) {
     else if (mesh.name === "Material2_10" || /0009_Linen/i.test(name)) {
       flattenPaint(std, ROOM.ceiling);
       std.emissive.setHex(ROOM.ceiling);
-      std.emissiveIntensity = 0.18;
-      std.side = THREE.DoubleSide;
+      std.emissiveIntensity = 0.06;
+      std.side = THREE.BackSide;
     } else if (mesh.name === "Material2_9" || /Color_008/i.test(name)) flattenPaint(std, ROOM.grid);
     else if (mesh.name === "Material3_6" || /Wood_Square_Tile/i.test(name)) flattenPaint(std, ROOM.floor);
     else if (mesh.name === "Material3_16" || /whiteboard/i.test(name)) flattenPaint(std, ROOM.board);
@@ -481,8 +481,8 @@ function paintRoomSurfaces(mesh: THREE.Mesh) {
 
 function addCeilingWash(scene: THREE.Scene) {
   const color = 0xf6ddc8;
-  const xs = [-4.21, -1.12, 1.98, 5.08];
-  const zs = [-11.7, -7.06, -2.42, 1.72];
+  const xs = [-4.21, -1.12, 1.98];
+  const zs = [-7.06, -2.42, 1.72];
   for (const x of xs) {
     for (const z of zs) {
       if (z > CLASSROOM.cutZ - 0.4) continue;
@@ -492,18 +492,6 @@ function addCeilingWash(scene: THREE.Scene) {
       scene.add(lamp);
     }
   }
-  for (const [x, z] of [
-    [5.85, -12.85],
-    [5.85, -10.55],
-    [5.85, -4.35],
-    [5.85, -0.55],
-  ] as const) {
-    if (z > CLASSROOM.cutZ - 0.4) continue;
-    const lamp = new THREE.PointLight(color, 12, 8.5, 2);
-    lamp.position.set(x, 3.55, z);
-    lamp.castShadow = false;
-    scene.add(lamp);
-  }
 }
 
 function lightCeilingFixtures(mesh: THREE.Mesh) {
@@ -511,11 +499,7 @@ function lightCeilingFixtures(mesh: THREE.Mesh) {
   const isIlu = mesh.name === "Material2_14" || /white_ilu/i.test(name);
   const isLouver = mesh.name === "Material3_7" || /0131_Silver/i.test(name);
   const isHousing = mesh.name === "Material2_13" || /0133_Gray/i.test(name);
-  const isSideLamp =
-    mesh.name === "Material2_11" ||
-    mesh.name === "Material2_12" ||
-    /Metal_Rough|Metal_Seamed/i.test(name);
-  if (!isIlu && !isLouver && !isHousing && !isSideLamp) return;
+  if (!isIlu && !isLouver && !isHousing) return;
   const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
   for (const mat of mats) {
     const std = mat as THREE.MeshStandardMaterial;
@@ -523,11 +507,24 @@ function lightCeilingFixtures(mesh: THREE.Mesh) {
     std.emissiveMap = null;
     std.color.set(0xffffff);
     std.emissive.set(0xffeedd);
-    std.emissiveIntensity = isHousing ? 0.45 : 1.05;
-    std.side = THREE.DoubleSide;
+    std.emissiveIntensity = isHousing ? 0.18 : 0.42;
+    std.side = THREE.FrontSide;
     std.metalness = 0;
     std.roughness = 0.35;
   }
+}
+
+function stripEdgeFixtures(mesh: THREE.Mesh) {
+  if (mesh.name === "Material2_11" || mesh.name === "Material2_12") {
+    mesh.visible = false;
+    return;
+  }
+  if (mesh.name !== "Material2_14" && mesh.name !== "Material3_7" && mesh.name !== "Material2_13") return;
+  filterTriangles(mesh, (a, b, c) => {
+    const cx = (a.x + b.x + c.x) / 3;
+    const cz = (a.z + b.z + c.z) / 3;
+    return cx < 4.4 && cz > -10.4;
+  });
 }
 
 /** Solid lid above the fixtures. Only parented to fpWalls so aerial stays open. */
@@ -540,8 +537,8 @@ function addCeilingBacking(host: THREE.Object3D) {
     roughness: 0.85,
     metalness: 0,
     emissive: ROOM.ceiling,
-    emissiveIntensity: 0.18,
-    side: THREE.DoubleSide,
+    emissiveIntensity: 0.06,
+    side: THREE.BackSide,
   });
   const plane = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.24, spanZ - 0.08), mat);
   plane.rotation.x = -Math.PI / 2;
@@ -585,6 +582,7 @@ export function buildClassroom(scene: THREE.Scene): {
         return;
       }
       clipMeshMaxZ(mesh, CLASSROOM.cutZ);
+      stripEdgeFixtures(mesh);
       if (!mesh.visible) return;
       if (mesh.name === "Material2" || mesh.name === "Material2_6") stripLeftClerestory(mesh);
       if (!mesh.visible) return;

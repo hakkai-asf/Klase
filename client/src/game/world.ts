@@ -1,8 +1,4 @@
 import * as THREE from "three";
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { CLASSROOM, MOVE_SPEED, SEAT_REACH, type Look, type Seat } from "@klase/shared";
 import { applyLook, createAvatar, drawMic, drawSpeech, layoutHeadSprites, poseWalk, setLocalFpPresentation } from "./avatar";
 import { buildClassroom, findClearStand, resolveMove, type AABB } from "./classroom";
@@ -27,6 +23,7 @@ const LOOK_SENS = 0.0022;
 const LOOK_SENS_TOUCH = 0.0038;
 const PITCH_MAX = 1.15;
 const EYE_STAND = 1.55;
+const EYE_SIT = 1.18;
 const EYE_FWD = 0.12;
 const SPEECH_HOLD = 4000;
 const SPEECH_FADE_IN = 0.12;
@@ -37,8 +34,6 @@ export class World {
   readonly scene = new THREE.Scene();
   readonly isoCam: THREE.OrthographicCamera;
   readonly fpCam: THREE.PerspectiveCamera;
-  private readonly composer: EffectComposer;
-  private readonly renderPass: RenderPass;
   firstPerson = false;
   readonly localId: string;
   localX = 0;
@@ -89,7 +84,7 @@ export class World {
     this.fpCam = new THREE.PerspectiveCamera(70, 1, 0.08, 80);
     this.fpCam.rotation.order = "YXZ";
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
     this.renderer.shadowMap.enabled = false;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -100,11 +95,6 @@ export class World {
     this.seats = built.seats;
     this.fpWalls = built.fpWalls;
     this.isoWalls = built.isoWalls;
-    this.renderPass = new RenderPass(this.scene, this.isoCam);
-    this.composer = new EffectComposer(this.renderer);
-    this.composer.addPass(this.renderPass);
-    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.06, 0.22, 0.94));
-    this.composer.addPass(new OutputPass());
     this.sitBtn = hud?.sitBtn ?? null;
     this.touchUi = Boolean(this.sitBtn);
     this.onFirstPersonChange = hud?.onFirstPersonChange;
@@ -166,7 +156,6 @@ export class World {
     this.fpCam.aspect = aspect;
     this.fpCam.updateProjectionMatrix();
     this.renderer.setSize(w, h, false);
-    this.composer.setSize(w, h);
   }
 
   /** 0 = zoomed in, 0.5 = default, 1 = zoomed out. Iso camera only. */
@@ -187,10 +176,12 @@ export class World {
     this.firstPerson = on;
     this.fpWalls.visible = on;
     this.isoWalls.visible = !on;
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, on ? 1 : 1.5));
+    this.resize();
     this.scene.background = new THREE.Color(on ? 0xe3e0db : 0xe4e8f4);
     this.pitch = 0;
     const local = this.avatars.get(this.localId);
-    if (local) setLocalFpPresentation(local, on);
+    if (local) setLocalFpPresentation(local, on, Boolean(this.localSeatId));
     this.poseFp();
     this.viewHint.textContent = on ? "V — classroom view" : "V — first person";
     this.mouseHint.hidden = !on || this.touchUi;
@@ -205,7 +196,7 @@ export class World {
   }
 
   private poseFp() {
-    const eyeY = EYE_STAND;
+    const eyeY = this.localSeatId ? EYE_SIT : EYE_STAND;
     const fx = Math.sin(this.localRot) * EYE_FWD;
     const fz = Math.cos(this.localRot) * EYE_FWD;
     this.fpCam.position.set(this.localX + fx, eyeY, this.localZ + fz);
@@ -229,7 +220,7 @@ export class World {
       };
       this.scene.add(a.root);
       this.avatars.set(id, a);
-      if (id === this.localId) setLocalFpPresentation(a, this.firstPerson);
+      if (id === this.localId) setLocalFpPresentation(a, this.firstPerson, Boolean(this.localSeatId));
     } else if (
       a.look.hat !== look.hat ||
       a.look.top !== look.top ||
@@ -327,7 +318,7 @@ export class World {
     a.speechUntil = performance.now() + SPEECH_HOLD;
     a.speechSprite.visible = true;
     layoutHeadSprites(a);
-    if (id === this.localId) setLocalFpPresentation(a, this.firstPerson);
+    if (id === this.localId) setLocalFpPresentation(a, this.firstPerson, Boolean(this.localSeatId));
   }
 
   setVoiceLevel(id: string, level: number) {
@@ -343,7 +334,7 @@ export class World {
       }
     }
     layoutHeadSprites(a);
-    if (id === this.localId) setLocalFpPresentation(a, this.firstPerson);
+    if (id === this.localId) setLocalFpPresentation(a, this.firstPerson, Boolean(this.localSeatId));
   }
 
   private occupiedSeats() {
@@ -534,7 +525,7 @@ export class World {
       layoutHeadSprites(a);
     }
     const localHud = this.avatars.get(this.localId);
-    if (localHud) setLocalFpPresentation(localHud, this.firstPerson);
+    if (localHud) setLocalFpPresentation(localHud, this.firstPerson, Boolean(this.localSeatId));
 
     const cam = this.camera;
     if (this.firstPerson) {
@@ -547,8 +538,7 @@ export class World {
       this.isoCam.updateMatrixWorld();
     }
     this.updateSitPrompt(this.localSeatId ? null : this.nearestSeat());
-    this.renderPass.camera = cam;
-    this.composer.render();
+    this.renderer.render(this.scene, cam);
 
     if (event) return event;
     this.moveAcc += dt;

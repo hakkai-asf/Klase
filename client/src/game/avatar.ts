@@ -639,19 +639,34 @@ export function layoutHeadSprites(avatar: {
 }
 
 export function setLocalFpPresentation(
-  avatar: { root: THREE.Object3D; sockets: { hat: THREE.Group } },
+  avatar: {
+    root: THREE.Object3D;
+    body: THREE.Object3D;
+    sockets: { hat: THREE.Group };
+    micSprite: THREE.Sprite;
+    speechSprite: THREE.Sprite;
+  },
   firstPerson: boolean,
+  seated = false,
 ) {
   avatar.root.visible = true;
-  avatar.root.traverse((o) => {
-    const sprite = o as THREE.Sprite;
-    if (sprite.isSprite) {
-      if (firstPerson) sprite.visible = false;
-      else if (o.name === "nametag") sprite.visible = true;
-    }
-    if (/head$/i.test(o.name)) o.visible = !firstPerson;
+  avatar.body.visible = true;
+  const hideHead = firstPerson && seated;
+  avatar.sockets.hat.visible = !hideHead;
+  if (firstPerson) {
+    avatar.micSprite.visible = false;
+    avatar.speechSprite.visible = false;
+  }
+  const tag = avatar.root.getObjectByName("nametag");
+  if (tag) tag.visible = !firstPerson;
+
+  let headBone: THREE.Bone | null = null;
+  avatar.body.traverse((o) => {
+    const bone = o as THREE.Bone;
+    if (!headBone && bone.isBone && /head$/i.test(o.name)) headBone = bone;
+    if (o.name === "Head" && !bone.isBone) o.visible = !hideHead;
   });
-  avatar.sockets.hat.visible = !firstPerson;
+  if (headBone) headBone.scale.setScalar(hideHead ? 0.001 : 1);
 }
 
 function primitiveAvatar(look: Look, nametag: string) {

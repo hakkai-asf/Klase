@@ -1,4 +1,8 @@
 import * as THREE from "three";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { CLASSROOM, MOVE_SPEED, SEAT_REACH, type Look, type Seat } from "@klase/shared";
 import { applyLook, createAvatar, drawMic, drawSpeech, layoutHeadSprites, poseWalk, setLocalFpPresentation } from "./avatar";
 import { buildClassroom, findClearStand, resolveMove, type AABB } from "./classroom";
@@ -33,6 +37,8 @@ export class World {
   readonly scene = new THREE.Scene();
   readonly isoCam: THREE.OrthographicCamera;
   readonly fpCam: THREE.PerspectiveCamera;
+  private readonly composer: EffectComposer;
+  private readonly renderPass: RenderPass;
   firstPerson = false;
   readonly localId: string;
   localX = 0;
@@ -85,12 +91,20 @@ export class World {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = false;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.08;
     this.scene.background = new THREE.Color(0xe4e8f4);
     const built = buildClassroom(this.scene);
     this.colliders = built.colliders;
     this.seats = built.seats;
     this.fpWalls = built.fpWalls;
     this.isoWalls = built.isoWalls;
+    this.renderPass = new RenderPass(this.scene, this.isoCam);
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(this.renderPass);
+    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.2, 0.42, 0.86));
+    this.composer.addPass(new OutputPass());
     this.sitBtn = hud?.sitBtn ?? null;
     this.touchUi = Boolean(this.sitBtn);
     this.onFirstPersonChange = hud?.onFirstPersonChange;
@@ -152,6 +166,7 @@ export class World {
     this.fpCam.aspect = aspect;
     this.fpCam.updateProjectionMatrix();
     this.renderer.setSize(w, h, false);
+    this.composer.setSize(w, h);
   }
 
   /** 0 = zoomed in, 0.5 = default, 1 = zoomed out. Iso camera only. */
@@ -532,7 +547,8 @@ export class World {
       this.isoCam.updateMatrixWorld();
     }
     this.updateSitPrompt(this.localSeatId ? null : this.nearestSeat());
-    this.renderer.render(this.scene, cam);
+    this.renderPass.camera = cam;
+    this.composer.render();
 
     if (event) return event;
     this.moveAcc += dt;

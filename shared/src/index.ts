@@ -165,12 +165,12 @@ export const DESK_GRID = {
    * Seat pan in un-rotated chair space (Object_23 after fit/center).
    * Negative X is toward the backrest after rotY π/2.
    */
-  seatLocalX: -0.046,
+  seatLocalX: -0.20,
   seatLocalZ: 0.08,
   /** Mixamo Sitting Idle faces +Z; π turns the avatar toward the board. */
   sitRotY: Math.PI,
   /** Extra root height so the pelvis rests on the chair, not through it. */
-  sitY: 0.30,
+  sitY: 0.5,
 };
 
 export const SEAT_REACH = 1.25;

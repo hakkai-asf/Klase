@@ -468,10 +468,28 @@ function paintRoomSurfaces(mesh: THREE.Mesh) {
     const name = `${mesh.name} ${std.name ?? ""}`;
     if (mesh.name === "Material2_7" || /0128_White/i.test(name)) flattenPaint(std, ROOM.wall);
     else if (mesh.name === "Material3_8" || /Color_003/i.test(name)) flattenPaint(std, ROOM.door);
-    else if (mesh.name === "Material2_10" || /0009_Linen/i.test(name)) flattenPaint(std, ROOM.ceiling);
-    else if (mesh.name === "Material2_9" || /Color_008/i.test(name)) flattenPaint(std, ROOM.grid);
+    else if (mesh.name === "Material2_10" || /0009_Linen/i.test(name)) {
+      flattenPaint(std, ROOM.ceiling);
+      std.emissive.setHex(ROOM.ceiling);
+      std.emissiveIntensity = 0.18;
+    } else if (mesh.name === "Material2_9" || /Color_008/i.test(name)) flattenPaint(std, ROOM.grid);
     else if (mesh.name === "Material3_6" || /Wood_Square_Tile/i.test(name)) flattenPaint(std, ROOM.floor);
     else if (mesh.name === "Material3_16" || /whiteboard/i.test(name)) flattenPaint(std, ROOM.board);
+  }
+}
+
+function addCeilingWash(scene: THREE.Scene) {
+  const color = 0xf5d4b8;
+  const xs = [-1.12, 1.98, 5.08];
+  const zs = [-11.7, -7.06, -2.42];
+  for (const x of xs) {
+    for (const z of zs) {
+      if (z > CLASSROOM.cutZ - 0.4) continue;
+      const lamp = new THREE.PointLight(color, 12, 8.5, 2);
+      lamp.position.set(x, 3.55, z);
+      lamp.castShadow = false;
+      scene.add(lamp);
+    }
   }
 }
 
@@ -480,8 +498,9 @@ function lightCeilingFixtures(mesh: THREE.Mesh) {
   const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
   for (const mat of mats) {
     const std = mat as THREE.MeshStandardMaterial;
-    std.emissive.set(0xffffff);
-    std.emissiveIntensity = 1;
+    std.color.set(0xffffff);
+    std.emissive.set(0xffe8cc);
+    std.emissiveIntensity = 2.6;
   }
 }
 
@@ -575,11 +594,13 @@ export function buildClassroom(scene: THREE.Scene): {
     }
   }
 
-  scene.add(new THREE.HemisphereLight(0xf3f1ee, 0xf3f1ee, 0.9));
-  const sun = new THREE.DirectionalLight(0xf3f1ee, 1.12);
-  sun.position.set(10, 16, 10);
+  scene.add(new THREE.HemisphereLight(0xf6e4d0, 0xb89a80, 1.02));
+  scene.add(new THREE.AmbientLight(0xf0dcc8, 0.28));
+  const sun = new THREE.DirectionalLight(0xf5dcc0, 0.32);
+  sun.position.set(4, 18, -6);
   sun.castShadow = false;
   scene.add(sun);
+  addCeilingWash(scene);
 
   return { colliders, seats, fpWalls, isoWalls };
 }

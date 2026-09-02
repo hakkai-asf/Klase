@@ -298,12 +298,16 @@ function keepFarL(mesh: THREE.Mesh) {
     const minZ = Math.min(a.z, b.z, c.z);
     const maxX = Math.max(a.x, b.x, c.x);
     const maxZ = Math.max(a.z, b.z, c.z);
+    const cx = (a.x + b.x + c.x) / 3;
+    const cz = (a.z + b.z + c.z) / 3;
     const onLeft = maxX < -4.15;
     const onBoard = maxZ < -12.95;
-    const onFront = minZ > 14.2 && minX > 3.4 && maxX < 5.6;
-    if (!(onLeft || onBoard || onFront) || Math.max(a.y, b.y, c.y) < 0.12) return false;
-    const rightBackDoor = minX > 3.4 && maxX < 5.6 && maxZ < -13.0;
-    return !rightBackDoor;
+    const onFront = minZ > 14.0 && minX > 3.2;
+    const leftFrontDoor = cx < -5.5 && cz > 10.5 && cz < 13.5;
+    if (!(onLeft || onBoard || onFront || leftFrontDoor) || Math.max(a.y, b.y, c.y) < 0.12) return false;
+    const leftBackDoor = cx < -5.5 && cz > -13.2 && cz < -10.4;
+    const rightBackDoor = cz < -13.0 && cx > 3.4 && cx < 6.2;
+    return !leftBackDoor && !rightBackDoor;
   });
 }
 

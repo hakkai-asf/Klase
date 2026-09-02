@@ -74,14 +74,17 @@ export const CLASSROOM = {
   depth: 29.28,
   wallHeight: 4.02,
   wallThickness: 0.35,
+  /** Keep the board (−Z) half. Just behind the last chair row. */
+  cutZ: 2.2,
 };
 
 export function clampClassroom(x: number, z: number) {
   const hx = CLASSROOM.width / 2 - CLASSROOM.wallThickness - 0.2;
-  const hz = CLASSROOM.depth / 2 - CLASSROOM.wallThickness - 0.2;
+  const minZ = -CLASSROOM.depth / 2 + CLASSROOM.wallThickness + 0.2;
+  const maxZ = CLASSROOM.cutZ - CLASSROOM.wallThickness - 0.2;
   return {
     x: Math.max(-hx, Math.min(hx, x)),
-    z: Math.max(-hz, Math.min(hz, z)),
+    z: Math.max(minZ, Math.min(maxZ, z)),
   };
 }
 

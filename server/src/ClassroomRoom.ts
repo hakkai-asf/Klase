@@ -1,5 +1,5 @@
 import { Room, Client, ServerError } from "@colyseus/core";
-import { CHAT_LOG_MAX, CHAT_RADIUS, IDLE_MS, PLAYER_RADIUS, REGULAR_CAP, SEAT_REACH, WEARABLES, classroomSeats, clampClassroom, normalizeLook } from "@klase/shared";
+import { CHAT_LOG_MAX, CHAT_RADIUS, CLASSROOM, IDLE_MS, PLAYER_RADIUS, REGULAR_CAP, SEAT_REACH, WEARABLES, classroomSeats, clampClassroom, normalizeLook } from "@klase/shared";
 import { ClassroomState, Player } from "./schema.js";
 import { filterChat } from "./chatFilter.js";
 import { assertCanModerate, banName, ownerName, resolveIdentity } from "./roles.js";
@@ -211,7 +211,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
     p.userId = ident.userId;
     p.x = -3 + (i % 6) * 1.2;
     p.y = 0;
-    p.z = 8;
+    p.z = CLASSROOM.cutZ - CLASSROOM.wallThickness - 0.8;
     p.rotY = Math.PI;
     p.hat = allowed(WEARABLES.hat, ident.look.hat);
     p.top = allowed(WEARABLES.top, ident.look.top);

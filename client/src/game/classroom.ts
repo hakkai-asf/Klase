@@ -135,6 +135,113 @@ function filterTriangles(mesh: THREE.Mesh, keepFn: (a: THREE.Vector3, b: THREE.V
   rebuildKept(mesh, src, keepTri, keepN);
 }
 
+function lerpAttr(out: number[], attr: THREE.BufferAttribute, i0: number, i1: number, t: number) {
+  const n = attr.itemSize;
+  const arr = attr.array;
+  for (let c = 0; c < n; c++) {
+    const a = arr[i0 * n + c]!;
+    const b = arr[i1 * n + c]!;
+    out.push(a + (b - a) * t);
+  }
+}
+
+function copyAttr(out: number[], attr: THREE.BufferAttribute, i: number) {
+  const n = attr.itemSize;
+  const arr = attr.array;
+  for (let c = 0; c < n; c++) out.push(arr[i * n + c]!);
+}
+
+/** Keep z <= cutZ. Splits room-spanning tris so left/right walls stay on the board half. */
+function clipMeshMaxZ(mesh: THREE.Mesh, cutZ: number) {
+  mesh.updateMatrixWorld(true);
+  const src = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+  const pos = src.getAttribute("position");
+  if (!pos) return;
+  const names = Object.keys(src.attributes);
+  const buckets: Record<string, number[]> = {};
+  for (const name of names) buckets[name] = [];
+  const world = new THREE.Vector3();
+  const zAt = (i: number) => {
+    world.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+    return world.z;
+  };
+  const emitIndex = (i: number) => {
+    for (const name of names) copyAttr(buckets[name]!, src.getAttribute(name) as THREE.BufferAttribute, i);
+  };
+  const emitLerp = (i0: number, i1: number, t: number) => {
+    for (const name of names) lerpAttr(buckets[name]!, src.getAttribute(name) as THREE.BufferAttribute, i0, i1, t);
+  };
+  const emitPoly = (verts: { i?: number; i0?: number; i1?: number; t?: number }[]) => {
+    if (verts.length < 3) return;
+    const fan = (a: number, b: number, c: number) => {
+      const va = verts[a]!;
+      const vb = verts[b]!;
+      const vc = verts[c]!;
+      for (const v of [va, vb, vc]) {
+        if (v.i !== undefined) emitIndex(v.i);
+        else emitLerp(v.i0!, v.i1!, v.t!);
+      }
+    };
+    fan(0, 1, 2);
+    if (verts.length === 4) fan(0, 2, 3);
+  };
+
+  const triCount = Math.floor(pos.count / 3);
+  let outTris = 0;
+  let clipped = false;
+  for (let t = 0; t < triCount; t++) {
+    const i0 = t * 3;
+    const i1 = i0 + 1;
+    const i2 = i0 + 2;
+    const z0 = zAt(i0);
+    const z1 = zAt(i1);
+    const z2 = zAt(i2);
+    const in0 = z0 <= cutZ;
+    const in1 = z1 <= cutZ;
+    const in2 = z2 <= cutZ;
+    const nIn = (in0 ? 1 : 0) + (in1 ? 1 : 0) + (in2 ? 1 : 0);
+    if (nIn === 3) {
+      emitIndex(i0);
+      emitIndex(i1);
+      emitIndex(i2);
+      outTris++;
+      continue;
+    }
+    clipped = true;
+    if (nIn === 0) continue;
+    const idx = [i0, i1, i2];
+    const zin = [z0, z1, z2];
+    const inside = [in0, in1, in2];
+    const poly: { i?: number; i0?: number; i1?: number; t?: number }[] = [];
+    for (let e = 0; e < 3; e++) {
+      const cur = e;
+      const nxt = (e + 1) % 3;
+      if (inside[cur]) poly.push({ i: idx[cur] });
+      if (inside[cur] !== inside[nxt]) {
+        const dz = zin[nxt]! - zin[cur]!;
+        const tEdge = Math.abs(dz) < 1e-8 ? 0 : (cutZ - zin[cur]!) / dz;
+        poly.push({ i0: idx[cur], i1: idx[nxt], t: Math.min(1, Math.max(0, tEdge)) });
+      }
+    }
+    const before = buckets.position!.length;
+    emitPoly(poly);
+    outTris += (buckets.position!.length - before) / (pos.itemSize * 3);
+  }
+
+  if (!clipped && outTris === triCount) return;
+  if (outTris === 0) {
+    mesh.visible = false;
+    return;
+  }
+  const next = new THREE.BufferGeometry();
+  for (const name of names) {
+    const attr = src.getAttribute(name)!;
+    next.setAttribute(name, new THREE.BufferAttribute(new Float32Array(buckets[name]!), attr.itemSize));
+  }
+  next.computeVertexNormals();
+  mesh.geometry = next;
+}
+
 function stripShellCaps(mesh: THREE.Mesh) {
   filterTriangles(mesh, (a, b, c) => {
     const maxY = Math.max(a.y, b.y, c.y);
@@ -200,11 +307,47 @@ function place(
 }
 
 function addHollowWalls(colliders: AABB[]) {
-  const { width: w, depth: d, wallThickness: t } = CLASSROOM;
-  colliders.push({ minX: -w / 2, maxX: w / 2, minZ: -d / 2, maxZ: -d / 2 + t });
-  colliders.push({ minX: -w / 2, maxX: -w / 2 + t, minZ: -d / 2, maxZ: d / 2 });
-  colliders.push({ minX: w / 2 - t, maxX: w / 2, minZ: -d / 2, maxZ: d / 2 });
-  colliders.push({ minX: -w / 2, maxX: w / 2, minZ: d / 2 - t, maxZ: d / 2 });
+  const { width: w, depth: d, wallThickness: t, cutZ } = CLASSROOM;
+  const minZ = -d / 2;
+  colliders.push({ minX: -w / 2, maxX: w / 2, minZ, maxZ: minZ + t });
+  colliders.push({ minX: -w / 2, maxX: -w / 2 + t, minZ, maxZ: cutZ });
+  colliders.push({ minX: w / 2 - t, maxX: w / 2, minZ, maxZ: cutZ });
+  colliders.push({ minX: -w / 2, maxX: w / 2, minZ: cutZ - t, maxZ: cutZ });
+}
+
+function stripLeftClerestory(mesh: THREE.Mesh) {
+  filterTriangles(mesh, (a, b, c) => {
+    const cx = (a.x + b.x + c.x) / 3;
+    const cy = (a.y + b.y + c.y) / 3;
+    return !(cx < -5.5 && cy > 2.9);
+  });
+}
+
+function addLeftClerestoryPatch(scene: THREE.Scene) {
+  const { depth: d, cutZ } = CLASSROOM;
+  const minZ = -d / 2;
+  const y0 = 3.02;
+  const y1 = 3.87;
+  const patch = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, y1 - y0, cutZ - minZ),
+    new THREE.MeshStandardMaterial({ color: 0xeee9e0, roughness: 0.6, metalness: 0 }),
+  );
+  patch.position.set(-6.95, (y0 + y1) / 2, (minZ + cutZ) / 2);
+  patch.castShadow = false;
+  patch.receiveShadow = false;
+  scene.add(patch);
+}
+
+function addCutWall(fpWalls: THREE.Group) {
+  const { width: w, wallHeight: h, wallThickness: t, cutZ } = CLASSROOM;
+  const wall = new THREE.Mesh(
+    new THREE.BoxGeometry(w, h, t),
+    new THREE.MeshStandardMaterial({ color: 0xeee9e0, roughness: 0.6, metalness: 0 }),
+  );
+  wall.position.set(0, h / 2, cutZ - t / 2);
+  wall.castShadow = false;
+  wall.receiveShadow = false;
+  fpWalls.add(wall);
 }
 
 function addPillarColliders(colliders: AABB[]) {
@@ -212,30 +355,22 @@ function addPillarColliders(colliders: AABB[]) {
   const hz = CLASSROOM.depth / 2;
   const colW = 0.95;
   const colAlong = 1.35;
-  for (const z of [-5.05, 5.15]) {
+  for (const z of [-5.05]) {
     colliders.push({ minX: -hx, maxX: -hx + colW, minZ: z - colAlong / 2, maxZ: z + colAlong / 2 });
     colliders.push({ minX: hx - colW, maxX: hx, minZ: z - colAlong / 2, maxZ: z + colAlong / 2 });
   }
   const endAlong = 1.2;
   colliders.push({ minX: hx - colW, maxX: hx, minZ: -hz, maxZ: -hz + endAlong });
-  colliders.push({ minX: hx - colW, maxX: hx, minZ: hz - endAlong, maxZ: hz });
   colliders.push({ minX: -hx, maxX: -4.2, minZ: -hz, maxZ: -13.05 });
-  colliders.push({ minX: -hx, maxX: -4.2, minZ: 13.45, maxZ: hz });
 }
 
 function keepFarL(mesh: THREE.Mesh) {
   filterTriangles(mesh, (a, b, c) => {
-    const minX = Math.min(a.x, b.x, c.x);
-    const minZ = Math.min(a.z, b.z, c.z);
     const maxX = Math.max(a.x, b.x, c.x);
     const maxZ = Math.max(a.z, b.z, c.z);
-    const cx = (a.x + b.x + c.x) / 3;
-    const cz = (a.z + b.z + c.z) / 3;
     const onLeft = maxX < -4.15;
     const onBoard = maxZ < -12.95;
-    const onFront = minZ > 14.0 && minX > 3.2;
-    const leftFrontDoor = cx < -5.5 && cz > 10.5 && cz < 13.5;
-    return (onLeft || onBoard || onFront || leftFrontDoor) && Math.max(a.y, b.y, c.y) >= 0.12;
+    return (onLeft || onBoard) && Math.max(a.y, b.y, c.y) >= 0.12;
   });
 }
 
@@ -253,28 +388,29 @@ function cloneFarL(mesh: THREE.Mesh, isoWalls: THREE.Group) {
 }
 
 function fallbackRoom(scene: THREE.Scene, colliders: AABB[], fpWalls: THREE.Group) {
-  const { width: w, depth: d, wallHeight: h, wallThickness: t } = CLASSROOM;
+  const { width: w, wallHeight: h, wallThickness: t, cutZ, depth: d } = CLASSROOM;
+  const playD = cutZ + d / 2;
+  const midZ = (cutZ - d / 2) / 2;
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(w, d),
+    new THREE.PlaneGeometry(w, playD),
     new THREE.MeshStandardMaterial({ color: 0xb08968, roughness: 0.85 }),
   );
   floor.rotation.x = -Math.PI / 2;
+  floor.position.z = midZ;
   scene.add(floor);
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0xf8f4ec, roughness: 0.88 });
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0xeee9e0, roughness: 0.6 });
   const back = new THREE.Mesh(new THREE.BoxGeometry(w, h, t), wallMat);
   back.position.set(0, h / 2, -d / 2 + t / 2);
   scene.add(back);
-  const left = new THREE.Mesh(new THREE.BoxGeometry(t, h, d), wallMat);
-  left.position.set(-w / 2 + t / 2, h / 2, 0);
+  const left = new THREE.Mesh(new THREE.BoxGeometry(t, h, playD), wallMat);
+  left.position.set(-w / 2 + t / 2, h / 2, midZ);
   scene.add(left);
-  const right = new THREE.Mesh(new THREE.BoxGeometry(t, h, d), wallMat);
-  right.position.set(w / 2 - t / 2, h / 2, 0);
+  const right = new THREE.Mesh(new THREE.BoxGeometry(t, h, playD), wallMat);
+  right.position.set(w / 2 - t / 2, h / 2, midZ);
   fpWalls.add(right);
-  const front = new THREE.Mesh(new THREE.BoxGeometry(w, h, t), wallMat);
-  front.position.set(0, h / 2, d / 2 - t / 2);
-  fpWalls.add(front);
-  const ceiling = new THREE.Mesh(new THREE.BoxGeometry(w, t, d), wallMat);
-  ceiling.position.set(0, h, 0);
+  addCutWall(fpWalls);
+  const ceiling = new THREE.Mesh(new THREE.BoxGeometry(w, t, playD), wallMat);
+  ceiling.position.set(0, h, midZ);
   fpWalls.add(ceiling);
 }
 
@@ -292,12 +428,33 @@ function prepRoomMesh(mesh: THREE.Mesh) {
   mesh.castShadow = false;
   mesh.receiveShadow = false;
   const src = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-  const next = src.map((mat) => {
-    const std = (mat as THREE.MeshStandardMaterial).clone();
-    std.side = THREE.DoubleSide;
-    return std;
-  });
+  const next = src.map((mat) => (mat as THREE.MeshStandardMaterial).clone());
   mesh.material = Array.isArray(mesh.material) ? next : next[0]!;
+}
+
+function strengthenShellColors(mesh: THREE.Mesh) {
+  const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  for (const mat of mats) {
+    const std = mat as THREE.MeshStandardMaterial;
+    const name = `${mesh.name} ${std.name ?? ""}`;
+    if (mesh.name === "Material2_7" || /0128_White/i.test(name)) {
+      std.color.set(0xeee9e0);
+    } else if (mesh.name === "Material3_8" || /Color_003/i.test(name)) {
+      std.color.set(0x6e6e6e);
+    } else if (mesh.name === "Material3_9" || /Color_004/i.test(name)) {
+      std.color.set(0x4f4f4f);
+    }
+  }
+}
+
+function lightCeilingFixtures(mesh: THREE.Mesh) {
+  if (mesh.name !== "Material2_14" && !/white_ilu/i.test(matName(mesh))) return;
+  const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  for (const mat of mats) {
+    const std = mat as THREE.MeshStandardMaterial;
+    std.emissive.set(0xffffff);
+    std.emissiveIntensity = 1;
+  }
 }
 
 export function buildClassroom(scene: THREE.Scene): {
@@ -327,10 +484,16 @@ export function buildClassroom(scene: THREE.Scene): {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
       prepRoomMesh(mesh);
+      strengthenShellColors(mesh);
+      lightCeilingFixtures(mesh);
       if (mesh.name.endsWith("_1")) {
         mesh.visible = false;
         return;
       }
+      clipMeshMaxZ(mesh, CLASSROOM.cutZ);
+      if (!mesh.visible) return;
+      if (mesh.name === "Material2" || mesh.name === "Material2_6") stripLeftClerestory(mesh);
+      if (!mesh.visible) return;
       if (isDoorGlass(mesh)) {
         cloneFarL(mesh, isoWalls);
         fpMeshes.push(mesh);
@@ -362,6 +525,8 @@ export function buildClassroom(scene: THREE.Scene): {
       }
     });
     for (const mesh of fpMeshes) fpWalls.attach(mesh);
+    addCutWall(fpWalls);
+    addLeftClerestoryPatch(scene);
 
     for (let row = 0; row < DESK_GRID.rows; row++) {
       for (let col = 0; col < DESK_GRID.cols; col++) {

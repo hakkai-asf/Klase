@@ -293,10 +293,13 @@ function addPillarColliders(colliders: AABB[]) {
 }
 
 function keepFarL(mesh: THREE.Mesh) {
-  const xBand = -CLASSROOM.width / 2 + 1.2;
-  const zBand = -CLASSROOM.depth / 2 + 1.2;
-  const inFarL = (x: number, z: number) => x < xBand || z < zBand || (x < -4.15 && z < -12.95);
-  filterTriangles(mesh, (a, b, c) => inFarL(a.x, a.z) || inFarL(b.x, b.z) || inFarL(c.x, c.z));
+  filterTriangles(mesh, (a, b, c) => {
+    const maxX = Math.max(a.x, b.x, c.x);
+    const maxZ = Math.max(a.z, b.z, c.z);
+    const onLeft = maxX < -4.15;
+    const onBoard = maxZ < -12.95;
+    return (onLeft || onBoard) && Math.max(a.y, b.y, c.y) >= 0.12;
+  });
 }
 
 function cloneFarL(mesh: THREE.Mesh, isoWalls: THREE.Group) {

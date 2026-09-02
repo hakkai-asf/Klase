@@ -10,6 +10,26 @@ const nuChairUrl = new URL("../../../assets/furnitures/nu-chair.glb", import.met
 
 const CEILING_CAP_Y = 3.5;
 
+const ROOM = {
+  wall: 0xe3e0db,
+  door: 0xcebd9f,
+  ceiling: 0xbfbec3,
+  grid: 0x9e9e9e,
+  floor: 0xb9b0a4,
+  board: 0xb0c4c3,
+};
+
+function flattenPaint(std: THREE.MeshStandardMaterial, hex: number) {
+  std.color.setHex(hex);
+  std.map = null;
+  std.lightMap = null;
+  std.roughnessMap = null;
+  std.metalnessMap = null;
+  std.aoMap = null;
+  std.normalMap = null;
+  std.emissiveMap = null;
+}
+
 type Kit = {
   classroom: THREE.Object3D;
   nuChair: THREE.Object3D;
@@ -329,7 +349,7 @@ function addLeftClerestoryPatch(scene: THREE.Scene) {
   const y0 = 2.7;
   const y1 = 3.87;
   const mat = new THREE.MeshStandardMaterial({
-    color: 0xf0d7a8,
+    color: ROOM.wall,
     roughness: 0.6,
     metalness: 0,
     polygonOffset: true,
@@ -348,7 +368,7 @@ function addCutWall(fpWalls: THREE.Group) {
   const { width: w, wallHeight: h, wallThickness: t, cutZ } = CLASSROOM;
   const wall = new THREE.Mesh(
     new THREE.BoxGeometry(w, h, t),
-    new THREE.MeshStandardMaterial({ color: 0xf0d7a8, roughness: 0.6, metalness: 0 }),
+    new THREE.MeshStandardMaterial({ color: ROOM.wall, roughness: 0.6, metalness: 0 }),
   );
   wall.position.set(0, h / 2, cutZ - t / 2);
   wall.castShadow = false;
@@ -399,12 +419,12 @@ function fallbackRoom(scene: THREE.Scene, colliders: AABB[], fpWalls: THREE.Grou
   const midZ = (cutZ - d / 2) / 2;
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(w, playD),
-    new THREE.MeshStandardMaterial({ color: 0xb08968, roughness: 0.85 }),
+    new THREE.MeshStandardMaterial({ color: ROOM.floor, roughness: 0.85 }),
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.z = midZ;
   scene.add(floor);
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0xf0d7a8, roughness: 0.6 });
+  const wallMat = new THREE.MeshStandardMaterial({ color: ROOM.wall, roughness: 0.6 });
   const back = new THREE.Mesh(new THREE.BoxGeometry(w, h, t), wallMat);
   back.position.set(0, h / 2, -d / 2 + t / 2);
   scene.add(back);
@@ -415,7 +435,10 @@ function fallbackRoom(scene: THREE.Scene, colliders: AABB[], fpWalls: THREE.Grou
   right.position.set(w / 2 - t / 2, h / 2, midZ);
   fpWalls.add(right);
   addCutWall(fpWalls);
-  const ceiling = new THREE.Mesh(new THREE.BoxGeometry(w, t, playD), wallMat);
+  const ceiling = new THREE.Mesh(
+    new THREE.BoxGeometry(w, t, playD),
+    new THREE.MeshStandardMaterial({ color: ROOM.ceiling, roughness: 0.75 }),
+  );
   ceiling.position.set(0, h, midZ);
   fpWalls.add(ceiling);
 }
@@ -438,18 +461,17 @@ function prepRoomMesh(mesh: THREE.Mesh) {
   mesh.material = Array.isArray(mesh.material) ? next : next[0]!;
 }
 
-function strengthenShellColors(mesh: THREE.Mesh) {
+function paintRoomSurfaces(mesh: THREE.Mesh) {
   const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
   for (const mat of mats) {
     const std = mat as THREE.MeshStandardMaterial;
     const name = `${mesh.name} ${std.name ?? ""}`;
-    if (mesh.name === "Material2_7" || /0128_White/i.test(name)) {
-      std.color.set(0xf0d7a8);
-    } else if (mesh.name === "Material3_8" || /Color_003/i.test(name)) {
-      std.color.set(0xe2c48a);
-    } else if (mesh.name === "Material3_9" || /Color_004/i.test(name)) {
-      std.color.set(0xc9aa70);
-    }
+    if (mesh.name === "Material2_7" || /0128_White/i.test(name)) flattenPaint(std, ROOM.wall);
+    else if (mesh.name === "Material3_8" || /Color_003/i.test(name)) flattenPaint(std, ROOM.door);
+    else if (mesh.name === "Material2_10" || /0009_Linen/i.test(name)) flattenPaint(std, ROOM.ceiling);
+    else if (mesh.name === "Material2_9" || /Color_008/i.test(name)) flattenPaint(std, ROOM.grid);
+    else if (mesh.name === "Material3_6" || /Wood_Square_Tile/i.test(name)) flattenPaint(std, ROOM.floor);
+    else if (mesh.name === "Material3_16" || /whiteboard/i.test(name)) flattenPaint(std, ROOM.board);
   }
 }
 
@@ -490,7 +512,7 @@ export function buildClassroom(scene: THREE.Scene): {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
       prepRoomMesh(mesh);
-      strengthenShellColors(mesh);
+      paintRoomSurfaces(mesh);
       lightCeilingFixtures(mesh);
       if (mesh.name.endsWith("_1")) {
         mesh.visible = false;
@@ -538,7 +560,7 @@ export function buildClassroom(scene: THREE.Scene): {
       for (let col = 0; col < DESK_GRID.cols; col++) {
         const x = DESK_GRID.originX + col * DESK_GRID.spacingX;
         const z = DESK_GRID.originZ + row * DESK_GRID.spacingZ;
-        const chair = place(scene, kit.nuChair, x, z, DESK_GRID.rotY, { height: 1.08 });
+        const chair = place(scene, kit.nuChair, x, z, DESK_GRID.rotY, { height: 1.24 });
         colliders.push(aabbOf(chair, 0.04));
       }
     }
@@ -548,13 +570,13 @@ export function buildClassroom(scene: THREE.Scene): {
       for (let col = 0; col < DESK_GRID.cols; col++) {
         const x = DESK_GRID.originX + col * DESK_GRID.spacingX;
         const z = DESK_GRID.originZ + row * DESK_GRID.spacingZ;
-        colliders.push({ minX: x - 0.34, maxX: x + 0.34, minZ: z - 0.32, maxZ: z + 0.32 });
+        colliders.push({ minX: x - 0.39, maxX: x + 0.39, minZ: z - 0.37, maxZ: z + 0.37 });
       }
     }
   }
 
-  scene.add(new THREE.HemisphereLight(0xfff6ea, 0xfff6ea, 0.9));
-  const sun = new THREE.DirectionalLight(0xfff4e4, 1.12);
+  scene.add(new THREE.HemisphereLight(0xf3f1ee, 0xf3f1ee, 0.9));
+  const sun = new THREE.DirectionalLight(0xf3f1ee, 1.12);
   sun.position.set(10, 16, 10);
   sun.castShadow = false;
   scene.add(sun);

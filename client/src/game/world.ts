@@ -15,7 +15,10 @@ export type WorldEvent =
   | { type: "stand" };
 
 const ISO = new THREE.Vector3(12, 15, 12);
-const FRUSTUM = 3.85;
+const ISO_FRUSTUM = 3.85;
+const ISO_FRUSTUM_TOUCH = 4.8;
+const ISO_ZOOM_IN = 0.65;
+const ISO_ZOOM_OUT = 1.45;
 const LOOK_SENS = 0.0022;
 const LOOK_SENS_TOUCH = 0.0038;
 const PITCH_MAX = 1.15;
@@ -62,6 +65,7 @@ export class World {
   private viewHint: HTMLElement;
   private mouseHint: HTMLElement;
   private onFirstPersonChange?: (on: boolean) => void;
+  private isoZoomT = 0.5;
 
   get camera(): THREE.Camera {
     return this.firstPerson ? this.fpCam : this.isoCam;
@@ -139,21 +143,36 @@ export class World {
     const w = wrap.clientWidth;
     const h = wrap.clientHeight;
     const aspect = w / Math.max(h, 1);
-    this.isoCam.left = -FRUSTUM * aspect;
-    this.isoCam.right = FRUSTUM * aspect;
-    this.isoCam.top = FRUSTUM;
-    this.isoCam.bottom = -FRUSTUM;
+    const frustum = this.isoFrustum();
+    this.isoCam.left = -frustum * aspect;
+    this.isoCam.right = frustum * aspect;
+    this.isoCam.top = frustum;
+    this.isoCam.bottom = -frustum;
     this.isoCam.updateProjectionMatrix();
     this.fpCam.aspect = aspect;
     this.fpCam.updateProjectionMatrix();
     this.renderer.setSize(w, h, false);
   }
 
+  /** 0 = zoomed in, 0.5 = default, 1 = zoomed out. Iso camera only. */
+  setIsoZoom(t: number) {
+    this.isoZoomT = Math.max(0, Math.min(1, t));
+    this.resize();
+  }
+
+  private isoFrustum() {
+    const base = this.touchUi ? ISO_FRUSTUM_TOUCH : ISO_FRUSTUM;
+    const t = this.isoZoomT;
+    const mul =
+      t <= 0.5 ? ISO_ZOOM_IN + (t / 0.5) * (1 - ISO_ZOOM_IN) : 1 + ((t - 0.5) / 0.5) * (ISO_ZOOM_OUT - 1);
+    return base * mul;
+  }
+
   setFirstPerson(on: boolean) {
     this.firstPerson = on;
     this.fpWalls.visible = on;
     this.isoWalls.visible = !on;
-    this.scene.background = new THREE.Color(on ? 0xf8f4ec : 0xe4e8f4);
+    this.scene.background = new THREE.Color(on ? 0xe3e0db : 0xe4e8f4);
     this.pitch = 0;
     const local = this.avatars.get(this.localId);
     if (local) setLocalFpPresentation(local, on);
@@ -440,6 +459,9 @@ export class World {
       if (this.keys.has("a") || this.keys.has("arrowleft")) sx -= 1;
       sx += this.stickX;
       sy += this.stickY;
+      const others = [...this.avatars.entries()]
+        .filter(([id]) => id !== this.localId)
+        .map(([, a]) => ({ x: a.root.position.x, z: a.root.position.z }));
 
       if (sx || sy) {
         const len = Math.hypot(sx, sy) || 1;
@@ -447,14 +469,18 @@ export class World {
         sy /= len;
         const dx = (this.camForward.x * sy + this.camRight.x * sx) * MOVE_SPEED * dt;
         const dz = (this.camForward.z * sy + this.camRight.z * sx) * MOVE_SPEED * dt;
-        const others = [...this.avatars.entries()]
-          .filter(([id]) => id !== this.localId)
-          .map(([, a]) => ({ x: a.root.position.x, z: a.root.position.z }));
         const n = resolveMove(this.localX, this.localZ, dx, dz, this.colliders, others);
         this.localX = n.x;
         this.localZ = n.z;
         if (!this.firstPerson) this.localRot = Math.atan2(dx, dz);
         moved = true;
+      } else {
+        const n = resolveMove(this.localX, this.localZ, 0, 0, this.colliders, others);
+        if (n.x !== this.localX || n.z !== this.localZ) {
+          this.localX = n.x;
+          this.localZ = n.z;
+          moved = true;
+        }
       }
     }
 

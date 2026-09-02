@@ -162,6 +162,20 @@ export function setViewButton(btn: HTMLElement, firstPerson: boolean, compact = 
   btn.classList.toggle("primary", firstPerson);
 }
 
+export function setZoomHud(
+  wrap: HTMLElement,
+  panel: HTMLElement,
+  btn: HTMLElement,
+  visible: boolean,
+) {
+  wrap.hidden = !visible;
+  if (!visible) {
+    panel.hidden = true;
+    btn.setAttribute("aria-expanded", "false");
+    btn.classList.remove("primary");
+  }
+}
+
 export function renderLanding(
   root: HTMLElement,
   onJoin: (payload: JoinPayload) => void,
@@ -337,7 +351,31 @@ export function renderGameShell(root: HTMLElement) {
   const playersBtn = el("button", "clay-btn", "Players");
   const lookBtn = el("button", "clay-btn", "Look");
   const chatBtn = el("button", "clay-btn", "Chat");
-  actions.append(micBtn, muteAllBtn, chatBtn, playersBtn, lookBtn, viewBtn);
+  const zoomWrap = el("div", "zoom-hud");
+  const zoomBtn = el("button", "clay-btn", "Zoom");
+  zoomBtn.type = "button";
+  zoomBtn.title = "Classroom zoom";
+  zoomBtn.setAttribute("aria-label", "Classroom zoom");
+  zoomBtn.setAttribute("aria-expanded", "false");
+  const zoomPanel = el("div", "zoom-slider-panel");
+  zoomPanel.hidden = true;
+  const zoomTrack = el("div", "zoom-track");
+  const zoomTick = el("div", "zoom-mid-tick");
+  zoomTick.setAttribute("aria-hidden", "true");
+  const zoomSlider = document.createElement("input");
+  zoomSlider.type = "range";
+  zoomSlider.className = "zoom-slider";
+  zoomSlider.min = "0";
+  zoomSlider.max = "100";
+  zoomSlider.step = "1";
+  zoomSlider.value = "50";
+  zoomSlider.setAttribute("orient", "vertical");
+  zoomSlider.setAttribute("aria-label", "Zoom level");
+  zoomSlider.title = "Default is the middle tick";
+  zoomTrack.append(zoomTick, zoomSlider);
+  zoomPanel.append(zoomTrack);
+  zoomWrap.append(zoomBtn, zoomPanel);
+  actions.append(micBtn, muteAllBtn, chatBtn, playersBtn, lookBtn, viewBtn, zoomWrap);
   top.append(roomChip, actions);
 
   const chat = el("div", "chat-dock game-chat empty collapsed");
@@ -372,6 +410,10 @@ export function renderGameShell(root: HTMLElement) {
     playersBtn,
     lookBtn,
     viewBtn,
+    zoomWrap,
+    zoomBtn,
+    zoomPanel,
+    zoomSlider,
     log,
     input,
     send,

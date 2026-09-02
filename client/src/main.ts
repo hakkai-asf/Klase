@@ -4,7 +4,7 @@ import { World } from "./game/world";
 import { preloadAvatars } from "./game/avatar";
 import { preloadClassroom } from "./game/classroom";
 import { joinClassroom, pickRoom, type RemotePlayer } from "./net";
-import { addChat, disposeLandingPreviews, renderGameShell, renderJoining, renderLanding, setChatOpen, setMicButton, setMuteAllButton, setViewButton, showCustomize, showPlayers, type ChatLine } from "./ui";
+import { addChat, disposeLandingPreviews, renderGameShell, renderJoining, renderLanding, setChatOpen, setMicButton, setMuteAllButton, setViewButton, setZoomHud, showCustomize, showPlayers, type ChatLine } from "./ui";
 import { bindJoystick, isTouchUi } from "./joystick";
 import { currentSession, loadSavedLook, signIn, signUp } from "./auth";
 import { VoiceMesh } from "./voice";
@@ -181,7 +181,10 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
   if (left) return;
   world = new World(ui.canvas, selfId, name, look, {
     sitBtn: isTouchUi() ? ui.sitBtn : null,
-    onFirstPersonChange: (on) => setViewButton(ui.viewBtn, on, isTouchUi()),
+    onFirstPersonChange: (on) => {
+      setViewButton(ui.viewBtn, on, isTouchUi());
+      setZoomHud(ui.zoomWrap, ui.zoomPanel, ui.zoomBtn, !on);
+    },
   });
   voice = new VoiceMesh(room, selfId);
   voice.localMuted = muted;
@@ -340,6 +343,21 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
     scene.setFirstPerson(!scene.firstPerson);
     setViewButton(ui.viewBtn, scene.firstPerson, isTouchUi());
   });
+  const applyIsoZoom = () => {
+    const raw = Number(ui.zoomSlider.value) / 100;
+    const t = Math.abs(raw - 0.5) <= 0.06 ? 0.5 : raw;
+    if (t === 0.5) ui.zoomSlider.value = "50";
+    scene.setIsoZoom(t);
+  };
+  ui.zoomBtn.addEventListener("click", () => {
+    if (scene.firstPerson) return;
+    const open = ui.zoomPanel.hidden;
+    ui.zoomPanel.hidden = !open;
+    ui.zoomBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    ui.zoomBtn.classList.toggle("primary", open);
+  });
+  ui.zoomSlider.addEventListener("input", applyIsoZoom);
+  ui.zoomSlider.addEventListener("change", applyIsoZoom);
 
   ui.lookBtn.addEventListener("click", () => {
     panelOpen = "look";

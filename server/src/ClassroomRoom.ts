@@ -1,5 +1,5 @@
 import { Room, Client, ServerError } from "@colyseus/core";
-import { CHAT_LOG_MAX, CHAT_RADIUS, CLASSROOM, IDLE_MS, PLAYER_RADIUS, REGULAR_CAP, SEAT_REACH, WEARABLES, classroomSeats, clampClassroom, normalizeLook, resolvePlayerMove } from "@klase/shared";
+import { CHAT_LOG_MAX, CHAT_RADIUS, CLASSROOM, IDLE_MS, REGULAR_CAP, SEAT_REACH, WEARABLES, classroomSeats, clampClassroom, normalizeLook, resolvePlayerMove } from "@klase/shared";
 import { ClassroomState, Player } from "./schema.js";
 import { filterChat } from "./chatFilter.js";
 import { assertCanModerate, banName, ownerName, resolveIdentity } from "./roles.js";

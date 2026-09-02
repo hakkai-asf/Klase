@@ -479,7 +479,7 @@ function paintRoomSurfaces(mesh: THREE.Mesh) {
 }
 
 function addCeilingWash(scene: THREE.Scene) {
-  const color = 0xf5d4b8;
+  const color = 0xf6ddc8;
   const xs = [-1.12, 1.98, 5.08];
   const zs = [-11.7, -7.06, -2.42];
   for (const x of xs) {
@@ -499,7 +499,7 @@ function lightCeilingFixtures(mesh: THREE.Mesh) {
   for (const mat of mats) {
     const std = mat as THREE.MeshStandardMaterial;
     std.color.set(0xffffff);
-    std.emissive.set(0xffe8cc);
+    std.emissive.set(0xffeedd);
     std.emissiveIntensity = 2.6;
   }
 }
@@ -594,9 +594,9 @@ export function buildClassroom(scene: THREE.Scene): {
     }
   }
 
-  scene.add(new THREE.HemisphereLight(0xf6e4d0, 0xb89a80, 1.02));
-  scene.add(new THREE.AmbientLight(0xf0dcc8, 0.28));
-  const sun = new THREE.DirectionalLight(0xf5dcc0, 0.32);
+  scene.add(new THREE.HemisphereLight(0xf5e8dc, 0xb8a090, 1.02));
+  scene.add(new THREE.AmbientLight(0xeee4d8, 0.28));
+  const sun = new THREE.DirectionalLight(0xf5e4d4, 0.32);
   sun.position.set(4, 18, -6);
   sun.castShadow = false;
   scene.add(sun);

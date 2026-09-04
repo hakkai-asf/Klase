@@ -13,10 +13,12 @@ const ceilingLightUrl = new URL("../../../assets/classroom/ceiling-light.glb", i
 const tableUrl = new URL("../../../assets/furnitures/school table.glb", import.meta.url).href;
 const tvUrl = new URL("../../../assets/furnitures/flat-screen_tv.glb", import.meta.url).href;
 const whiteboardUrl = new URL("../../../assets/furnitures/whiteboard.glb", import.meta.url).href;
+const doorUrl = new URL("../../../assets/classroom/door.glb", import.meta.url).href;
+const airconUrl = new URL("../../../assets/furnitures/aircon.glb", import.meta.url).href;
 
 const ROOM = {
   wall: 0xe3e0db,
-  door: 0xcebd9f,
+  door: 0xc8b79d,
   ceiling: 0xfaf8f6,
   ceilingLine: 0xa8a49e,
   floor: 0xe8dfd4,
@@ -43,6 +45,8 @@ type Kit = {
   table: THREE.Object3D;
   tv: THREE.Object3D;
   whiteboard: THREE.Object3D;
+  door: THREE.Object3D;
+  aircon: THREE.Object3D;
 };
 
 let kit: Kit | null = null;
@@ -50,7 +54,7 @@ let kit: Kit | null = null;
 export async function preloadClassroom() {
   if (kit) return;
   const gltf = new GLTFLoader();
-  const [room, chair, ceiling, floor, light, table, tv, board] = await Promise.all([
+  const [room, chair, ceiling, floor, light, table, tv, board, door, aircon] = await Promise.all([
     gltf.loadAsync(classroomUrl),
     gltf.loadAsync(nuChairUrl),
     gltf.loadAsync(ceilingUrl),
@@ -59,6 +63,8 @@ export async function preloadClassroom() {
     gltf.loadAsync(tableUrl),
     gltf.loadAsync(tvUrl),
     gltf.loadAsync(whiteboardUrl),
+    gltf.loadAsync(doorUrl),
+    gltf.loadAsync(airconUrl),
   ]);
   kit = {
     classroom: room.scene,
@@ -69,6 +75,8 @@ export async function preloadClassroom() {
     table: table.scene,
     tv: tv.scene,
     whiteboard: board.scene,
+    door: door.scene,
+    aircon: aircon.scene,
   };
 }
 
@@ -250,20 +258,27 @@ function clipMeshMaxZ(mesh: THREE.Mesh, cutZ: number) {
 
 function prepareProp(
   src: THREE.Object3D,
-  opts: { height?: number; width?: number; depth?: number; flip?: boolean } = {},
+  opts: { height?: number; width?: number; depth?: number; flip?: boolean; stretch?: boolean; rotZ?: number } = {},
 ) {
   const root = new THREE.Group();
   const model = src.clone(true);
   if (opts.flip) model.rotation.x = Math.PI;
+  if (opts.rotZ) model.rotation.z = opts.rotZ;
   root.add(model);
   root.updateMatrixWorld(true);
   const size0 = new THREE.Box3().setFromObject(root).getSize(new THREE.Vector3());
-  let s = Number.POSITIVE_INFINITY;
-  if (opts.height) s = Math.min(s, opts.height / Math.max(size0.y, 0.001));
-  if (opts.width) s = Math.min(s, opts.width / Math.max(size0.x, 0.001));
-  if (opts.depth) s = Math.min(s, opts.depth / Math.max(size0.z, 0.001));
-  if (!Number.isFinite(s)) s = 1;
-  if (Number.isFinite(s) && Math.abs(s - 1) > 0.001) model.scale.multiplyScalar(s);
+  if (opts.stretch) {
+    model.scale.x *= opts.width ? opts.width / Math.max(size0.x, 0.001) : 1;
+    model.scale.y *= opts.height ? opts.height / Math.max(size0.y, 0.001) : 1;
+    model.scale.z *= opts.depth ? opts.depth / Math.max(size0.z, 0.001) : 1;
+  } else {
+    let s = Number.POSITIVE_INFINITY;
+    if (opts.height) s = Math.min(s, opts.height / Math.max(size0.y, 0.001));
+    if (opts.width) s = Math.min(s, opts.width / Math.max(size0.x, 0.001));
+    if (opts.depth) s = Math.min(s, opts.depth / Math.max(size0.z, 0.001));
+    if (!Number.isFinite(s)) s = 1;
+    if (Math.abs(s - 1) > 0.001) model.scale.multiplyScalar(s);
+  }
   root.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(root);
   const c = box.getCenter(new THREE.Vector3());
@@ -357,6 +372,104 @@ function paintTable(root: THREE.Object3D) {
       metalness: 0.06,
     });
   });
+}
+
+function paintDoor(root: THREE.Object3D) {
+  const wood = new THREE.MeshStandardMaterial({
+    color: ROOM.door,
+    roughness: 0.7,
+    metalness: 0.04,
+  });
+  const metal = new THREE.MeshStandardMaterial({
+    color: 0xc8ccd0,
+    roughness: 0.3,
+    metalness: 0.72,
+  });
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.material = /Cylinder/i.test(mesh.name) ? metal : wood;
+  });
+}
+
+function placeOnLeftWall(
+  scene: THREE.Scene,
+  src: THREE.Object3D,
+  z: number,
+  y: number,
+  opts: {
+    width?: number;
+    height?: number;
+    depth?: number;
+    rotY?: number;
+    poke?: number;
+    flip?: boolean;
+    stretch?: boolean;
+    rotZ?: number;
+  },
+) {
+  const prop = prepareProp(src, opts);
+  prop.rotation.y = opts.rotY ?? -Math.PI / 2;
+  prop.position.set(0, y, z);
+  scene.add(prop);
+  prop.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(prop);
+  const innerX = -CLASSROOM.width / 2 + CLASSROOM.wallThickness;
+  prop.position.x += innerX + (opts.poke ?? 0.02) - box.min.x;
+  prop.updateMatrixWorld(true);
+  return prop;
+}
+
+function addLeftWallFurniture(scene: THREE.Scene, pack: Kit, colliders: AABB[]) {
+  const { depth: d, wallThickness: t, cutZ } = CLASSROOM;
+  const minZ = -d / 2 + t;
+  const maxZ = cutZ - t;
+  const doorW = 1.38;
+  const doorH = 2.62;
+  const acAlong = 1.55;
+  const acH = 0.42;
+  const acDeep = 0.28;
+  const edge = 0.62;
+  const acGap = 0.38;
+  const frontDoorZ = minZ + edge + doorW / 2;
+  const backDoorZ = maxZ - edge - doorW / 2;
+  const frontAcZ = frontDoorZ + doorW / 2 + acGap + acAlong / 2;
+  const backAcZ = backDoorZ - doorW / 2 - acGap - acAlong / 2;
+  const acY = CEILING_Y - acH;
+
+  const frontDoor = placeOnLeftWall(scene, pack.door, frontDoorZ, 0, {
+    width: doorW,
+    height: doorH,
+    rotY: -Math.PI / 2,
+    poke: 0.015,
+  });
+  paintDoor(frontDoor);
+  colliders.push(aabbOf(frontDoor, 0.02));
+  const backDoor = placeOnLeftWall(scene, pack.door, backDoorZ, 0, {
+    width: doorW,
+    height: doorH,
+    rotY: -Math.PI / 2,
+    poke: 0.015,
+  });
+  paintDoor(backDoor);
+  colliders.push(aabbOf(backDoor, 0.02));
+
+  const acOpts = {
+    width: acAlong,
+    height: acH,
+    depth: acDeep,
+    stretch: true,
+    rotY: Math.PI / 2,
+    poke: 0.02,
+  };
+  const frontAc = placeOnLeftWall(scene, pack.aircon, frontAcZ, acY, acOpts);
+  const backAc = placeOnLeftWall(scene, pack.aircon, backAcZ, acY, acOpts);
+  for (const ac of [frontAc, backAc]) {
+    ac.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(ac);
+    ac.position.y += CEILING_Y - box.max.y;
+    ac.updateMatrixWorld(true);
+  }
 }
 
 function addFrontFurniture(scene: THREE.Scene, pack: Kit, colliders: AABB[]) {
@@ -818,6 +931,7 @@ export function buildClassroom(scene: THREE.Scene): {
       }
     }
     addFrontFurniture(scene, kit, colliders);
+    addLeftWallFurniture(scene, kit, colliders);
   } else {
     fallbackRoom(scene, fpWalls);
     for (let row = 0; row < DESK_GRID.rows; row++) {

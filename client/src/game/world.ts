@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { CLASSROOM, MOVE_SPEED, SEAT_REACH, type Look, type Seat } from "@klase/shared";
+import { CLASSROOM, MOVE_SPEED, SEAT_REACH, SPAWN, type Look, type Seat } from "@klase/shared";
 import { applyLook, createAvatar, drawMic, drawSpeech, layoutHeadSprites, poseWalk, setLocalFpPresentation } from "./avatar";
 import { buildClassroom, findClearStand, resolveMove, type AABB } from "./classroom";
 
@@ -41,9 +41,9 @@ export class World {
   firstPerson = false;
   freeCam = false;
   readonly localId: string;
-  localX = 0;
-  localZ = CLASSROOM.cutZ - CLASSROOM.wallThickness - 0.8;
-  localRot = Math.PI;
+  localX = SPAWN.x;
+  localZ = SPAWN.z;
+  localRot = SPAWN.rotY;
   private colliders: AABB[] = [];
   private seats: Seat[] = [];
   private avatars = new Map<string, AvatarHandle>();

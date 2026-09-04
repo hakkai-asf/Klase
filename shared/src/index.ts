@@ -80,6 +80,13 @@ export const CLASSROOM = {
   cutZ: 0.35,
 };
 
+/** Just inside the left-wall back door, facing the board. */
+export const SPAWN = {
+  x: -CLASSROOM.width / 2 + CLASSROOM.wallThickness + 1.1,
+  z: CLASSROOM.cutZ - CLASSROOM.wallThickness - 0.62 - 0.69,
+  rotY: Math.PI,
+};
+
 export function clampClassroom(x: number, z: number) {
   const hx = CLASSROOM.width / 2 - CLASSROOM.wallThickness - 0.2;
   const minZ = -CLASSROOM.depth / 2 + CLASSROOM.wallThickness + 0.2;
@@ -184,6 +191,21 @@ export function deskCell(col: number, row: number) {
   };
 }
 
+/** Six chairs centered on the back wall, facing the board. */
+export const BACK_CHAIRS = {
+  count: 6,
+  originX: -2.3,
+  originZ: CLASSROOM.cutZ - CLASSROOM.wallThickness - 0.62,
+  spacingX: 0.92,
+};
+
+export function backChairCell(i: number) {
+  return {
+    x: BACK_CHAIRS.originX + i * BACK_CHAIRS.spacingX,
+    z: BACK_CHAIRS.originZ,
+  };
+}
+
 export const SEAT_REACH = 1.25;
 
 export type Seat = { id: string; x: number; z: number; y: number; rotY: number };
@@ -199,6 +221,12 @@ export function classroomSeats(): Seat[] {
       const z = oz - DESK_GRID.seatLocalX * s + DESK_GRID.seatLocalZ * c;
       seats.push({ id: `s${row}-${col}`, x, y: DESK_GRID.sitY, z, rotY: DESK_GRID.sitRotY });
     }
+  }
+  for (let i = 0; i < BACK_CHAIRS.count; i++) {
+    const { x: ox, z: oz } = backChairCell(i);
+    const x = ox + DESK_GRID.seatLocalX * c + DESK_GRID.seatLocalZ * s;
+    const z = oz - DESK_GRID.seatLocalX * s + DESK_GRID.seatLocalZ * c;
+    seats.push({ id: `sb-${i}`, x, y: DESK_GRID.sitY, z, rotY: DESK_GRID.sitRotY });
   }
   return seats;
 }

@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { CLASSROOM, DESK_GRID, PLAYER_RADIUS, classroomSeats, clampClassroom, deskCell, resolvePlayerMove, type Seat } from "@klase/shared";
+import { BACK_CHAIRS, CLASSROOM, DESK_GRID, PLAYER_RADIUS, backChairCell, classroomSeats, clampClassroom, deskCell, resolvePlayerMove, type Seat } from "@klase/shared";
 
 export type { Seat };
 export type AABB = { minX: number; maxX: number; minZ: number; maxZ: number };
@@ -426,9 +426,9 @@ function addLeftWallFurniture(scene: THREE.Scene, pack: Kit, colliders: AABB[]) 
   const maxZ = cutZ - t;
   const doorW = 1.38;
   const doorH = 2.62;
-  const acAlong = 1.55;
-  const acH = 0.42;
-  const acDeep = 0.28;
+  const acAlong = 2.45;
+  const acH = 0.68;
+  const acDeep = 0.42;
   const edge = 0.62;
   const acGap = 0.38;
   const frontDoorZ = minZ + edge + doorW / 2;
@@ -929,6 +929,12 @@ export function buildClassroom(scene: THREE.Scene): {
         colliders.push(aabbOf(chair, 0.04));
       }
     }
+    for (let i = 0; i < BACK_CHAIRS.count; i++) {
+      const { x, z } = backChairCell(i);
+      const chair = place(scene, kit.nuChair, x, z, DESK_GRID.rotY, { height: 1.24 });
+      if (chairProto) copyMeshMaterials(chairProto, chair);
+      colliders.push(aabbOf(chair, 0.04));
+    }
     addFrontFurniture(scene, kit, colliders);
     addLeftWallFurniture(scene, kit, colliders);
   } else {
@@ -938,6 +944,10 @@ export function buildClassroom(scene: THREE.Scene): {
         const { x, z } = deskCell(col, row);
         colliders.push({ minX: x - 0.39, maxX: x + 0.39, minZ: z - 0.37, maxZ: z + 0.37 });
       }
+    }
+    for (let i = 0; i < BACK_CHAIRS.count; i++) {
+      const { x, z } = backChairCell(i);
+      colliders.push({ minX: x - 0.39, maxX: x + 0.39, minZ: z - 0.37, maxZ: z + 0.37 });
     }
   }
 

@@ -1,5 +1,5 @@
 import { Room, Client, ServerError } from "@colyseus/core";
-import { CHAT_LOG_MAX, CHAT_RADIUS, CLASSROOM, IDLE_MS, REGULAR_CAP, SEAT_REACH, WEARABLES, classroomSeats, clampClassroom, normalizeLook, resolvePlayerMove } from "@klase/shared";
+import { CHAT_LOG_MAX, CHAT_RADIUS, CLASSROOM, IDLE_MS, REGULAR_CAP, SEAT_REACH, SPAWN, WEARABLES, classroomSeats, clampClassroom, normalizeLook, resolvePlayerMove } from "@klase/shared";
 import { ClassroomState, Player } from "./schema.js";
 import { filterChat } from "./chatFilter.js";
 import { assertCanModerate, banName, ownerName, resolveIdentity } from "./roles.js";
@@ -206,10 +206,10 @@ export class ClassroomRoom extends Room<ClassroomState> {
     p.name = ident.name;
     p.role = ident.role;
     p.userId = ident.userId;
-    p.x = -3 + (i % 6) * 1.2;
+    p.x = SPAWN.x + (i % 3) * 0.4;
     p.y = 0;
-    p.z = CLASSROOM.cutZ - CLASSROOM.wallThickness - 0.8;
-    p.rotY = Math.PI;
+    p.z = SPAWN.z + Math.floor(i / 3) * 0.4;
+    p.rotY = SPAWN.rotY;
     p.hat = allowed(WEARABLES.hat, ident.look.hat);
     p.top = allowed(WEARABLES.top, ident.look.top);
     p.accessory = allowed(WEARABLES.accessory, ident.look.accessory);

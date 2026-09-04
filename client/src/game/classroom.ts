@@ -7,13 +7,16 @@ export type AABB = { minX: number; maxX: number; minZ: number; maxZ: number };
 
 const classroomUrl = new URL("../../../assets/classroom/cleaned-classroom.glb", import.meta.url).href;
 const nuChairUrl = new URL("../../../assets/furnitures/nu-chair.glb", import.meta.url).href;
+const ceilingUrl = new URL("../../../assets/textures/ceiling-texture.glb", import.meta.url).href;
+const floorUrl = new URL("../../../assets/textures/floor-texture.glb", import.meta.url).href;
+const ceilingLightUrl = new URL("../../../assets/classroom/ceiling-light.glb", import.meta.url).href;
 
 const ROOM = {
   wall: 0xe3e0db,
   door: 0xcebd9f,
   ceiling: 0xbfbec3,
-  grid: 0x9e9e9e,
-  floor: 0xb9b0a4,
+  ceilingLine: 0xd4d1cd,
+  floor: 0xe8e6e3,
   board: 0xb0c4c3,
 };
 
@@ -31,6 +34,9 @@ function flattenPaint(std: THREE.MeshStandardMaterial, hex: number) {
 type Kit = {
   classroom: THREE.Object3D;
   nuChair: THREE.Object3D;
+  ceiling: THREE.Object3D;
+  floor: THREE.Object3D;
+  ceilingLight: THREE.Object3D;
 };
 
 let kit: Kit | null = null;
@@ -38,8 +44,20 @@ let kit: Kit | null = null;
 export async function preloadClassroom() {
   if (kit) return;
   const gltf = new GLTFLoader();
-  const [room, chair] = await Promise.all([gltf.loadAsync(classroomUrl), gltf.loadAsync(nuChairUrl)]);
-  kit = { classroom: room.scene, nuChair: chair.scene };
+  const [room, chair, ceiling, floor, light] = await Promise.all([
+    gltf.loadAsync(classroomUrl),
+    gltf.loadAsync(nuChairUrl),
+    gltf.loadAsync(ceilingUrl),
+    gltf.loadAsync(floorUrl),
+    gltf.loadAsync(ceilingLightUrl),
+  ]);
+  kit = {
+    classroom: room.scene,
+    nuChair: chair.scene,
+    ceiling: ceiling.scene,
+    floor: floor.scene,
+    ceilingLight: light.scene,
+  };
 }
 
 if (import.meta.hot) {
@@ -63,12 +81,18 @@ function isCeilingDetail(box: THREE.Box3, size: THREE.Vector3) {
   return box.min.y > 3 && size.y < 0.5;
 }
 
-function isCeilingGrid(mesh: THREE.Mesh, box: THREE.Box3, size: THREE.Vector3) {
-  if (!isCeilingDetail(box, size) || size.y > 0.02) return false;
-  const mat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
-  const std = mat as THREE.MeshStandardMaterial;
-  const hex = std?.color?.getHex() ?? 0;
-  return /Color_008|Material2_9/i.test(matName(mesh)) || hex < 0x808080;
+function isReplacedSurface(mesh: THREE.Mesh) {
+  return (
+    mesh.name === "Material3_6" ||
+    mesh.name === "Material3_6_1" ||
+    mesh.name === "Material2_9" ||
+    mesh.name === "Material2_10" ||
+    mesh.name === "Material2_11" ||
+    mesh.name === "Material2_12" ||
+    mesh.name === "Material2_13" ||
+    mesh.name === "Material2_14" ||
+    mesh.name === "Material3_7"
+  );
 }
 
 function isDoorGlass(mesh: THREE.Mesh) {
@@ -77,19 +101,6 @@ function isDoorGlass(mesh: THREE.Mesh) {
 
 function isWindowWall(mesh: THREE.Mesh) {
   return mesh.name === "Material2_6" || /Translucent_Glass_Gray_2/i.test(matName(mesh));
-}
-
-function pullCeilingGridForward(mesh: THREE.Mesh) {
-  mesh.position.y -= 0.018;
-  mesh.renderOrder = 20;
-  const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-  for (const mat of mats) {
-    const std = mat as THREE.MeshStandardMaterial;
-    std.depthWrite = true;
-    std.polygonOffset = true;
-    std.polygonOffsetFactor = -2;
-    std.polygonOffsetUnits = -2;
-  }
 }
 
 function flushBoard(mesh: THREE.Mesh) {
@@ -116,54 +127,6 @@ function isGlbWall(mesh: THREE.Mesh) {
     isDoorGlass(mesh) ||
     isWindowWall(mesh)
   );
-}
-
-function rebuildKept(mesh: THREE.Mesh, src: THREE.BufferGeometry, keepTri: boolean[], keepN: number) {
-  if (keepN === 0) {
-    mesh.visible = false;
-    return;
-  }
-  const next = new THREE.BufferGeometry();
-  for (const name of Object.keys(src.attributes)) {
-    const attr = src.getAttribute(name);
-    if (!attr) continue;
-    const itemSize = attr.itemSize;
-    const arr = new Float32Array(keepN * 3 * itemSize);
-    let w = 0;
-    for (let t = 0; t < keepTri.length; t++) {
-      if (!keepTri[t]) continue;
-      for (let k = 0; k < 3; k++) {
-        const srcI = (t * 3 + k) * itemSize;
-        for (let c = 0; c < itemSize; c++) arr[w++] = attr.array[srcI + c]!;
-      }
-    }
-    next.setAttribute(name, new THREE.BufferAttribute(arr, itemSize));
-  }
-  next.computeVertexNormals();
-  mesh.geometry = next;
-}
-
-function filterTriangles(mesh: THREE.Mesh, keepFn: (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3) => boolean) {
-  mesh.updateMatrixWorld(true);
-  const src = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
-  const pos = src.getAttribute("position");
-  if (!pos) return;
-  const triCount = Math.floor(pos.count / 3);
-  const keepTri = new Array<boolean>(triCount);
-  const a = new THREE.Vector3();
-  const b = new THREE.Vector3();
-  const c = new THREE.Vector3();
-  let keepN = 0;
-  for (let t = 0; t < triCount; t++) {
-    a.fromBufferAttribute(pos, t * 3).applyMatrix4(mesh.matrixWorld);
-    b.fromBufferAttribute(pos, t * 3 + 1).applyMatrix4(mesh.matrixWorld);
-    c.fromBufferAttribute(pos, t * 3 + 2).applyMatrix4(mesh.matrixWorld);
-    const keep = keepFn(a, b, c);
-    keepTri[t] = keep;
-    if (keep) keepN++;
-  }
-  if (keepN === triCount) return;
-  rebuildKept(mesh, src, keepTri, keepN);
 }
 
 function lerpAttr(out: number[], attr: THREE.BufferAttribute, i0: number, i1: number, t: number) {
@@ -420,84 +383,231 @@ function paintRoomSurfaces(mesh: THREE.Mesh) {
     const name = `${mesh.name} ${std.name ?? ""}`;
     if (mesh.name === "Material2_7" || /0128_White/i.test(name)) flattenPaint(std, ROOM.wall);
     else if (mesh.name === "Material3_8" || /Color_003/i.test(name)) flattenPaint(std, ROOM.door);
-    else if (mesh.name === "Material2_10" || /0009_Linen/i.test(name)) {
-      flattenPaint(std, ROOM.ceiling);
-      std.emissive.setHex(ROOM.ceiling);
-      std.emissiveIntensity = 0.06;
-      std.side = THREE.BackSide;
-    } else if (mesh.name === "Material2_9" || /Color_008/i.test(name)) flattenPaint(std, ROOM.grid);
-    else if (mesh.name === "Material3_6" || /Wood_Square_Tile/i.test(name)) flattenPaint(std, ROOM.floor);
     else if (mesh.name === "Material3_16" || /whiteboard/i.test(name)) flattenPaint(std, ROOM.board);
   }
 }
 
-function addCeilingWash(scene: THREE.Scene) {
-  const color = 0xf1dbc8;
-  const xs = [-4.21, -1.12, 1.98];
-  const zs = [-11.7, -7.06, -2.42];
-  for (const x of xs) {
-    for (const z of zs) {
-      if (z > CLASSROOM.cutZ - 0.4) continue;
-      const lamp = new THREE.PointLight(color, 12, 8.5, 2);
-      lamp.position.set(x, 3.55, z);
-      lamp.castShadow = false;
-      scene.add(lamp);
+function playSpan() {
+  const { width: w, depth: d, wallThickness: t, cutZ } = CLASSROOM;
+  const minZ = -d / 2;
+  const spanZ = cutZ - minZ;
+  return { w, t, minZ, spanZ, midZ: minZ + spanZ / 2, innerW: w - t * 2 };
+}
+
+function wrapCentered(src: THREE.Object3D) {
+  const wrap = new THREE.Group();
+  const model = src.clone(true);
+  wrap.add(model);
+  wrap.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(wrap);
+  const c = box.getCenter(new THREE.Vector3());
+  model.position.set(-c.x, -box.min.y, -c.z);
+  return { wrap, size: box.getSize(new THREE.Vector3()) };
+}
+
+function tintKeepMaps(root: THREE.Object3D, hex: number, side?: THREE.Side) {
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const src = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    const next = src.map((m) => {
+      const std = (m as THREE.MeshStandardMaterial).clone();
+      std.color.setHex(hex);
+      if (side != null) std.side = side;
+      std.emissive.setHex(hex);
+      std.emissiveIntensity = 0.06;
+      return std;
+    });
+    mesh.material = Array.isArray(mesh.material) ? next : next[0]!;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+  });
+}
+
+function firstMesh(root: THREE.Object3D) {
+  let found: THREE.Mesh | null = null;
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!found && mesh.isMesh) found = mesh;
+  });
+  return found;
+}
+
+function repeatMaps(mat: THREE.MeshStandardMaterial, rx: number, ry: number) {
+  for (const map of [mat.map, mat.normalMap, mat.roughnessMap, mat.aoMap, mat.metalnessMap]) {
+    if (!map) continue;
+    map.wrapS = THREE.RepeatWrapping;
+    map.wrapT = THREE.RepeatWrapping;
+    map.repeat.set(rx, ry);
+    map.needsUpdate = true;
+  }
+}
+
+function hexRgb(hex: number) {
+  return { r: (hex >> 16) & 255, g: (hex >> 8) & 255, b: hex & 255 };
+}
+
+function rewriteMap(tex: THREE.Texture | null, paint: (d: Uint8ClampedArray) => void) {
+  const img = tex?.image as CanvasImageSource & { width?: number; height?: number };
+  if (!tex || !img || !img.width || !img.height) return tex;
+  const canvas = document.createElement("canvas");
+  canvas.width = img.width;
+  canvas.height = img.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return tex;
+  ctx.drawImage(img, 0, 0);
+  const pix = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  paint(pix.data);
+  ctx.putImageData(pix, 0, 0);
+  const next = new THREE.CanvasTexture(canvas);
+  next.colorSpace = THREE.SRGBColorSpace;
+  next.wrapS = THREE.RepeatWrapping;
+  next.wrapT = THREE.RepeatWrapping;
+  next.needsUpdate = true;
+  return next;
+}
+
+function grayscaleMap(tex: THREE.Texture | null) {
+  return rewriteMap(tex, (d) => {
+    for (let i = 0; i < d.length; i += 4) {
+      const g = d[i]! * 0.299 + d[i + 1]! * 0.587 + d[i + 2]! * 0.114;
+      d[i] = d[i + 1] = d[i + 2] = g;
+    }
+  });
+}
+
+function liftCeilingLines(tex: THREE.Texture | null, hex: number) {
+  const { r, g, b } = hexRgb(hex);
+  return rewriteMap(tex, (d) => {
+    for (let i = 0; i < d.length; i += 4) {
+      const luma = d[i]! * 0.299 + d[i + 1]! * 0.587 + d[i + 2]! * 0.114;
+      if (luma > 175) continue;
+      const t = Math.min(1, (175 - luma) / 120);
+      d[i] = d[i]! + (r - d[i]!) * t;
+      d[i + 1] = d[i + 1]! + (g - d[i + 1]!) * t;
+      d[i + 2] = d[i + 2]! + (b - d[i + 2]!) * t;
+    }
+  });
+}
+
+function addNewFloor(scene: THREE.Scene, src: THREE.Object3D) {
+  const { innerW, spanZ, midZ } = playSpan();
+  const srcMesh = firstMesh(src);
+  const mat = ((srcMesh?.material as THREE.MeshStandardMaterial) ?? new THREE.MeshStandardMaterial()).clone();
+  mat.map = grayscaleMap(mat.map);
+  mat.color.setHex(ROOM.floor);
+  mat.roughness = 0.88;
+  mat.metalness = 0;
+  const tile = 2.35;
+  repeatMaps(mat, innerW / tile, spanZ / tile);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(innerW, spanZ), mat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.set(0, 0.002, midZ);
+  floor.receiveShadow = false;
+  floor.castShadow = false;
+  scene.add(floor);
+}
+
+function addNewCeiling(host: THREE.Object3D, src: THREE.Object3D) {
+  const { w, spanZ, midZ } = playSpan();
+  const lidW = w - 0.24;
+  const lidD = spanZ - 0.08;
+  const { wrap: proto, size } = wrapCentered(src);
+  const yScale = 0.08 / Math.max(size.y, 0.001);
+  const xzScale = Math.min(lidW / size.x, lidD / size.z) * 0.58;
+  proto.scale.set(xzScale, yScale, xzScale);
+  tintKeepMaps(proto, ROOM.ceiling, THREE.DoubleSide);
+  proto.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const mat of mats) {
+      const std = mat as THREE.MeshStandardMaterial;
+      std.map = liftCeilingLines(std.map, ROOM.ceilingLine);
+    }
+  });
+  const tileW = size.x * xzScale;
+  const tileD = size.z * xzScale;
+  const cols = Math.max(1, Math.ceil(lidW / tileW - 1e-6));
+  const rows = Math.max(1, Math.ceil(lidD / tileD - 1e-6));
+  const originX = -((cols - 1) * tileW) / 2;
+  const originZ = midZ - ((rows - 1) * tileD) / 2;
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const tile = col === 0 && row === 0 ? proto : proto.clone(true);
+      tile.position.set(originX + col * tileW, 3.91, originZ + row * tileD);
+      host.add(tile);
     }
   }
 }
 
-function lightCeilingFixtures(mesh: THREE.Mesh) {
-  const name = matName(mesh);
-  const isIlu = mesh.name === "Material2_14" || /white_ilu/i.test(name);
-  const isLouver = mesh.name === "Material3_7" || /0131_Silver/i.test(name);
-  const isHousing = mesh.name === "Material2_13" || /0133_Gray/i.test(name);
-  if (!isIlu && !isLouver && !isHousing) return;
-  const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-  for (const mat of mats) {
-    const std = mat as THREE.MeshStandardMaterial;
-    std.map = null;
-    std.emissiveMap = null;
-    std.color.set(0xffffff);
-    std.emissive.set(0xfcecdd);
-    std.emissiveIntensity = isHousing ? 0.18 : 0.42;
-    std.side = THREE.FrontSide;
-    std.metalness = 0;
-    std.roughness = 0.35;
-  }
+const LAMP_XS = [-4.21, -1.12, 1.98];
+const LAMP_ZS = [-11.7, -7.06, -2.42];
+const CEILING_Y = 3.91;
+const LIGHT_POKE = 0.022;
+const LIGHT_XZ = 0.42;
+
+function panelGlow(width: number, height: number, depth: number) {
+  const glow = new THREE.Mesh(
+    new THREE.PlaneGeometry(width * 0.94, depth * 0.72),
+    new THREE.MeshBasicMaterial({
+      color: 0xfff6ea,
+      transparent: true,
+      opacity: 0.7,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      toneMapped: false,
+    }),
+  );
+  glow.rotation.x = Math.PI / 2;
+  glow.position.y = height * 0.92;
+  glow.renderOrder = 6;
+  return glow;
 }
 
-function stripEdgeFixtures(mesh: THREE.Mesh) {
-  if (mesh.name === "Material2_11" || mesh.name === "Material2_12") {
-    mesh.visible = false;
-    return;
+function addCeilingWash(scene: THREE.Scene, fpWalls: THREE.Group, fixture?: THREE.Object3D) {
+  const color = 0xfff1dc;
+  for (const x of LAMP_XS) {
+    for (const z of LAMP_ZS) {
+      if (z > CLASSROOM.cutZ - 0.4) continue;
+      const lamp = new THREE.PointLight(color, 10, 8.5, 1.8);
+      lamp.position.set(x, CEILING_Y - 0.1, z);
+      lamp.castShadow = false;
+      scene.add(lamp);
+      if (!fixture) continue;
+      const { wrap, size } = wrapCentered(fixture);
+      wrap.rotation.x = Math.PI;
+      wrap.rotation.y = Math.PI / 2;
+      wrap.scale.set(LIGHT_XZ, LIGHT_POKE / Math.max(size.y, 0.001), LIGHT_XZ);
+      wrap.position.set(x, CEILING_Y, z);
+      wrap.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const src = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        const next = src.map((m) => {
+          const name = (m as THREE.Material).name ?? "";
+          if (/metal/i.test(name)) {
+            const std = (m as THREE.MeshStandardMaterial).clone();
+            std.color.setHex(0x6a6762);
+            std.metalness = 0.55;
+            std.roughness = 0.4;
+            std.emissive.setHex(0x000000);
+            return std;
+          }
+          return new THREE.MeshBasicMaterial({
+            color: 0xfff8f0,
+            toneMapped: false,
+          });
+        });
+        mesh.material = Array.isArray(mesh.material) ? next : next[0]!;
+        mesh.castShadow = false;
+        mesh.receiveShadow = false;
+      });
+      wrap.add(panelGlow(size.x, size.y, size.z));
+      fpWalls.add(wrap);
+    }
   }
-  if (mesh.name !== "Material2_14" && mesh.name !== "Material3_7" && mesh.name !== "Material2_13") return;
-  filterTriangles(mesh, (a, b, c) => {
-    const cx = (a.x + b.x + c.x) / 3;
-    const cz = (a.z + b.z + c.z) / 3;
-    return cx < 4.4 && cz < -0.5;
-  });
-}
-
-/** Solid lid above the fixtures. Only parented to fpWalls so aerial stays open. */
-function addCeilingBacking(host: THREE.Object3D) {
-  const { width: w, depth: d, cutZ } = CLASSROOM;
-  const minZ = -d / 2;
-  const spanZ = cutZ - minZ;
-  const mat = new THREE.MeshStandardMaterial({
-    color: ROOM.ceiling,
-    roughness: 0.85,
-    metalness: 0,
-    emissive: ROOM.ceiling,
-    emissiveIntensity: 0.06,
-    side: THREE.BackSide,
-  });
-  const plane = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.24, spanZ - 0.08), mat);
-  plane.rotation.x = -Math.PI / 2;
-  plane.position.set(0, 3.99, minZ + spanZ / 2);
-  plane.castShadow = false;
-  plane.receiveShadow = false;
-  host.add(plane);
 }
 
 export function buildClassroom(scene: THREE.Scene): {
@@ -526,28 +636,28 @@ export function buildClassroom(scene: THREE.Scene): {
     room.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
+      if (isReplacedSurface(mesh)) {
+        mesh.visible = false;
+        return;
+      }
       prepRoomMesh(mesh);
       paintRoomSurfaces(mesh);
-      lightCeilingFixtures(mesh);
       if (mesh.name.endsWith("_1") || isGlbWall(mesh)) {
         mesh.visible = false;
         return;
       }
       clipMeshMaxZ(mesh, CLASSROOM.cutZ);
-      stripEdgeFixtures(mesh);
       if (!mesh.visible) return;
       if (mesh.name === "Material3_16") {
         flushBoard(mesh);
         return;
       }
       const { box, size } = meshBounds(mesh);
-      if (isCeilingDetail(box, size)) {
-        if (isCeilingGrid(mesh, box, size)) pullCeilingGridForward(mesh);
-        fpMeshes.push(mesh);
-      }
+      if (isCeilingDetail(box, size)) fpMeshes.push(mesh);
     });
     for (const mesh of fpMeshes) fpWalls.attach(mesh);
-    addCeilingBacking(fpWalls);
+    addNewFloor(scene, kit.floor);
+    addNewCeiling(fpWalls, kit.ceiling);
 
     for (let row = 0; row < DESK_GRID.rows; row++) {
       for (let col = 0; col < DESK_GRID.cols; col++) {
@@ -574,7 +684,7 @@ export function buildClassroom(scene: THREE.Scene): {
   sun.position.set(4, 18, -6);
   sun.castShadow = false;
   scene.add(sun);
-  addCeilingWash(scene);
+  addCeilingWash(scene, fpWalls, kit?.ceilingLight);
 
   return { colliders, seats, fpWalls, isoWalls };
 }

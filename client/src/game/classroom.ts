@@ -18,7 +18,7 @@ const ROOM = {
   wall: 0xe3e0db,
   door: 0xcebd9f,
   ceiling: 0xfaf8f6,
-  ceilingLine: 0x8a8782,
+  ceilingLine: 0x9a9792,
   floor: 0xe8dfd4,
   board: 0xb1c5c4,
 };
@@ -250,17 +250,19 @@ function clipMeshMaxZ(mesh: THREE.Mesh, cutZ: number) {
 
 function prepareProp(
   src: THREE.Object3D,
-  opts: { height?: number; width?: number; depth?: number } = {},
+  opts: { height?: number; width?: number; depth?: number; flip?: boolean } = {},
 ) {
   const root = new THREE.Group();
   const model = src.clone(true);
+  if (opts.flip) model.rotation.x = Math.PI;
   root.add(model);
   root.updateMatrixWorld(true);
   const size0 = new THREE.Box3().setFromObject(root).getSize(new THREE.Vector3());
-  let s = 1;
-  if (opts.height) s = opts.height / Math.max(size0.y, 0.001);
+  let s = Number.POSITIVE_INFINITY;
+  if (opts.height) s = Math.min(s, opts.height / Math.max(size0.y, 0.001));
   if (opts.width) s = Math.min(s, opts.width / Math.max(size0.x, 0.001));
   if (opts.depth) s = Math.min(s, opts.depth / Math.max(size0.z, 0.001));
+  if (!Number.isFinite(s)) s = 1;
   if (Number.isFinite(s) && Math.abs(s - 1) > 0.001) model.scale.multiplyScalar(s);
   root.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(root);
@@ -309,7 +311,7 @@ function placeOnFrontWall(
   src: THREE.Object3D,
   x: number,
   y: number,
-  opts: { width?: number; height?: number; rotY?: number; poke?: number },
+  opts: { width?: number; height?: number; rotY?: number; poke?: number; flip?: boolean },
 ) {
   const prop = prepareProp(src, opts);
   prop.rotation.y = opts.rotY ?? 0;
@@ -359,12 +361,27 @@ function paintTable(root: THREE.Object3D) {
 
 function addFrontFurniture(scene: THREE.Scene, pack: Kit, colliders: AABB[]) {
   const innerZ = -CLASSROOM.depth / 2 + CLASSROOM.wallThickness;
-  const table = place(scene, pack.table, 0, innerZ + 1.25, 0, { width: 4.25, height: 0.95 });
+  const table = place(scene, pack.table, 0, innerZ + 1.55, 0, { width: 4.25, height: 0.95 });
   paintTable(table);
   colliders.push(aabbOf(table, 0.05));
-  const left = placeOnFrontWall(scene, pack.whiteboard, -3.55, 0.88, { width: 3.35, rotY: Math.PI, poke: 0.03 });
+  const tv = placeOnFrontWall(scene, pack.tv, 0, 2.12, {
+    width: 2.05,
+    rotY: Math.PI,
+    poke: 0.2,
+    flip: true,
+  });
+  tv.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.material = new THREE.MeshStandardMaterial({
+      color: 0x1c1c1e,
+      roughness: 0.22,
+      metalness: 0.65,
+    });
+  });
+  const left = placeOnFrontWall(scene, pack.whiteboard, -3.2, 0.82, { width: 3.8, rotY: Math.PI, poke: 0.03 });
   paintWhiteboard(left);
-  const right = placeOnFrontWall(scene, pack.whiteboard, 3.55, 0.88, { width: 3.35, rotY: Math.PI, poke: 0.03 });
+  const right = placeOnFrontWall(scene, pack.whiteboard, 3.2, 0.82, { width: 3.8, rotY: Math.PI, poke: 0.03 });
   paintWhiteboard(right);
 }
 
@@ -588,6 +605,16 @@ function darkenCeilingLinesOnly(tex: THREE.Texture | null, lineHex: number) {
   });
 }
 
+function liftCeilingMap(tex: THREE.Texture | null) {
+  return rewriteMap(tex, (d) => {
+    for (let i = 0; i < d.length; i += 4) {
+      d[i] = Math.min(255, d[i]! * 1.1 + 10);
+      d[i + 1] = Math.min(255, d[i + 1]! * 1.1 + 10);
+      d[i + 2] = Math.min(255, d[i + 2]! * 1.1 + 10);
+    }
+  });
+}
+
 function addNewFloor(scene: THREE.Scene, src: THREE.Object3D) {
   const { innerW, spanZ, midZ } = playSpan();
   const srcMesh = firstMesh(src);
@@ -645,7 +672,7 @@ function addNewCeiling(host: THREE.Object3D, src: THREE.Object3D) {
       std.lightMap = null;
       std.metalness = 0;
       std.side = THREE.DoubleSide;
-      std.map = darkenCeilingLinesOnly(std.map, ROOM.ceilingLine);
+      std.map = liftCeilingMap(darkenCeilingLinesOnly(std.map, ROOM.ceilingLine));
       std.normalMap = cloneMap(std.normalMap);
       if (std.normalMap) std.normalScale.set(0.35, 0.35);
       std.roughness = 0.88;

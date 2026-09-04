@@ -162,15 +162,15 @@ export const DESK_GRID = {
   /** nu-chair forward is local +X; π/2 maps that to the board (−Z). */
   rotY: Math.PI / 2,
   /**
-   * Seat pan in un-rotated chair space (Object_23 after fit/center).
-   * Negative X is toward the backrest after rotY π/2.
+   * Seat pan in un-rotated chair space after height fit 1.24.
+   * −X is toward the backrest; −Z is away from the tablet (sitter’s left).
    */
-  seatLocalX: -0.20,
-  seatLocalZ: 0.08,
+  seatLocalX: -0.10,
+  seatLocalZ: -0.04,
   /** Mixamo Sitting Idle faces +Z; π turns the avatar toward the board. */
   sitRotY: Math.PI,
-  /** Extra root height so the pelvis rests on the chair, not through it. */
-  sitY: 0.36,
+  /** Root height so Mixamo hips land on the pan (~0.64 m), not above it. */
+  sitY: 0.22,
 };
 
 export const SEAT_REACH = 1.25;

@@ -162,6 +162,14 @@ export function setViewButton(btn: HTMLElement, firstPerson: boolean, compact = 
   btn.classList.toggle("primary", firstPerson);
 }
 
+export function setFreeCamButton(btn: HTMLElement, on: boolean, visible: boolean) {
+  btn.hidden = !visible;
+  btn.textContent = on ? "Exit cam" : "Free cam";
+  btn.title = on ? "Exit free camera (C)" : "Free fly camera (C)";
+  btn.setAttribute("aria-pressed", on ? "true" : "false");
+  btn.classList.toggle("primary", on);
+}
+
 export function setZoomHud(
   wrap: HTMLElement,
   panel: HTMLElement,
@@ -348,6 +356,10 @@ export function renderGameShell(root: HTMLElement) {
   const viewBtn = el("button", "clay-btn");
   viewBtn.type = "button";
   setViewButton(viewBtn, false, isTouchUi());
+  const freeCamBtn = el("button", "clay-btn", "Free cam");
+  freeCamBtn.type = "button";
+  freeCamBtn.hidden = true;
+  setFreeCamButton(freeCamBtn, false, false);
   const playersBtn = el("button", "clay-btn", "Players");
   const lookBtn = el("button", "clay-btn", "Look");
   const chatBtn = el("button", "clay-btn", "Chat");
@@ -375,7 +387,7 @@ export function renderGameShell(root: HTMLElement) {
   zoomTrack.append(zoomTick, zoomSlider);
   zoomPanel.append(zoomTrack);
   zoomWrap.append(zoomBtn, zoomPanel);
-  actions.append(micBtn, muteAllBtn, chatBtn, playersBtn, lookBtn, viewBtn, zoomWrap);
+  actions.append(micBtn, muteAllBtn, chatBtn, playersBtn, lookBtn, viewBtn, freeCamBtn, zoomWrap);
   top.append(roomChip, actions);
 
   const chat = el("div", "chat-dock game-chat empty collapsed");
@@ -410,6 +422,7 @@ export function renderGameShell(root: HTMLElement) {
     playersBtn,
     lookBtn,
     viewBtn,
+    freeCamBtn,
     zoomWrap,
     zoomBtn,
     zoomPanel,

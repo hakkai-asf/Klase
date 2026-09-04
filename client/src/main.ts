@@ -4,7 +4,7 @@ import { World } from "./game/world";
 import { preloadAvatars } from "./game/avatar";
 import { preloadClassroom } from "./game/classroom";
 import { joinClassroom, pickRoom, type RemotePlayer } from "./net";
-import { addChat, disposeLandingPreviews, renderGameShell, renderJoining, renderLanding, setChatOpen, setMicButton, setMuteAllButton, setViewButton, setZoomHud, showCustomize, showPlayers, type ChatLine } from "./ui";
+import { addChat, disposeLandingPreviews, renderGameShell, renderJoining, renderLanding, setChatOpen, setFreeCamButton, setMicButton, setMuteAllButton, setViewButton, setZoomHud, showCustomize, showPlayers, type ChatLine } from "./ui";
 import { bindJoystick, isTouchUi } from "./joystick";
 import { currentSession, loadSavedLook, signIn, signUp } from "./auth";
 import { VoiceMesh } from "./voice";
@@ -179,12 +179,14 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
   window.addEventListener("keydown", bumpActivity);
   window.addEventListener("pointerdown", bumpActivity);
   if (left) return;
+  let iAmOwner = false;
   world = new World(ui.canvas, selfId, name, look, {
     sitBtn: isTouchUi() ? ui.sitBtn : null,
     onFirstPersonChange: (on) => {
       setViewButton(ui.viewBtn, on, isTouchUi());
       setZoomHud(ui.zoomWrap, ui.zoomPanel, ui.zoomBtn, !on);
     },
+    onFreeCamChange: (on) => setFreeCamButton(ui.freeCamBtn, on, iAmOwner),
   });
   voice = new VoiceMesh(room, selfId);
   voice.localMuted = muted;
@@ -249,6 +251,9 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
     const me = snapshot().find((p) => p.sessionId === selfId);
     const n = snapshot().length;
     ui.roomChip.textContent = `${room.state.roomKey} · ${n} in room`;
+    iAmOwner = me?.role === "owner";
+    scene.setOwnerTools(iAmOwner);
+    setFreeCamButton(ui.freeCamBtn, scene.freeCam, iAmOwner);
     if (panelOpen === "players" && me) {
       showPlayers(
         ui.layer,
@@ -340,8 +345,12 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
   });
   ui.muteAllBtn.addEventListener("click", () => setMuteAll(!mesh.muteAll));
   ui.viewBtn.addEventListener("click", () => {
-    scene.setFirstPerson(!scene.firstPerson);
+    if (scene.freeCam) scene.setFreeCam(false);
+    else scene.setFirstPerson(!scene.firstPerson);
     setViewButton(ui.viewBtn, scene.firstPerson, isTouchUi());
+  });
+  ui.freeCamBtn.addEventListener("click", () => {
+    scene.setFreeCam(!scene.freeCam);
   });
   const applyIsoZoom = () => {
     const raw = 1 - Number(ui.zoomSlider.value) / 100;

@@ -25,6 +25,10 @@ const PITCH_MAX = 1.15;
 const EYE_STAND = 1.55;
 const EYE_SIT = 1.38;
 const EYE_FWD = 0.12;
+const FP_FAR = 80;
+const FREE_FAR = 200;
+const FREE_SPEED = 6.5;
+const FREE_SPRINT = 14;
 const SPEECH_HOLD = 4000;
 const SPEECH_FADE_IN = 0.12;
 const SPEECH_FADE_OUT = 0.25;
@@ -35,6 +39,7 @@ export class World {
   readonly isoCam: THREE.OrthographicCamera;
   readonly fpCam: THREE.PerspectiveCamera;
   firstPerson = false;
+  freeCam = false;
   readonly localId: string;
   localX = 0;
   localZ = CLASSROOM.cutZ - CLASSROOM.wallThickness - 0.8;
@@ -66,10 +71,17 @@ export class World {
   private viewHint: HTMLElement;
   private mouseHint: HTMLElement;
   private onFirstPersonChange?: (on: boolean) => void;
+  private onFreeCamChange?: (on: boolean) => void;
   private isoZoomT = 0.5;
+  private ownerTools = false;
+  private freeReturnFp = false;
+  private readonly freeLook = new THREE.Vector3();
+  private readonly freeRight = new THREE.Vector3();
+  private readonly freeMove = new THREE.Vector3();
+  private readonly worldUp = new THREE.Vector3(0, 1, 0);
 
   get camera(): THREE.Camera {
-    return this.firstPerson ? this.fpCam : this.isoCam;
+    return this.firstPerson || this.freeCam ? this.fpCam : this.isoCam;
   }
 
   constructor(
@@ -77,11 +89,15 @@ export class World {
     localId: string,
     localName: string,
     look: Look,
-    hud?: { sitBtn?: HTMLButtonElement | null; onFirstPersonChange?: (on: boolean) => void },
+    hud?: {
+      sitBtn?: HTMLButtonElement | null;
+      onFirstPersonChange?: (on: boolean) => void;
+      onFreeCamChange?: (on: boolean) => void;
+    },
   ) {
     this.localId = localId;
     this.isoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 80);
-    this.fpCam = new THREE.PerspectiveCamera(70, 1, 0.08, 80);
+    this.fpCam = new THREE.PerspectiveCamera(70, 1, 0.08, FP_FAR);
     this.fpCam.rotation.order = "YXZ";
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
@@ -98,6 +114,7 @@ export class World {
     this.sitBtn = hud?.sitBtn ?? null;
     this.touchUi = Boolean(this.sitBtn);
     this.onFirstPersonChange = hud?.onFirstPersonChange;
+    this.onFreeCamChange = hud?.onFreeCamChange;
     this.sitPrompt = document.createElement("div");
     this.sitPrompt.className = "sit-prompt";
     this.sitPrompt.textContent = this.touchUi ? "Sit" : "E";
@@ -128,10 +145,16 @@ export class World {
       if (this.touchUi) return;
       if (key === "v") {
         e.preventDefault();
-        this.setFirstPerson(!this.firstPerson);
+        if (this.freeCam) this.setFreeCam(false);
+        else this.setFirstPerson(!this.firstPerson);
         return;
       }
-      if (!this.firstPerson) return;
+      if (key === "c" && this.ownerTools) {
+        e.preventDefault();
+        this.setFreeCam(!this.freeCam);
+        return;
+      }
+      if (!this.firstPerson && !this.freeCam) return;
       if (key === "escape" && document.pointerLockElement !== this.renderer.domElement) {
         e.preventDefault();
         void this.renderer.domElement.requestPointerLock();
@@ -173,6 +196,7 @@ export class World {
   }
 
   setFirstPerson(on: boolean) {
+    if (this.freeCam) this.endFreeCam();
     this.firstPerson = on;
     this.fpWalls.visible = on;
     this.isoWalls.visible = !on;
@@ -193,6 +217,50 @@ export class World {
       void canvas.requestPointerLock();
     }
     this.onFirstPersonChange?.(on);
+  }
+
+  setOwnerTools(on: boolean) {
+    this.ownerTools = on;
+    if (!on && this.freeCam) this.setFreeCam(false);
+  }
+
+  setFreeCam(on: boolean) {
+    if (on && !this.ownerTools) return;
+    if (on === this.freeCam) return;
+    if (on) this.startFreeCam();
+    else {
+      const backToFp = this.freeReturnFp;
+      this.endFreeCam();
+      this.setFirstPerson(backToFp);
+    }
+  }
+
+  private startFreeCam() {
+    this.freeReturnFp = this.firstPerson;
+    if (!this.firstPerson) this.poseFp();
+    this.freeCam = true;
+    this.firstPerson = false;
+    this.fpCam.far = FREE_FAR;
+    this.fpCam.updateProjectionMatrix();
+    this.fpWalls.visible = true;
+    this.isoWalls.visible = false;
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1));
+    this.scene.background = new THREE.Color(0xe3e0db);
+    this.viewHint.textContent = "C — exit free cam";
+    this.mouseHint.hidden = this.touchUi;
+    const local = this.avatars.get(this.localId);
+    if (local) setLocalFpPresentation(local, false, Boolean(this.localSeatId));
+    if (!this.touchUi) void this.renderer.domElement.requestPointerLock();
+    this.onFirstPersonChange?.(true);
+    this.onFreeCamChange?.(true);
+  }
+
+  private endFreeCam() {
+    if (!this.freeCam) return;
+    this.freeCam = false;
+    this.fpCam.far = FP_FAR;
+    this.fpCam.updateProjectionMatrix();
+    this.onFreeCamChange?.(false);
   }
 
   private poseFp() {
@@ -262,16 +330,16 @@ export class World {
 
   private bindLook(canvas: HTMLCanvasElement) {
     canvas.addEventListener("click", () => {
-      if (!this.firstPerson || this.touchUi) return;
+      if ((!this.firstPerson && !this.freeCam) || this.touchUi) return;
       if (document.pointerLockElement !== canvas) void canvas.requestPointerLock();
     });
     document.addEventListener("mousemove", (e) => {
-      if (!this.firstPerson) return;
+      if (!this.firstPerson && !this.freeCam) return;
       if (document.pointerLockElement !== canvas) return;
       this.applyLookDelta(e.movementX, e.movementY);
     });
     canvas.addEventListener("pointerdown", (e) => {
-      if (!this.firstPerson || !this.touchUi) return;
+      if ((!this.firstPerson && !this.freeCam) || !this.touchUi) return;
       if (e.pointerType === "mouse") return;
       this.dragging = true;
       this.lastPtrX = e.clientX;
@@ -279,7 +347,7 @@ export class World {
       canvas.setPointerCapture(e.pointerId);
     });
     canvas.addEventListener("pointermove", (e) => {
-      if (!this.firstPerson || !this.dragging) return;
+      if ((!this.firstPerson && !this.freeCam) || !this.dragging) return;
       this.applyLookDelta(e.clientX - this.lastPtrX, e.clientY - this.lastPtrY);
       this.lastPtrX = e.clientX;
       this.lastPtrY = e.clientY;
@@ -294,6 +362,12 @@ export class World {
   private applyLookDelta(dx: number, dy: number) {
     if (!dx && !dy) return;
     const sens = this.touchUi ? LOOK_SENS_TOUCH : LOOK_SENS;
+    if (this.freeCam) {
+      this.fpCam.rotation.y -= dx * sens;
+      this.fpCam.rotation.x = Math.max(-PITCH_MAX, Math.min(PITCH_MAX, this.fpCam.rotation.x - dy * sens));
+      this.fpCam.updateMatrixWorld();
+      return;
+    }
     this.localRot -= dx * sens;
     this.pitch -= dy * sens;
     this.pitch = Math.max(-PITCH_MAX, Math.min(PITCH_MAX, this.pitch));
@@ -380,11 +454,16 @@ export class World {
   }
 
   private updateSitPrompt(seat: Seat | null) {
+    if (this.freeCam) {
+      this.sitPrompt.hidden = true;
+      if (this.sitBtn) this.sitBtn.hidden = true;
+      return;
+    }
     const canSit = Boolean(seat) && !this.localSeatId;
     const seated = Boolean(this.localSeatId);
     if (this.sitBtn) {
       this.sitPrompt.hidden = true;
-      this.sitBtn.hidden = !(canSit || seated);
+      this.sitBtn.hidden = this.freeCam || !(canSit || seated);
       this.sitBtn.textContent = seated ? "Stand" : "Sit";
       return;
     }
@@ -416,7 +495,70 @@ export class World {
     this.sitPrompt.style.top = `${y}px`;
   }
 
+  private stepFreeCam(dt: number): null {
+    this.justPressed.clear();
+    this.fpCam.getWorldDirection(this.freeLook);
+    this.freeRight.crossVectors(this.freeLook, this.worldUp);
+    if (this.freeRight.lengthSq() < 1e-8) this.freeRight.set(1, 0, 0);
+    else this.freeRight.normalize();
+
+    this.freeMove.set(0, 0, 0);
+    if (this.keys.has("w") || this.keys.has("arrowup")) this.freeMove.add(this.freeLook);
+    if (this.keys.has("s") || this.keys.has("arrowdown")) this.freeMove.sub(this.freeLook);
+    if (this.keys.has("d") || this.keys.has("arrowright")) this.freeMove.add(this.freeRight);
+    if (this.keys.has("a") || this.keys.has("arrowleft")) this.freeMove.sub(this.freeRight);
+    if (this.keys.has("q") || this.keys.has(" ")) this.freeMove.y += 1;
+    if (this.keys.has("e") || this.keys.has("control")) this.freeMove.y -= 1;
+    if (this.freeMove.lengthSq() > 0) {
+      const speed = this.keys.has("shift") ? FREE_SPRINT : FREE_SPEED;
+      this.freeMove.normalize().multiplyScalar(speed * dt);
+      this.fpCam.position.add(this.freeMove);
+    }
+    this.fpCam.updateMatrixWorld();
+
+    const local = this.avatars.get(this.localId);
+    if (local) {
+      local.root.position.set(this.localX, this.seatY(this.localSeatId), this.localZ);
+      local.root.rotation.y = this.localSeatId ? this.seatFacing(this.localSeatId) : this.localRot;
+      poseWalk(local, dt, false, Boolean(this.localSeatId));
+      local.lastX = this.localX;
+      local.lastZ = this.localZ;
+    }
+
+    for (const [id, a] of this.avatars) {
+      if (id === this.localId) continue;
+      const seated = Boolean(a.seatId);
+      const px = a.root.position.x;
+      const pz = a.root.position.z;
+      if (seated) {
+        a.root.position.set(a.target.x, this.seatY(a.seatId), a.target.z);
+        a.root.rotation.y = a.targetRot;
+      } else {
+        a.root.position.lerp(a.target, 1 - Math.pow(0.001, dt));
+        a.root.rotation.y += (a.targetRot - a.root.rotation.y) * 0.15;
+      }
+      const moving = !seated && Math.hypot(a.root.position.x - px, a.root.position.z - pz) > 0.002;
+      poseWalk(a, dt, moving, seated);
+    }
+
+    const now = performance.now();
+    for (const a of this.avatars.values()) {
+      this.tickSpeech(a, now, dt);
+      if (a.micSprite.visible && now >= a.voiceUntil) {
+        a.micSprite.visible = false;
+        a.micFill = -1;
+      }
+      layoutHeadSprites(a);
+    }
+
+    this.updateSitPrompt(null);
+    this.lookDirty = false;
+    this.renderer.render(this.scene, this.fpCam);
+    return null;
+  }
+
   step(dt: number): WorldEvent | null {
+    if (this.freeCam) return this.stepFreeCam(dt);
     if (this.firstPerson) this.poseFp();
     this.camera.getWorldDirection(this.camForward);
     this.camForward.y = 0;

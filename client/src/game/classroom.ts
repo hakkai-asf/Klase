@@ -8,8 +8,6 @@ export type AABB = { minX: number; maxX: number; minZ: number; maxZ: number };
 const classroomUrl = new URL("../../../assets/classroom/cleaned-classroom.glb", import.meta.url).href;
 const nuChairUrl = new URL("../../../assets/furnitures/nu-chair.glb", import.meta.url).href;
 
-const CEILING_CAP_Y = 3.5;
-
 const ROOM = {
   wall: 0xe3e0db,
   door: 0xcebd9f,
@@ -94,8 +92,11 @@ function pullCeilingGridForward(mesh: THREE.Mesh) {
   }
 }
 
-function pullBoardForward(mesh: THREE.Mesh) {
-  mesh.position.z += 0.03;
+function flushBoard(mesh: THREE.Mesh) {
+  mesh.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(mesh);
+  const innerZ = -CLASSROOM.depth / 2 + CLASSROOM.wallThickness;
+  mesh.position.z += innerZ + 0.04 - box.max.z;
   mesh.renderOrder = 2;
   const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
   for (const mat of mats) {
@@ -105,6 +106,16 @@ function pullBoardForward(mesh: THREE.Mesh) {
     std.polygonOffsetFactor = -1;
     std.polygonOffsetUnits = -1;
   }
+}
+
+function isGlbWall(mesh: THREE.Mesh) {
+  return (
+    mesh.name === "Material2_7" ||
+    mesh.name === "Material3_8" ||
+    mesh.name === "Material3_9" ||
+    isDoorGlass(mesh) ||
+    isWindowWall(mesh)
+  );
 }
 
 function rebuildKept(mesh: THREE.Mesh, src: THREE.BufferGeometry, keepTri: boolean[], keepN: number) {
@@ -262,14 +273,6 @@ function clipMeshMaxZ(mesh: THREE.Mesh, cutZ: number) {
   mesh.geometry = next;
 }
 
-function stripShellCaps(mesh: THREE.Mesh) {
-  filterTriangles(mesh, (a, b, c) => {
-    const maxY = Math.max(a.y, b.y, c.y);
-    const avgY = (a.y + b.y + c.y) / 3;
-    return avgY <= CEILING_CAP_Y && maxY >= 0.08;
-  });
-}
-
 function prepareProp(
   src: THREE.Object3D,
   opts: { height?: number; width?: number; depth?: number } = {},
@@ -335,170 +338,45 @@ function addHollowWalls(colliders: AABB[]) {
   colliders.push({ minX: -w / 2, maxX: w / 2, minZ: cutZ - t, maxZ: cutZ });
 }
 
-function stripLeftClerestory(mesh: THREE.Mesh) {
-  filterTriangles(mesh, (a, b, c) => {
-    const cx = (a.x + b.x + c.x) / 3;
-    const cy = (a.y + b.y + c.y) / 3;
-    return !(cx < -5.5 && cy > 2.9);
-  });
-}
-
-function stripFrontDoor(mesh: THREE.Mesh) {
-  if (mesh.name !== "Material3_8" && mesh.name !== "Material2" && mesh.name !== "Material3_10") return;
-  filterTriangles(mesh, (a, b, c) => {
-    const cx = (a.x + b.x + c.x) / 3;
-    const cz = (a.z + b.z + c.z) / 3;
-    return !(cz < -13.5 && cx > 2.9);
-  });
-}
-
-function stripCornerPillar(mesh: THREE.Mesh) {
-  if (mesh.name === "Material3_8") {
-    filterTriangles(mesh, (a, b, c) => {
-      const cx = (a.x + b.x + c.x) / 3;
-      const cz = (a.z + b.z + c.z) / 3;
-      return !(cz < -13.4 && (cx > 2.9 || cx < -4));
-    });
-    return;
-  }
-  if (mesh.name !== "Material2_7") return;
-  filterTriangles(mesh, (a, b, c) => {
-    const cx = (a.x + b.x + c.x) / 3;
-    const cz = (a.z + b.z + c.z) / 3;
-    const onOuterRight = cx > 7.02;
-    const onOuterLeft = cx < -7.04;
-    const onOuterBoard = cz < -14.52;
-    const rightPatch = cx > 3.12 && cz < -12.92 && !onOuterRight && !onOuterBoard;
-    const leftPatch = cx < -4.0 && cz < -12.85 && !onOuterLeft && !onOuterBoard;
-    return !rightPatch && !leftPatch;
-  });
-}
-
-/** Fitted GLB inner faces. Covers sit 4 mm into the room so leftover recesses stay hidden. */
-const BOARD_FACE_Z = -14.417;
-const RIGHT_FACE_X = 6.946;
-const LEFT_FACE_X = -6.854;
-
-function addFrontDoorWall(host: THREE.Object3D, wallMat?: THREE.Material) {
-  const src = wallMat as THREE.MeshStandardMaterial | undefined;
-  const mat = src
-    ? src.clone()
-    : new THREE.MeshStandardMaterial({ color: ROOM.wall, roughness: 1, metalness: 0 });
-  mat.polygonOffset = false;
-  mat.side = THREE.FrontSide;
-
-  const floorMat = new THREE.MeshStandardMaterial({ color: ROOM.floor, roughness: 0.85, metalness: 0 });
-
-  const thick = 0.32;
-  const h = 4.2;
-  const y = h / 2 - 0.16;
-
-  const addBoard = (w: number, x: number) => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, thick), mat);
-    mesh.position.set(x, y, BOARD_FACE_Z - thick / 2);
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-    host.add(mesh);
-  };
-  const addRight = (d: number, z: number) => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(thick, h, d), mat);
-    mesh.position.set(RIGHT_FACE_X + thick / 2, y, z);
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-    host.add(mesh);
-  };
-  const addLeft = (d: number, z: number) => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(thick, h, d), mat);
-    mesh.position.set(LEFT_FACE_X - thick / 2, y, z);
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-    host.add(mesh);
-  };
-  const addFloor = (w: number, d: number, x: number, z: number) => {
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, d), floorMat);
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.position.set(x, 0.004, z);
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-    host.add(mesh);
-  };
-
-  addBoard(4.3, 5.0);
-  addRight(1.7, -13.58);
-  addFloor(4.4, 1.75, 5.0, -13.55);
-
-  addBoard(3.5, -5.35);
-  addLeft(1.85, -13.55);
-  addFloor(3.6, 1.85, -5.4, -13.52);
-}
-
-function addLeftClerestoryPatch(scene: THREE.Scene) {
-  const { depth: d, cutZ } = CLASSROOM;
-  const minZ = -d / 2;
-  const y0 = 2.7;
-  const y1 = 3.87;
-  const mat = new THREE.MeshStandardMaterial({
-    color: ROOM.wall,
-    roughness: 0.6,
-    metalness: 0,
-    polygonOffset: true,
-    polygonOffsetFactor: -1,
-    polygonOffsetUnits: -1,
-  });
-  const patch = new THREE.Mesh(new THREE.PlaneGeometry(cutZ - minZ, y1 - y0), mat);
-  patch.rotation.y = Math.PI / 2;
-  patch.position.set(-6.95, (y0 + y1) / 2, (minZ + cutZ) / 2);
-  patch.castShadow = false;
-  patch.receiveShadow = false;
-  scene.add(patch);
-}
-
-function addCutWall(fpWalls: THREE.Group) {
+function addCutWall(fpWalls: THREE.Group, mat: THREE.MeshStandardMaterial) {
   const { width: w, wallHeight: h, wallThickness: t, cutZ } = CLASSROOM;
-  const wall = new THREE.Mesh(
-    new THREE.BoxGeometry(w, h, t),
-    new THREE.MeshStandardMaterial({ color: ROOM.wall, roughness: 0.6, metalness: 0 }),
-  );
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(w, h, t), mat);
   wall.position.set(0, h / 2, cutZ - t / 2);
   wall.castShadow = false;
   wall.receiveShadow = false;
   fpWalls.add(wall);
 }
 
-function addPillarColliders(colliders: AABB[]) {
-  const hx = CLASSROOM.width / 2;
-  const colW = 0.95;
-  const colAlong = 1.35;
-  for (const z of [-5.05]) {
-    colliders.push({ minX: -hx, maxX: -hx + colW, minZ: z - colAlong / 2, maxZ: z + colAlong / 2 });
-    colliders.push({ minX: hx - colW, maxX: hx, minZ: z - colAlong / 2, maxZ: z + colAlong / 2 });
-  }
+function addRoomWalls(scene: THREE.Scene, fpWalls: THREE.Group) {
+  const { width: w, wallHeight: h, wallThickness: t, cutZ, depth: d } = CLASSROOM;
+  const minZ = -d / 2;
+  const playD = cutZ - minZ;
+  const midZ = (minZ + cutZ) / 2;
+  const mat = new THREE.MeshStandardMaterial({ color: ROOM.wall, roughness: 1, metalness: 0 });
+  const y = h / 2;
+
+  const board = new THREE.Mesh(new THREE.BoxGeometry(w, h, t), mat);
+  board.position.set(0, y, minZ + t / 2);
+  board.castShadow = false;
+  board.receiveShadow = false;
+  scene.add(board);
+
+  const left = new THREE.Mesh(new THREE.BoxGeometry(t, h, playD), mat);
+  left.position.set(-w / 2 + t / 2, y, midZ);
+  left.castShadow = false;
+  left.receiveShadow = false;
+  scene.add(left);
+
+  const right = new THREE.Mesh(new THREE.BoxGeometry(t, h, playD), mat.clone());
+  right.position.set(w / 2 - t / 2, y, midZ);
+  right.castShadow = false;
+  right.receiveShadow = false;
+  fpWalls.add(right);
+
+  addCutWall(fpWalls, mat.clone());
 }
 
-function keepFarL(mesh: THREE.Mesh) {
-  filterTriangles(mesh, (a, b, c) => {
-    const maxX = Math.max(a.x, b.x, c.x);
-    const maxZ = Math.max(a.z, b.z, c.z);
-    const onLeft = maxX < -4.15;
-    const onBoard = maxZ < -12.95;
-    return (onLeft || onBoard) && Math.max(a.y, b.y, c.y) >= 0.12;
-  });
-}
-
-function cloneFarL(mesh: THREE.Mesh, isoWalls: THREE.Group) {
-  const iso = mesh.clone();
-  iso.geometry = mesh.geometry.clone();
-  const mat = mesh.material;
-  iso.material = Array.isArray(mat) ? mat.map((m) => m.clone()) : mat.clone();
-  mesh.updateMatrixWorld(true);
-  iso.matrix.copy(mesh.matrixWorld);
-  iso.matrix.decompose(iso.position, iso.quaternion, iso.scale);
-  isoWalls.add(iso);
-  iso.updateMatrixWorld(true);
-  keepFarL(iso);
-}
-
-function fallbackRoom(scene: THREE.Scene, colliders: AABB[], fpWalls: THREE.Group) {
+function fallbackRoom(scene: THREE.Scene, fpWalls: THREE.Group) {
   const { width: w, wallHeight: h, wallThickness: t, cutZ, depth: d } = CLASSROOM;
   const playD = cutZ + d / 2;
   const midZ = (cutZ - d / 2) / 2;
@@ -509,17 +387,6 @@ function fallbackRoom(scene: THREE.Scene, colliders: AABB[], fpWalls: THREE.Grou
   floor.rotation.x = -Math.PI / 2;
   floor.position.z = midZ;
   scene.add(floor);
-  const wallMat = new THREE.MeshStandardMaterial({ color: ROOM.wall, roughness: 0.6 });
-  const back = new THREE.Mesh(new THREE.BoxGeometry(w, h, t), wallMat);
-  back.position.set(0, h / 2, -d / 2 + t / 2);
-  scene.add(back);
-  const left = new THREE.Mesh(new THREE.BoxGeometry(t, h, playD), wallMat);
-  left.position.set(-w / 2 + t / 2, h / 2, midZ);
-  scene.add(left);
-  const right = new THREE.Mesh(new THREE.BoxGeometry(t, h, playD), wallMat);
-  right.position.set(w / 2 - t / 2, h / 2, midZ);
-  fpWalls.add(right);
-  addCutWall(fpWalls);
   const ceiling = new THREE.Mesh(
     new THREE.BoxGeometry(w, t, playD),
     new THREE.MeshStandardMaterial({ color: ROOM.ceiling, roughness: 0.75 }),
@@ -647,7 +514,7 @@ export function buildClassroom(scene: THREE.Scene): {
   const isoWalls = new THREE.Group();
   scene.add(isoWalls);
   addHollowWalls(colliders);
-  addPillarColliders(colliders);
+  addRoomWalls(scene, fpWalls);
 
   if (kit) {
     const room = kit.classroom.clone(true);
@@ -656,61 +523,31 @@ export function buildClassroom(scene: THREE.Scene): {
     room.updateMatrixWorld(true);
 
     const fpMeshes: THREE.Mesh[] = [];
-    let shellMat: THREE.Material | undefined;
     room.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
       prepRoomMesh(mesh);
       paintRoomSurfaces(mesh);
       lightCeilingFixtures(mesh);
-      if (mesh.name.endsWith("_1")) {
+      if (mesh.name.endsWith("_1") || isGlbWall(mesh)) {
         mesh.visible = false;
         return;
       }
       clipMeshMaxZ(mesh, CLASSROOM.cutZ);
       stripEdgeFixtures(mesh);
-      stripFrontDoor(mesh);
-      stripCornerPillar(mesh);
       if (!mesh.visible) return;
-      if (mesh.name === "Material2" || mesh.name === "Material2_6") stripLeftClerestory(mesh);
-      if (!mesh.visible) return;
-      if (isDoorGlass(mesh)) {
-        cloneFarL(mesh, isoWalls);
-        fpMeshes.push(mesh);
-        return;
-      }
-      if (mesh.name === "Material3_8") {
-        cloneFarL(mesh, isoWalls);
-        fpMeshes.push(mesh);
-        return;
-      }
-      if (isWindowWall(mesh)) {
-        fpMeshes.push(mesh);
-        return;
-      }
       if (mesh.name === "Material3_16") {
-        pullBoardForward(mesh);
+        flushBoard(mesh);
         return;
       }
       const { box, size } = meshBounds(mesh);
       if (isCeilingDetail(box, size)) {
         if (isCeilingGrid(mesh, box, size)) pullCeilingGridForward(mesh);
         fpMeshes.push(mesh);
-        return;
-      }
-      if (mesh.name === "Material2_7") {
-        stripShellCaps(mesh);
-        cloneFarL(mesh, isoWalls);
-        fpMeshes.push(mesh);
-        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-        shellMat = mats[0];
       }
     });
     for (const mesh of fpMeshes) fpWalls.attach(mesh);
     addCeilingBacking(fpWalls);
-    addCutWall(fpWalls);
-    addLeftClerestoryPatch(scene);
-    addFrontDoorWall(scene, shellMat);
 
     for (let row = 0; row < DESK_GRID.rows; row++) {
       for (let col = 0; col < DESK_GRID.cols; col++) {
@@ -721,7 +558,7 @@ export function buildClassroom(scene: THREE.Scene): {
       }
     }
   } else {
-    fallbackRoom(scene, colliders, fpWalls);
+    fallbackRoom(scene, fpWalls);
     for (let row = 0; row < DESK_GRID.rows; row++) {
       for (let col = 0; col < DESK_GRID.cols; col++) {
         const x = DESK_GRID.originX + col * DESK_GRID.spacingX;

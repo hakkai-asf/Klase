@@ -18,7 +18,7 @@ const ROOM = {
   wall: 0xe3e0db,
   door: 0xcebd9f,
   ceiling: 0xfaf8f6,
-  ceilingLine: 0x9a9792,
+  ceilingLine: 0xa8a49e,
   floor: 0xe8dfd4,
   board: 0xb1c5c4,
 };
@@ -608,9 +608,9 @@ function darkenCeilingLinesOnly(tex: THREE.Texture | null, lineHex: number) {
 function liftCeilingMap(tex: THREE.Texture | null) {
   return rewriteMap(tex, (d) => {
     for (let i = 0; i < d.length; i += 4) {
-      d[i] = Math.min(255, d[i]! * 1.1 + 10);
-      d[i + 1] = Math.min(255, d[i + 1]! * 1.1 + 10);
-      d[i + 2] = Math.min(255, d[i + 2]! * 1.1 + 10);
+      d[i] = Math.min(255, d[i]! * 1.18 + 16);
+      d[i + 1] = Math.min(255, d[i + 1]! * 1.18 + 16);
+      d[i + 2] = Math.min(255, d[i + 2]! * 1.18 + 16);
     }
   });
 }

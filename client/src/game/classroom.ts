@@ -16,7 +16,7 @@ const ROOM = {
   door: 0xcebd9f,
   ceiling: 0xf3f2f0,
   ceilingLine: 0xe8e6e3,
-  floor: 0xeeeeec,
+  floor: 0xcec2b2,
   board: 0xb0c4c3,
 };
 
@@ -405,11 +405,11 @@ function wrapCentered(src: THREE.Object3D) {
   return { wrap, size: box.getSize(new THREE.Vector3()) };
 }
 
-function firstMesh(root: THREE.Object3D) {
+function firstMesh(root: THREE.Object3D): THREE.Mesh | null {
   let found: THREE.Mesh | null = null;
   root.traverse((o) => {
-    const mesh = o as THREE.Mesh;
-    if (!found && mesh.isMesh) found = mesh;
+    if (found) return;
+    if ((o as THREE.Mesh).isMesh) found = o as THREE.Mesh;
   });
   return found;
 }

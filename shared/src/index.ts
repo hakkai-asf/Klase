@@ -77,7 +77,7 @@ export const CLASSROOM = {
   wallHeight: 4.02,
   wallThickness: 0.35,
   /** Keep the board (−Z) half. Just behind the last chair row. */
-  cutZ: 2.2,
+  cutZ: 0.35,
 };
 
 export function clampClassroom(x: number, z: number) {
@@ -156,7 +156,7 @@ export const DESK_GRID = {
   rows: 5,
   cols: 10,
   originX: -5.78,
-  originZ: -9.5,
+  originZ: -10.25,
   spacingX: 0.92,
   spacingZ: 1.58,
   /** Extra X gap after this many left-side chairs (5 | aisle | 5). */

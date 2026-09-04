@@ -274,8 +274,8 @@ function prepareProp(
   } else {
     let s = Number.POSITIVE_INFINITY;
     if (opts.height) s = Math.min(s, opts.height / Math.max(size0.y, 0.001));
-    if (opts.width) s = Math.min(s, opts.width / Math.max(size0.x, 0.001));
-    if (opts.depth) s = Math.min(s, opts.depth / Math.max(size0.z, 0.001));
+  if (opts.width) s = Math.min(s, opts.width / Math.max(size0.x, 0.001));
+  if (opts.depth) s = Math.min(s, opts.depth / Math.max(size0.z, 0.001));
     if (!Number.isFinite(s)) s = 1;
     if (Math.abs(s - 1) > 0.001) model.scale.multiplyScalar(s);
   }
@@ -783,7 +783,7 @@ function addNewCeiling(host: THREE.Object3D, src: THREE.Object3D) {
       std.emissive.setHex(0x000000);
       std.aoMap = null;
       std.lightMap = null;
-      std.metalness = 0;
+    std.metalness = 0;
       std.side = THREE.DoubleSide;
       std.map = liftCeilingMap(darkenCeilingLinesOnly(std.map, ROOM.ceilingLine));
       std.normalMap = cloneMap(std.normalMap);

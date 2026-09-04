@@ -14,9 +14,9 @@ const ceilingLightUrl = new URL("../../../assets/classroom/ceiling-light.glb", i
 const ROOM = {
   wall: 0xe3e0db,
   door: 0xcebd9f,
-  ceiling: 0xf3f2f0,
-  ceilingLine: 0xe8e6e3,
-  floor: 0xcec2b2,
+  ceiling: 0xf0eeeb,
+  ceilingLine: 0x9e9b96,
+  floor: 0xe8dfd4,
   board: 0xb0c4c3,
 };
 
@@ -455,29 +455,48 @@ function cloneMap(tex: THREE.Texture | null) {
   return next;
 }
 
-function recolorDarkLines(tex: THREE.Texture | null, lineHex: number, maxLuma = 92) {
-  const line = hexRgb(lineHex);
+function tintFloorKeepGrout(tex: THREE.Texture | null, hex: number) {
+  const tile = hexRgb(hex);
+  const grout = {
+    r: Math.round(tile.r * 0.58),
+    g: Math.round(tile.g * 0.58),
+    b: Math.round(tile.b * 0.58),
+  };
   return rewriteMap(tex, (d) => {
+    let minL = 255;
+    let maxL = 0;
     for (let i = 0; i < d.length; i += 4) {
       const luma = d[i]! * 0.299 + d[i + 1]! * 0.587 + d[i + 2]! * 0.114;
-      if (luma > maxLuma) continue;
-      const t = Math.min(1, (maxLuma - luma) / maxLuma);
-      d[i] = d[i]! + (line.r - d[i]!) * t;
-      d[i + 1] = d[i + 1]! + (line.g - d[i + 1]!) * t;
-      d[i + 2] = d[i + 2]! + (line.b - d[i + 2]!) * t;
+      if (luma < minL) minL = luma;
+      if (luma > maxL) maxL = luma;
+    }
+    const range = Math.max(12, maxL - minL);
+    for (let i = 0; i < d.length; i += 4) {
+      const luma = d[i]! * 0.299 + d[i + 1]! * 0.587 + d[i + 2]! * 0.114;
+      const t = Math.pow((luma - minL) / range, 0.75);
+      d[i] = grout.r + (tile.r - grout.r) * t;
+      d[i + 1] = grout.g + (tile.g - grout.g) * t;
+      d[i + 2] = grout.b + (tile.b - grout.b) * t;
     }
   });
 }
 
-function tintTextureLightGray(tex: THREE.Texture | null, hex: number) {
-  const { r, g, b } = hexRgb(hex);
+function tintCeilingMap(tex: THREE.Texture | null, panelHex: number, lineHex: number) {
+  const panel = hexRgb(panelHex);
+  const line = hexRgb(lineHex);
   return rewriteMap(tex, (d) => {
     for (let i = 0; i < d.length; i += 4) {
       const luma = d[i]! * 0.299 + d[i + 1]! * 0.587 + d[i + 2]! * 0.114;
-      const k = 0.52 + (luma / 255) * 0.55;
-      d[i] = Math.min(255, r * k);
-      d[i + 1] = Math.min(255, g * k);
-      d[i + 2] = Math.min(255, b * k);
+      if (luma < 120) {
+        d[i] = line.r;
+        d[i + 1] = line.g;
+        d[i + 2] = line.b;
+        continue;
+      }
+      const k = 0.92 + (luma / 255) * 0.1;
+      d[i] = Math.min(255, panel.r * k);
+      d[i + 1] = Math.min(255, panel.g * k);
+      d[i + 2] = Math.min(255, panel.b * k);
     }
   });
 }
@@ -491,9 +510,9 @@ function addNewFloor(scene: THREE.Scene, src: THREE.Object3D) {
   mat.aoMap = null;
   mat.lightMap = null;
   mat.metalness = 0;
-  mat.map = tintTextureLightGray(mat.map, ROOM.floor);
+  mat.map = tintFloorKeepGrout(mat.map, ROOM.floor);
   mat.normalMap = cloneMap(mat.normalMap);
-  if (mat.normalMap) mat.normalScale.set(0.85, 0.85);
+  if (mat.normalMap) mat.normalScale.set(1.35, 1.35);
   mat.roughnessMap = cloneMap(mat.roughnessMap);
   mat.roughness = 0.86;
   const tile = 2.35;
@@ -504,6 +523,19 @@ function addNewFloor(scene: THREE.Scene, src: THREE.Object3D) {
   floor.receiveShadow = false;
   floor.castShadow = false;
   scene.add(floor);
+}
+
+function markStatic(root: THREE.Object3D) {
+  root.updateMatrixWorld(true);
+  root.traverse((o) => {
+    o.matrixAutoUpdate = false;
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.frustumCulled = true;
+    mesh.geometry.computeBoundingSphere();
+  });
 }
 
 function addNewCeiling(host: THREE.Object3D, src: THREE.Object3D) {
@@ -526,7 +558,7 @@ function addNewCeiling(host: THREE.Object3D, src: THREE.Object3D) {
       std.lightMap = null;
       std.metalness = 0;
       std.side = THREE.DoubleSide;
-      std.map = recolorDarkLines(std.map, ROOM.ceilingLine, 88);
+      std.map = tintCeilingMap(std.map, ROOM.ceiling, ROOM.ceilingLine);
       std.normalMap = cloneMap(std.normalMap);
       if (std.normalMap) std.normalScale.set(0.35, 0.35);
       std.roughness = 0.88;
@@ -545,6 +577,7 @@ function addNewCeiling(host: THREE.Object3D, src: THREE.Object3D) {
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const tile = col === 0 && row === 0 ? proto : proto.clone(true);
+      if (tile !== proto) copyMeshMaterials(proto, tile);
       tile.position.set(originX + col * tileW, 3.91, originZ + row * tileD);
       host.add(tile);
     }
@@ -557,35 +590,41 @@ const CEILING_Y = 3.91;
 const LIGHT_POKE = 0.022;
 const LIGHT_XZ = 0.42;
 
-function panelGlow(width: number, height: number, depth: number) {
-  const glow = new THREE.Mesh(
-    new THREE.PlaneGeometry(width * 0.94, depth * 0.72),
-    new THREE.MeshBasicMaterial({
-      color: 0xfff6ea,
-      transparent: true,
-      opacity: 0.7,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      toneMapped: false,
-    }),
-  );
-  glow.rotation.x = Math.PI / 2;
-  glow.position.y = height * 0.92;
-  glow.renderOrder = 6;
-  return glow;
+function copyMeshMaterials(from: THREE.Object3D, to: THREE.Object3D) {
+  const mats: THREE.Material[] = [];
+  from.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (mesh.isMesh) mats.push(mesh.material as THREE.Material);
+  });
+  let i = 0;
+  to.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const mat = mats[i++];
+    if (mat) mesh.material = mat;
+  });
 }
 
 function addCeilingWash(scene: THREE.Scene, fpWalls: THREE.Group, fixture?: THREE.Object3D) {
   const color = 0xfff1dc;
+  const fillA = new THREE.PointLight(color, 14, 16, 1.4);
+  fillA.position.set(-1.12, 3.45, -7.06);
+  fillA.castShadow = false;
+  scene.add(fillA);
+  const fillB = new THREE.PointLight(color, 12, 14, 1.4);
+  fillB.position.set(-1.12, 3.45, -2.42);
+  fillB.castShadow = false;
+  scene.add(fillB);
+  if (!fixture) return;
+  const lit = new THREE.MeshBasicMaterial({ color: 0xfff8f0, toneMapped: false });
+  const frame = new THREE.MeshStandardMaterial({
+    color: 0x6a6762,
+    metalness: 0.35,
+    roughness: 0.5,
+  });
   for (const x of LAMP_XS) {
     for (const z of LAMP_ZS) {
       if (z > CLASSROOM.cutZ - 0.4) continue;
-      const lamp = new THREE.PointLight(color, 10, 8.5, 1.8);
-      lamp.position.set(x, CEILING_Y - 0.1, z);
-      lamp.castShadow = false;
-      scene.add(lamp);
-      if (!fixture) continue;
       const { wrap, size } = wrapCentered(fixture);
       wrap.rotation.x = Math.PI;
       wrap.rotation.y = Math.PI / 2;
@@ -594,27 +633,15 @@ function addCeilingWash(scene: THREE.Scene, fpWalls: THREE.Group, fixture?: THRE
       wrap.traverse((o) => {
         const mesh = o as THREE.Mesh;
         if (!mesh.isMesh) return;
-        const src = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-        const next = src.map((m) => {
-          const name = (m as THREE.Material).name ?? "";
-          if (/metal/i.test(name)) {
-            const std = (m as THREE.MeshStandardMaterial).clone();
-            std.color.setHex(0x6a6762);
-            std.metalness = 0.55;
-            std.roughness = 0.4;
-            std.emissive.setHex(0x000000);
-            return std;
-          }
-          return new THREE.MeshBasicMaterial({
-            color: 0xfff8f0,
-            toneMapped: false,
-          });
-        });
-        mesh.material = Array.isArray(mesh.material) ? next : next[0]!;
+        const name = ((Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as THREE.Material)?.name ?? "";
+        if (/metal/i.test(name)) {
+          mesh.visible = false;
+          return;
+        }
+        mesh.material = /outer/i.test(name) ? frame : lit;
         mesh.castShadow = false;
         mesh.receiveShadow = false;
       });
-      wrap.add(panelGlow(size.x, size.y, size.z));
       fpWalls.add(wrap);
     }
   }
@@ -669,11 +696,14 @@ export function buildClassroom(scene: THREE.Scene): {
     addNewFloor(scene, kit.floor);
     addNewCeiling(fpWalls, kit.ceiling);
 
+    let chairProto: THREE.Object3D | null = null;
     for (let row = 0; row < DESK_GRID.rows; row++) {
       for (let col = 0; col < DESK_GRID.cols; col++) {
         const x = DESK_GRID.originX + col * DESK_GRID.spacingX;
         const z = DESK_GRID.originZ + row * DESK_GRID.spacingZ;
         const chair = place(scene, kit.nuChair, x, z, DESK_GRID.rotY, { height: 1.24 });
+        if (!chairProto) chairProto = chair;
+        else copyMeshMaterials(chairProto, chair);
         colliders.push(aabbOf(chair, 0.04));
       }
     }
@@ -688,13 +718,14 @@ export function buildClassroom(scene: THREE.Scene): {
     }
   }
 
-  scene.add(new THREE.HemisphereLight(0xf3e7dc, 0xb49e90, 1.02));
-  scene.add(new THREE.AmbientLight(0xece3d8, 0.28));
-  const sun = new THREE.DirectionalLight(0xf2e2d4, 0.32);
+  scene.add(new THREE.HemisphereLight(0xf3e7dc, 0xb49e90, 1.12));
+  scene.add(new THREE.AmbientLight(0xece3d8, 0.4));
+  const sun = new THREE.DirectionalLight(0xf2e2d4, 0.4);
   sun.position.set(4, 18, -6);
   sun.castShadow = false;
   scene.add(sun);
   addCeilingWash(scene, fpWalls, kit?.ceilingLight);
+  markStatic(scene);
 
   return { colliders, seats, fpWalls, isoWalls };
 }

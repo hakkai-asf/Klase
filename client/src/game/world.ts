@@ -99,8 +99,13 @@ export class World {
     this.isoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 80);
     this.fpCam = new THREE.PerspectiveCamera(70, 1, 0.08, FP_FAR);
     this.fpCam.rotation.order = "YXZ";
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+    this.renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: (devicePixelRatio || 1) <= 1,
+      powerPreference: "high-performance",
+      stencil: false,
+    });
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.15));
     this.renderer.shadowMap.enabled = false;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -200,7 +205,7 @@ export class World {
     this.firstPerson = on;
     this.fpWalls.visible = on;
     this.isoWalls.visible = !on;
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, on ? 1 : 1.5));
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, on ? 1 : 1.15));
     this.resize();
     this.scene.background = new THREE.Color(on ? 0xe3e0db : 0xe4e8f4);
     this.pitch = 0;
@@ -244,7 +249,7 @@ export class World {
     this.fpCam.updateProjectionMatrix();
     this.fpWalls.visible = true;
     this.isoWalls.visible = false;
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1));
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1));
     this.scene.background = new THREE.Color(0xe3e0db);
     this.viewHint.textContent = "C — exit free cam";
     this.mouseHint.hidden = this.touchUi;

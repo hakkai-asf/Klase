@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { CLASSROOM, DESK_GRID, PLAYER_RADIUS, classroomSeats, clampClassroom, resolvePlayerMove, type Seat } from "@klase/shared";
+import { CLASSROOM, DESK_GRID, PLAYER_RADIUS, classroomSeats, clampClassroom, deskCell, resolvePlayerMove, type Seat } from "@klase/shared";
 
 export type { Seat };
 export type AABB = { minX: number; maxX: number; minZ: number; maxZ: number };
@@ -922,8 +922,7 @@ export function buildClassroom(scene: THREE.Scene): {
     let chairProto: THREE.Object3D | null = null;
     for (let row = 0; row < DESK_GRID.rows; row++) {
       for (let col = 0; col < DESK_GRID.cols; col++) {
-        const x = DESK_GRID.originX + col * DESK_GRID.spacingX;
-        const z = DESK_GRID.originZ + row * DESK_GRID.spacingZ;
+        const { x, z } = deskCell(col, row);
         const chair = place(scene, kit.nuChair, x, z, DESK_GRID.rotY, { height: 1.24 });
         if (!chairProto) chairProto = chair;
         else copyMeshMaterials(chairProto, chair);
@@ -936,8 +935,7 @@ export function buildClassroom(scene: THREE.Scene): {
     fallbackRoom(scene, fpWalls);
     for (let row = 0; row < DESK_GRID.rows; row++) {
       for (let col = 0; col < DESK_GRID.cols; col++) {
-        const x = DESK_GRID.originX + col * DESK_GRID.spacingX;
-        const z = DESK_GRID.originZ + row * DESK_GRID.spacingZ;
+        const { x, z } = deskCell(col, row);
         colliders.push({ minX: x - 0.39, maxX: x + 0.39, minZ: z - 0.37, maxZ: z + 0.37 });
       }
     }

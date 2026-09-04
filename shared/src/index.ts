@@ -153,12 +153,15 @@ export function resolvePlayerMove(
 }
 
 export const DESK_GRID = {
-  rows: 3,
-  cols: 4,
-  originX: -4.7,
-  originZ: -5.8,
-  spacingX: 3.15,
-  spacingZ: 3.05,
+  rows: 5,
+  cols: 10,
+  originX: -5.78,
+  originZ: -9.5,
+  spacingX: 0.92,
+  spacingZ: 1.58,
+  /** Extra X gap after this many left-side chairs (5 | aisle | 5). */
+  aisleAfter: 5,
+  aisleWidth: 3.28,
   /** nu-chair forward is local +X; π/2 maps that to the board (−Z). */
   rotY: Math.PI / 2,
   /**
@@ -173,6 +176,14 @@ export const DESK_GRID = {
   sitY: 0.22,
 };
 
+export function deskCell(col: number, row: number) {
+  const aisle = col >= DESK_GRID.aisleAfter ? DESK_GRID.aisleWidth : 0;
+  return {
+    x: DESK_GRID.originX + col * DESK_GRID.spacingX + aisle,
+    z: DESK_GRID.originZ + row * DESK_GRID.spacingZ,
+  };
+}
+
 export const SEAT_REACH = 1.25;
 
 export type Seat = { id: string; x: number; z: number; y: number; rotY: number };
@@ -183,8 +194,7 @@ export function classroomSeats(): Seat[] {
   const s = Math.sin(DESK_GRID.rotY);
   for (let row = 0; row < DESK_GRID.rows; row++) {
     for (let col = 0; col < DESK_GRID.cols; col++) {
-      const ox = DESK_GRID.originX + col * DESK_GRID.spacingX;
-      const oz = DESK_GRID.originZ + row * DESK_GRID.spacingZ;
+      const { x: ox, z: oz } = deskCell(col, row);
       const x = ox + DESK_GRID.seatLocalX * c + DESK_GRID.seatLocalZ * s;
       const z = oz - DESK_GRID.seatLocalX * s + DESK_GRID.seatLocalZ * c;
       seats.push({ id: `s${row}-${col}`, x, y: DESK_GRID.sitY, z, rotY: DESK_GRID.sitRotY });

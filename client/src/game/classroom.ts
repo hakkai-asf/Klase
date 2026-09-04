@@ -305,6 +305,48 @@ function aabbOf(obj: THREE.Object3D, pad = 0.06): AABB {
   };
 }
 
+function placeInstancedChairs(
+  scene: THREE.Scene,
+  src: THREE.Object3D,
+  poses: { x: number; z: number }[],
+  rotY: number,
+  opts: { height?: number; width?: number; depth?: number },
+  colliders: AABB[],
+) {
+  if (!poses.length) return;
+  const proto = prepareProp(src, opts);
+  proto.updateMatrixWorld(true);
+  const parts: THREE.Mesh[] = [];
+  proto.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (mesh.isMesh) parts.push(mesh);
+  });
+  const dummy = new THREE.Object3D();
+  const local = new THREE.Matrix4();
+  for (const part of parts) {
+    const inst = new THREE.InstancedMesh(part.geometry, part.material, poses.length);
+    inst.castShadow = false;
+    inst.receiveShadow = false;
+    inst.frustumCulled = false;
+    local.copy(part.matrixWorld);
+    for (let i = 0; i < poses.length; i++) {
+      dummy.position.set(poses[i]!.x, 0, poses[i]!.z);
+      dummy.rotation.set(0, rotY, 0);
+      dummy.updateMatrix();
+      inst.setMatrixAt(i, dummy.matrix.multiply(local));
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    inst.computeBoundingSphere();
+    scene.add(inst);
+  }
+  for (const pose of poses) {
+    proto.position.set(pose.x, 0, pose.z);
+    proto.rotation.y = rotY;
+    proto.updateMatrixWorld(true);
+    colliders.push(aabbOf(proto, 0.04));
+  }
+}
+
 function place(
   scene: THREE.Scene,
   src: THREE.Object3D,
@@ -464,6 +506,8 @@ function addLeftWallFurniture(scene: THREE.Scene, pack: Kit, colliders: AABB[]) 
   };
   const frontAc = placeOnLeftWall(scene, pack.aircon, frontAcZ, acY, acOpts);
   const backAc = placeOnLeftWall(scene, pack.aircon, backAcZ, acY, acOpts);
+  liftAircon(frontAc);
+  copyMeshMaterials(frontAc, backAc);
   for (const ac of [frontAc, backAc]) {
     ac.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(ac);
@@ -752,6 +796,20 @@ function addNewFloor(scene: THREE.Scene, src: THREE.Object3D) {
   scene.add(floor);
 }
 
+function liftAircon(root: THREE.Object3D) {
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const src = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    const next = src.map((m) => {
+      const std = (m as THREE.MeshStandardMaterial).clone();
+      std.color.setRGB(1.55, 1.58, 1.62);
+      return std;
+    });
+    mesh.material = Array.isArray(mesh.material) ? next : next[0]!;
+  });
+}
+
 function markStatic(root: THREE.Object3D) {
   root.updateMatrixWorld(true);
   root.traverse((o) => {
@@ -919,22 +977,12 @@ export function buildClassroom(scene: THREE.Scene): {
     addNewFloor(scene, kit.floor);
     addNewCeiling(fpWalls, kit.ceiling);
 
-    let chairProto: THREE.Object3D | null = null;
+    const chairPoses: { x: number; z: number }[] = [];
     for (let row = 0; row < DESK_GRID.rows; row++) {
-      for (let col = 0; col < DESK_GRID.cols; col++) {
-        const { x, z } = deskCell(col, row);
-        const chair = place(scene, kit.nuChair, x, z, DESK_GRID.rotY, { height: 1.24 });
-        if (!chairProto) chairProto = chair;
-        else copyMeshMaterials(chairProto, chair);
-        colliders.push(aabbOf(chair, 0.04));
-      }
+      for (let col = 0; col < DESK_GRID.cols; col++) chairPoses.push(deskCell(col, row));
     }
-    for (let i = 0; i < BACK_CHAIRS.count; i++) {
-      const { x, z } = backChairCell(i);
-      const chair = place(scene, kit.nuChair, x, z, DESK_GRID.rotY, { height: 1.24 });
-      if (chairProto) copyMeshMaterials(chairProto, chair);
-      colliders.push(aabbOf(chair, 0.04));
-    }
+    for (let i = 0; i < BACK_CHAIRS.count; i++) chairPoses.push(backChairCell(i));
+    placeInstancedChairs(scene, kit.nuChair, chairPoses, DESK_GRID.rotY, { height: 1.24 }, colliders);
     addFrontFurniture(scene, kit, colliders);
     addLeftWallFurniture(scene, kit, colliders);
   } else {

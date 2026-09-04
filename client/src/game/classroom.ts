@@ -14,9 +14,9 @@ const ceilingLightUrl = new URL("../../../assets/classroom/ceiling-light.glb", i
 const ROOM = {
   wall: 0xe3e0db,
   door: 0xcebd9f,
-  ceiling: 0xbfbec3,
-  ceilingLine: 0xd4d1cd,
-  floor: 0xe8e6e3,
+  ceiling: 0xf3f2f0,
+  ceilingLine: 0xe8e6e3,
+  floor: 0xeeeeec,
   board: 0xb0c4c3,
 };
 
@@ -405,25 +405,6 @@ function wrapCentered(src: THREE.Object3D) {
   return { wrap, size: box.getSize(new THREE.Vector3()) };
 }
 
-function tintKeepMaps(root: THREE.Object3D, hex: number, side?: THREE.Side) {
-  root.traverse((o) => {
-    const mesh = o as THREE.Mesh;
-    if (!mesh.isMesh) return;
-    const src = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    const next = src.map((m) => {
-      const std = (m as THREE.MeshStandardMaterial).clone();
-      std.color.setHex(hex);
-      if (side != null) std.side = side;
-      std.emissive.setHex(hex);
-      std.emissiveIntensity = 0.06;
-      return std;
-    });
-    mesh.material = Array.isArray(mesh.material) ? next : next[0]!;
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-  });
-}
-
 function firstMesh(root: THREE.Object3D) {
   let found: THREE.Mesh | null = null;
   root.traverse((o) => {
@@ -467,25 +448,36 @@ function rewriteMap(tex: THREE.Texture | null, paint: (d: Uint8ClampedArray) => 
   return next;
 }
 
-function grayscaleMap(tex: THREE.Texture | null) {
+function cloneMap(tex: THREE.Texture | null) {
+  if (!tex) return null;
+  const next = tex.clone();
+  next.needsUpdate = true;
+  return next;
+}
+
+function recolorDarkLines(tex: THREE.Texture | null, lineHex: number, maxLuma = 92) {
+  const line = hexRgb(lineHex);
   return rewriteMap(tex, (d) => {
     for (let i = 0; i < d.length; i += 4) {
-      const g = d[i]! * 0.299 + d[i + 1]! * 0.587 + d[i + 2]! * 0.114;
-      d[i] = d[i + 1] = d[i + 2] = g;
+      const luma = d[i]! * 0.299 + d[i + 1]! * 0.587 + d[i + 2]! * 0.114;
+      if (luma > maxLuma) continue;
+      const t = Math.min(1, (maxLuma - luma) / maxLuma);
+      d[i] = d[i]! + (line.r - d[i]!) * t;
+      d[i + 1] = d[i + 1]! + (line.g - d[i + 1]!) * t;
+      d[i + 2] = d[i + 2]! + (line.b - d[i + 2]!) * t;
     }
   });
 }
 
-function liftCeilingLines(tex: THREE.Texture | null, hex: number) {
+function tintTextureLightGray(tex: THREE.Texture | null, hex: number) {
   const { r, g, b } = hexRgb(hex);
   return rewriteMap(tex, (d) => {
     for (let i = 0; i < d.length; i += 4) {
       const luma = d[i]! * 0.299 + d[i + 1]! * 0.587 + d[i + 2]! * 0.114;
-      if (luma > 175) continue;
-      const t = Math.min(1, (175 - luma) / 120);
-      d[i] = d[i]! + (r - d[i]!) * t;
-      d[i + 1] = d[i + 1]! + (g - d[i + 1]!) * t;
-      d[i + 2] = d[i + 2]! + (b - d[i + 2]!) * t;
+      const k = 0.52 + (luma / 255) * 0.55;
+      d[i] = Math.min(255, r * k);
+      d[i + 1] = Math.min(255, g * k);
+      d[i + 2] = Math.min(255, b * k);
     }
   });
 }
@@ -494,10 +486,16 @@ function addNewFloor(scene: THREE.Scene, src: THREE.Object3D) {
   const { innerW, spanZ, midZ } = playSpan();
   const srcMesh = firstMesh(src);
   const mat = ((srcMesh?.material as THREE.MeshStandardMaterial) ?? new THREE.MeshStandardMaterial()).clone();
-  mat.map = grayscaleMap(mat.map);
-  mat.color.setHex(ROOM.floor);
-  mat.roughness = 0.88;
+  mat.color.setHex(0xffffff);
+  mat.emissive.setHex(0x000000);
+  mat.aoMap = null;
+  mat.lightMap = null;
   mat.metalness = 0;
+  mat.map = tintTextureLightGray(mat.map, ROOM.floor);
+  mat.normalMap = cloneMap(mat.normalMap);
+  if (mat.normalMap) mat.normalScale.set(0.85, 0.85);
+  mat.roughnessMap = cloneMap(mat.roughnessMap);
+  mat.roughness = 0.86;
   const tile = 2.35;
   repeatMaps(mat, innerW / tile, spanZ / tile);
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(innerW, spanZ), mat);
@@ -516,15 +514,27 @@ function addNewCeiling(host: THREE.Object3D, src: THREE.Object3D) {
   const yScale = 0.08 / Math.max(size.y, 0.001);
   const xzScale = Math.min(lidW / size.x, lidD / size.z) * 0.58;
   proto.scale.set(xzScale, yScale, xzScale);
-  tintKeepMaps(proto, ROOM.ceiling, THREE.DoubleSide);
   proto.traverse((o) => {
     const mesh = o as THREE.Mesh;
     if (!mesh.isMesh) return;
-    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    for (const mat of mats) {
-      const std = mat as THREE.MeshStandardMaterial;
-      std.map = liftCeilingLines(std.map, ROOM.ceilingLine);
-    }
+    const srcMats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    const next = srcMats.map((m) => {
+      const std = (m as THREE.MeshStandardMaterial).clone();
+      std.color.setHex(0xffffff);
+      std.emissive.setHex(0x000000);
+      std.aoMap = null;
+      std.lightMap = null;
+      std.metalness = 0;
+      std.side = THREE.DoubleSide;
+      std.map = recolorDarkLines(std.map, ROOM.ceilingLine, 88);
+      std.normalMap = cloneMap(std.normalMap);
+      if (std.normalMap) std.normalScale.set(0.35, 0.35);
+      std.roughness = 0.88;
+      return std;
+    });
+    mesh.material = Array.isArray(mesh.material) ? next : next[0]!;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
   });
   const tileW = size.x * xzScale;
   const tileD = size.z * xzScale;

@@ -15,7 +15,7 @@ const ROOM = {
   wall: 0xe3e0db,
   door: 0xcebd9f,
   ceiling: 0xf0eeeb,
-  ceilingLine: 0x9e9b96,
+  ceilingLine: 0x6a6864,
   floor: 0xe8dfd4,
   board: 0xb0c4c3,
 };
@@ -607,15 +607,6 @@ function copyMeshMaterials(from: THREE.Object3D, to: THREE.Object3D) {
 
 function addCeilingWash(scene: THREE.Scene, fpWalls: THREE.Group, fixture?: THREE.Object3D) {
   const color = 0xfff1dc;
-  const fillA = new THREE.PointLight(color, 14, 16, 1.4);
-  fillA.position.set(-1.12, 3.45, -7.06);
-  fillA.castShadow = false;
-  scene.add(fillA);
-  const fillB = new THREE.PointLight(color, 12, 14, 1.4);
-  fillB.position.set(-1.12, 3.45, -2.42);
-  fillB.castShadow = false;
-  scene.add(fillB);
-  if (!fixture) return;
   const lit = new THREE.MeshBasicMaterial({ color: 0xfff8f0, toneMapped: false });
   const frame = new THREE.MeshStandardMaterial({
     color: 0x6a6762,
@@ -625,6 +616,11 @@ function addCeilingWash(scene: THREE.Scene, fpWalls: THREE.Group, fixture?: THRE
   for (const x of LAMP_XS) {
     for (const z of LAMP_ZS) {
       if (z > CLASSROOM.cutZ - 0.4) continue;
+      const lamp = new THREE.PointLight(color, 8, 8.5, 1.8);
+      lamp.position.set(x, CEILING_Y - 0.12, z);
+      lamp.castShadow = false;
+      scene.add(lamp);
+      if (!fixture) continue;
       const { wrap, size } = wrapCentered(fixture);
       wrap.rotation.x = Math.PI;
       wrap.rotation.y = Math.PI / 2;

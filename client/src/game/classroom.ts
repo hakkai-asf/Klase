@@ -10,14 +10,17 @@ const nuChairUrl = new URL("../../../assets/furnitures/nu-chair.glb", import.met
 const ceilingUrl = new URL("../../../assets/textures/ceiling-texture.glb", import.meta.url).href;
 const floorUrl = new URL("../../../assets/textures/floor-texture.glb", import.meta.url).href;
 const ceilingLightUrl = new URL("../../../assets/classroom/ceiling-light.glb", import.meta.url).href;
+const tableUrl = new URL("../../../assets/furnitures/school table.glb", import.meta.url).href;
+const tvUrl = new URL("../../../assets/furnitures/flat-screen_tv.glb", import.meta.url).href;
+const whiteboardUrl = new URL("../../../assets/furnitures/whiteboard.glb", import.meta.url).href;
 
 const ROOM = {
   wall: 0xe3e0db,
   door: 0xcebd9f,
-  ceiling: 0xf0eeeb,
-  ceilingLine: 0x6a6864,
+  ceiling: 0xfaf8f6,
+  ceilingLine: 0x8a8782,
   floor: 0xe8dfd4,
-  board: 0xb0c4c3,
+  board: 0xb1c5c4,
 };
 
 function flattenPaint(std: THREE.MeshStandardMaterial, hex: number) {
@@ -37,6 +40,9 @@ type Kit = {
   ceiling: THREE.Object3D;
   floor: THREE.Object3D;
   ceilingLight: THREE.Object3D;
+  table: THREE.Object3D;
+  tv: THREE.Object3D;
+  whiteboard: THREE.Object3D;
 };
 
 let kit: Kit | null = null;
@@ -44,12 +50,15 @@ let kit: Kit | null = null;
 export async function preloadClassroom() {
   if (kit) return;
   const gltf = new GLTFLoader();
-  const [room, chair, ceiling, floor, light] = await Promise.all([
+  const [room, chair, ceiling, floor, light, table, tv, board] = await Promise.all([
     gltf.loadAsync(classroomUrl),
     gltf.loadAsync(nuChairUrl),
     gltf.loadAsync(ceilingUrl),
     gltf.loadAsync(floorUrl),
     gltf.loadAsync(ceilingLightUrl),
+    gltf.loadAsync(tableUrl),
+    gltf.loadAsync(tvUrl),
+    gltf.loadAsync(whiteboardUrl),
   ]);
   kit = {
     classroom: room.scene,
@@ -57,6 +66,9 @@ export async function preloadClassroom() {
     ceiling: ceiling.scene,
     floor: floor.scene,
     ceilingLight: light.scene,
+    table: table.scene,
+    tv: tv.scene,
+    whiteboard: board.scene,
   };
 }
 
@@ -292,6 +304,70 @@ function place(
   return prop;
 }
 
+function placeOnFrontWall(
+  scene: THREE.Scene,
+  src: THREE.Object3D,
+  x: number,
+  y: number,
+  opts: { width?: number; height?: number; rotY?: number; poke?: number },
+) {
+  const prop = prepareProp(src, opts);
+  prop.rotation.y = opts.rotY ?? 0;
+  prop.position.set(x, y, 0);
+  scene.add(prop);
+  prop.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(prop);
+  const innerZ = -CLASSROOM.depth / 2 + CLASSROOM.wallThickness;
+  prop.position.z += innerZ + (opts.poke ?? 0.04) - box.min.z;
+  prop.updateMatrixWorld(true);
+  return prop;
+}
+
+function paintWhiteboard(root: THREE.Object3D) {
+  const board = new THREE.MeshStandardMaterial({
+    color: ROOM.board,
+    roughness: 0.18,
+    metalness: 0.42,
+    envMapIntensity: 1.15,
+    side: THREE.FrontSide,
+  });
+  const trim = new THREE.MeshStandardMaterial({
+    color: 0x8a8884,
+    roughness: 0.45,
+    metalness: 0.55,
+  });
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.material = /WhiteBoard/i.test(mesh.name) ? board : trim;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+  });
+}
+
+function paintTable(root: THREE.Object3D) {
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.material = new THREE.MeshStandardMaterial({
+      color: 0xd0cdc8,
+      roughness: 0.62,
+      metalness: 0.06,
+    });
+  });
+}
+
+function addFrontFurniture(scene: THREE.Scene, pack: Kit, colliders: AABB[]) {
+  const innerZ = -CLASSROOM.depth / 2 + CLASSROOM.wallThickness;
+  const table = place(scene, pack.table, 0, innerZ + 1.25, 0, { width: 4.25, height: 0.95 });
+  paintTable(table);
+  colliders.push(aabbOf(table, 0.05));
+  const left = placeOnFrontWall(scene, pack.whiteboard, -3.55, 0.88, { width: 3.35, rotY: Math.PI, poke: 0.03 });
+  paintWhiteboard(left);
+  const right = placeOnFrontWall(scene, pack.whiteboard, 3.55, 0.88, { width: 3.35, rotY: Math.PI, poke: 0.03 });
+  paintWhiteboard(right);
+}
+
 function addHollowWalls(colliders: AABB[]) {
   const { width: w, depth: d, wallThickness: t, cutZ } = CLASSROOM;
   const minZ = -d / 2;
@@ -428,7 +504,7 @@ function hexRgb(hex: number) {
   return { r: (hex >> 16) & 255, g: (hex >> 8) & 255, b: hex & 255 };
 }
 
-function rewriteMap(tex: THREE.Texture | null, paint: (d: Uint8ClampedArray) => void) {
+function rewriteMap(tex: THREE.Texture | null, paint: (d: Uint8ClampedArray, w: number, h: number) => void) {
   const img = tex?.image as CanvasImageSource & { width?: number; height?: number };
   if (!tex || !img || !img.width || !img.height) return tex;
   const canvas = document.createElement("canvas");
@@ -438,7 +514,7 @@ function rewriteMap(tex: THREE.Texture | null, paint: (d: Uint8ClampedArray) => 
   if (!ctx) return tex;
   ctx.drawImage(img, 0, 0);
   const pix = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  paint(pix.data);
+  paint(pix.data, canvas.width, canvas.height);
   ctx.putImageData(pix, 0, 0);
   const next = new THREE.CanvasTexture(canvas);
   next.colorSpace = THREE.SRGBColorSpace;
@@ -481,22 +557,33 @@ function tintFloorKeepGrout(tex: THREE.Texture | null, hex: number) {
   });
 }
 
-function tintCeilingMap(tex: THREE.Texture | null, panelHex: number, lineHex: number) {
-  const panel = hexRgb(panelHex);
+function darkenCeilingLinesOnly(tex: THREE.Texture | null, lineHex: number) {
   const line = hexRgb(lineHex);
-  return rewriteMap(tex, (d) => {
-    for (let i = 0; i < d.length; i += 4) {
-      const luma = d[i]! * 0.299 + d[i + 1]! * 0.587 + d[i + 2]! * 0.114;
-      if (luma < 120) {
+  return rewriteMap(tex, (d, w, h) => {
+    const lumaAt = (x: number, y: number) => {
+      if (x < 0 || y < 0 || x >= w || y >= h) return 255;
+      const i = (y * w + x) * 4;
+      return d[i]! * 0.299 + d[i + 1]! * 0.587 + d[i + 2]! * 0.114;
+    };
+    let sum = 0;
+    const n = w * h;
+    for (let i = 0; i < d.length; i += 4) sum += d[i]! * 0.299 + d[i + 1]! * 0.587 + d[i + 2]! * 0.114;
+    const avg = sum / n;
+    const speckleCut = avg - 48;
+    const bandCut = avg - 7;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const L = lumaAt(x, y);
+        if (L < speckleCut) continue;
+        if (L >= bandCut) continue;
+        const hLine = lumaAt(x - 3, y) < bandCut && lumaAt(x + 3, y) < bandCut && lumaAt(x - 3, y) > speckleCut && lumaAt(x + 3, y) > speckleCut;
+        const vLine = lumaAt(x, y - 3) < bandCut && lumaAt(x, y + 3) < bandCut && lumaAt(x, y - 3) > speckleCut && lumaAt(x, y + 3) > speckleCut;
+        if (!hLine && !vLine) continue;
+        const i = (y * w + x) * 4;
         d[i] = line.r;
         d[i + 1] = line.g;
         d[i + 2] = line.b;
-        continue;
       }
-      const k = 0.92 + (luma / 255) * 0.1;
-      d[i] = Math.min(255, panel.r * k);
-      d[i + 1] = Math.min(255, panel.g * k);
-      d[i + 2] = Math.min(255, panel.b * k);
     }
   });
 }
@@ -558,7 +645,7 @@ function addNewCeiling(host: THREE.Object3D, src: THREE.Object3D) {
       std.lightMap = null;
       std.metalness = 0;
       std.side = THREE.DoubleSide;
-      std.map = tintCeilingMap(std.map, ROOM.ceiling, ROOM.ceilingLine);
+      std.map = darkenCeilingLinesOnly(std.map, ROOM.ceilingLine);
       std.normalMap = cloneMap(std.normalMap);
       if (std.normalMap) std.normalScale.set(0.35, 0.35);
       std.roughness = 0.88;
@@ -682,7 +769,7 @@ export function buildClassroom(scene: THREE.Scene): {
       clipMeshMaxZ(mesh, CLASSROOM.cutZ);
       if (!mesh.visible) return;
       if (mesh.name === "Material3_16") {
-        flushBoard(mesh);
+        mesh.visible = false;
         return;
       }
       const { box, size } = meshBounds(mesh);
@@ -703,6 +790,7 @@ export function buildClassroom(scene: THREE.Scene): {
         colliders.push(aabbOf(chair, 0.04));
       }
     }
+    addFrontFurniture(scene, kit, colliders);
   } else {
     fallbackRoom(scene, fpWalls);
     for (let row = 0; row < DESK_GRID.rows; row++) {
@@ -714,9 +802,9 @@ export function buildClassroom(scene: THREE.Scene): {
     }
   }
 
-  scene.add(new THREE.HemisphereLight(0xf3e7dc, 0xb49e90, 1.12));
-  scene.add(new THREE.AmbientLight(0xece3d8, 0.4));
-  const sun = new THREE.DirectionalLight(0xf2e2d4, 0.4);
+  scene.add(new THREE.HemisphereLight(0xf3e7dc, 0xb49e90, 1.02));
+  scene.add(new THREE.AmbientLight(0xece3d8, 0.28));
+  const sun = new THREE.DirectionalLight(0xf2e2d4, 0.32);
   sun.position.set(4, 18, -6);
   sun.castShadow = false;
   scene.add(sun);

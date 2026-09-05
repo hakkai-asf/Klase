@@ -807,7 +807,7 @@ function addRoomWalls(scene: THREE.Scene, fpWalls: THREE.Group) {
   left.receiveShadow = false;
   scene.add(left);
 
-  addRightWall(scene, mat.clone());
+  addRightWall(fpWalls, mat.clone());
   addCutWall(fpWalls, mat.clone());
 }
 
@@ -1186,7 +1186,7 @@ export function buildClassroom(scene: THREE.Scene): {
     placeInstancedChairs(scene, kit.nuChair, [left, right, back], DESK_GRID.rotY, { height: 1.24 }, colliders);
     addFrontFurniture(scene, kit, colliders);
     addLeftWallFurniture(scene, kit, colliders);
-    addRightWindows(scene, kit.window);
+    addRightWindows(fpWalls, kit.window);
   } else {
     fallbackRoom(scene, fpWalls);
     for (let row = 0; row < DESK_GRID.rows; row++) {

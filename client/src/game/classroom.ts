@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { BACK_CHAIRS, CLASSROOM, DESK_GRID, PLAYER_RADIUS, backChairCell, classroomSeats, clampClassroom, deskCell, resolvePlayerMove, type Seat } from "@klase/shared";
 
 export type { Seat };
@@ -305,47 +306,79 @@ function aabbOf(obj: THREE.Object3D, pad = 0.06): AABB {
   };
 }
 
+function toLambert(mat: THREE.Material) {
+  const src = mat as THREE.MeshStandardMaterial;
+  return new THREE.MeshLambertMaterial({
+    color: src.color?.clone() ?? new THREE.Color(0xffffff),
+    map: src.map ?? null,
+  });
+}
+
+function bakedChairParts(proto: THREE.Object3D) {
+  const buckets = new Map<string, { src: THREE.Material; geos: THREE.BufferGeometry[] }>();
+  const tmp = new THREE.Vector3();
+  proto.updateMatrixWorld(true);
+  proto.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh || Array.isArray(mesh.material)) return;
+    const size = new THREE.Box3().setFromObject(mesh).getSize(tmp);
+    if (Math.max(size.x, size.y, size.z) < 0.04) return;
+    const geo = mesh.geometry.clone();
+    geo.applyMatrix4(mesh.matrixWorld);
+    const key = (mesh.material as THREE.Material).uuid;
+    const bucket = buckets.get(key) ?? { src: mesh.material as THREE.Material, geos: [] };
+    bucket.geos.push(geo);
+    buckets.set(key, bucket);
+  });
+  const parts: { geometry: THREE.BufferGeometry; material: THREE.Material }[] = [];
+  for (const { src, geos } of buckets.values()) {
+    const merged = geos.length === 1 ? geos[0]! : mergeGeometries(geos, false);
+    if (!merged) {
+      for (const geo of geos) parts.push({ geometry: geo, material: toLambert(src) });
+      continue;
+    }
+    if (geos.length > 1) for (const geo of geos) geo.dispose();
+    parts.push({ geometry: merged, material: toLambert(src) });
+  }
+  return parts;
+}
+
 function placeInstancedChairs(
   scene: THREE.Scene,
   src: THREE.Object3D,
-  poses: { x: number; z: number }[],
+  groups: { x: number; z: number }[][],
   rotY: number,
   opts: { height?: number; width?: number; depth?: number },
   colliders: AABB[],
 ) {
-  if (!poses.length) return;
   const proto = prepareProp(src, opts);
-  proto.updateMatrixWorld(true);
-  const parts: THREE.Mesh[] = [];
-  proto.traverse((o) => {
-    const mesh = o as THREE.Mesh;
-    if (mesh.isMesh) parts.push(mesh);
-  });
+  const parts = bakedChairParts(proto);
   const dummy = new THREE.Object3D();
-  const local = new THREE.Matrix4();
-  for (const part of parts) {
-    const inst = new THREE.InstancedMesh(part.geometry, part.material, poses.length);
-    inst.castShadow = false;
-    inst.receiveShadow = false;
-    inst.frustumCulled = false;
-    inst.layers.disable(0);
-    inst.layers.enable(1);
-    local.copy(part.matrixWorld);
-    for (let i = 0; i < poses.length; i++) {
-      dummy.position.set(poses[i]!.x, 0, poses[i]!.z);
-      dummy.rotation.set(0, rotY, 0);
-      dummy.updateMatrix();
-      inst.setMatrixAt(i, dummy.matrix.multiply(local));
+  for (const poses of groups) {
+    if (!poses.length) continue;
+    for (const part of parts) {
+      const inst = new THREE.InstancedMesh(part.geometry, part.material, poses.length);
+      inst.castShadow = false;
+      inst.receiveShadow = false;
+      inst.frustumCulled = true;
+      inst.layers.disable(0);
+      inst.layers.enable(1);
+      for (let i = 0; i < poses.length; i++) {
+        dummy.position.set(poses[i]!.x, 0, poses[i]!.z);
+        dummy.rotation.set(0, rotY, 0);
+        dummy.updateMatrix();
+        inst.setMatrixAt(i, dummy.matrix);
+      }
+      inst.instanceMatrix.needsUpdate = true;
+      inst.computeBoundingSphere();
+      scene.add(inst);
     }
-    inst.instanceMatrix.needsUpdate = true;
-    inst.computeBoundingSphere();
-    scene.add(inst);
-  }
-  for (const pose of poses) {
-    proto.position.set(pose.x, 0, pose.z);
-    proto.rotation.y = rotY;
-    proto.updateMatrixWorld(true);
-    colliders.push(aabbOf(proto, 0.04));
+    for (const pose of poses) {
+      proto.position.set(pose.x, 0, pose.z);
+      proto.rotation.y = rotY;
+      proto.updateMatrixWorld(true);
+      colliders.push(aabbOf(proto, 0.04));
+    }
   }
 }
 
@@ -964,12 +997,18 @@ export function buildClassroom(scene: THREE.Scene): {
     addNewFloor(scene, kit.floor);
     addNewCeiling(fpWalls, kit.ceiling);
 
-    const chairPoses: { x: number; z: number }[] = [];
+    const left: { x: number; z: number }[] = [];
+    const right: { x: number; z: number }[] = [];
     for (let row = 0; row < DESK_GRID.rows; row++) {
-      for (let col = 0; col < DESK_GRID.cols; col++) chairPoses.push(deskCell(col, row));
+      for (let col = 0; col < DESK_GRID.cols; col++) {
+        const cell = deskCell(col, row);
+        if (col < DESK_GRID.aisleAfter) left.push(cell);
+        else right.push(cell);
+      }
     }
-    for (let i = 0; i < BACK_CHAIRS.count; i++) chairPoses.push(backChairCell(i));
-    placeInstancedChairs(scene, kit.nuChair, chairPoses, DESK_GRID.rotY, { height: 1.24 }, colliders);
+    const back: { x: number; z: number }[] = [];
+    for (let i = 0; i < BACK_CHAIRS.count; i++) back.push(backChairCell(i));
+    placeInstancedChairs(scene, kit.nuChair, [left, right, back], DESK_GRID.rotY, { height: 1.24 }, colliders);
     addFrontFurniture(scene, kit, colliders);
     addLeftWallFurniture(scene, kit, colliders);
   } else {

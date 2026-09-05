@@ -1112,8 +1112,8 @@ function copyMeshMaterials(from: THREE.Object3D, to: THREE.Object3D) {
 }
 
 function addCeilingWash(scene: THREE.Scene, fpWalls: THREE.Group, fixture?: THREE.Object3D) {
-  const color = 0xfff1dc;
-  const lit = new THREE.MeshBasicMaterial({ color: 0xfff8f0, toneMapped: false });
+  const color = 0xfff6ee;
+  const lit = new THREE.MeshBasicMaterial({ color: 0xfffaf6, toneMapped: false });
   const frame = new THREE.MeshStandardMaterial({
     color: 0x6a6762,
     metalness: 0.35,
@@ -1123,7 +1123,7 @@ function addCeilingWash(scene: THREE.Scene, fpWalls: THREE.Group, fixture?: THRE
     for (const z of LAMP_ZS) {
       if (z > CLASSROOM.cutZ - 0.4) continue;
       const center = Math.abs(x) < 0.05;
-      const lamp = new THREE.PointLight(color, center ? 12 : 7.5, center ? 9.5 : 6.4, 1.75);
+      const lamp = new THREE.PointLight(color, center ? 13 : 8.1, center ? 9.5 : 6.4, 1.75);
       lamp.position.set(x, CEILING_Y - 0.12, z);
       lamp.castShadow = false;
       lamp.layers.enable(0);
@@ -1201,9 +1201,9 @@ export function buildClassroom(scene: THREE.Scene): {
     }
   }
 
-  scene.add(new THREE.HemisphereLight(0xf3e7dc, 0xb49e90, 1.14));
-  scene.add(new THREE.AmbientLight(0xece3d8, 0.4));
-  const sun = new THREE.DirectionalLight(0xf2e2d4, 0.32);
+  scene.add(new THREE.HemisphereLight(0xf2eee8, 0xb8ada4, 1.24));
+  scene.add(new THREE.AmbientLight(0xf0ece8, 0.46));
+  const sun = new THREE.DirectionalLight(0xeee8e2, 0.36);
   sun.position.set(4, 18, -6);
   sun.castShadow = false;
   scene.add(sun);

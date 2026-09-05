@@ -99,6 +99,8 @@ export class World {
     this.isoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 80);
     this.fpCam = new THREE.PerspectiveCamera(70, 1, 0.08, FP_FAR);
     this.fpCam.rotation.order = "YXZ";
+    this.isoCam.layers.enable(1);
+    this.fpCam.layers.enable(1);
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: (devicePixelRatio || 1) <= 1,

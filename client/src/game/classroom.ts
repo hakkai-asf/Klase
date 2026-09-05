@@ -328,6 +328,8 @@ function placeInstancedChairs(
     inst.castShadow = false;
     inst.receiveShadow = false;
     inst.frustumCulled = false;
+    inst.layers.disable(0);
+    inst.layers.enable(1);
     local.copy(part.matrixWorld);
     for (let i = 0; i < poses.length; i++) {
       dummy.position.set(poses[i]!.x, 0, poses[i]!.z);
@@ -901,9 +903,12 @@ function addCeilingWash(scene: THREE.Scene, fpWalls: THREE.Group, fixture?: THRE
   for (const x of LAMP_XS) {
     for (const z of LAMP_ZS) {
       if (z > CLASSROOM.cutZ - 0.4) continue;
-      const lamp = new THREE.PointLight(color, 8, 8.5, 1.8);
+      const center = Math.abs(x + 1.12) < 0.05;
+      const lamp = new THREE.PointLight(color, center ? 9 : 7.2, center ? 9.5 : 6.4, 1.75);
       lamp.position.set(x, CEILING_Y - 0.12, z);
       lamp.castShadow = false;
+      lamp.layers.enable(0);
+      if (center) lamp.layers.enable(1);
       scene.add(lamp);
       if (!fixture) continue;
       const { wrap, size } = wrapCentered(fixture);
@@ -945,35 +950,6 @@ export function buildClassroom(scene: THREE.Scene): {
   addRoomWalls(scene, fpWalls);
 
   if (kit) {
-    const room = kit.classroom.clone(true);
-    fitClassroom(room);
-    scene.add(room);
-    room.updateMatrixWorld(true);
-
-    const fpMeshes: THREE.Mesh[] = [];
-    room.traverse((o) => {
-      const mesh = o as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      if (isReplacedSurface(mesh)) {
-        mesh.visible = false;
-        return;
-      }
-      prepRoomMesh(mesh);
-      paintRoomSurfaces(mesh);
-      if (mesh.name.endsWith("_1") || isGlbWall(mesh)) {
-        mesh.visible = false;
-        return;
-      }
-      clipMeshMaxZ(mesh, CLASSROOM.cutZ);
-      if (!mesh.visible) return;
-      if (mesh.name === "Material3_16") {
-        mesh.visible = false;
-        return;
-      }
-      const { box, size } = meshBounds(mesh);
-      if (isCeilingDetail(box, size)) fpMeshes.push(mesh);
-    });
-    for (const mesh of fpMeshes) fpWalls.attach(mesh);
     addNewFloor(scene, kit.floor);
     addNewCeiling(fpWalls, kit.ceiling);
 

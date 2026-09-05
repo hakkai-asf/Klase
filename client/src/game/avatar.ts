@@ -915,6 +915,7 @@ export function poseWalk(
 ) {
   if (avatar.mixer && avatar.walkAction) {
     const k = Math.min(1, 10 * dt);
+    let forceMix = false;
     if (seated && avatar.sitAction) {
       const sit = avatar.sitAction;
       if (!sit.isRunning() || sit.getEffectiveWeight() < 0.99) {
@@ -924,6 +925,7 @@ export function poseWalk(
         sit.paused = false;
         sit.setEffectiveWeight(1);
         sit.play();
+        forceMix = true;
       }
       sit.setEffectiveWeight(1);
       sit.paused = false;
@@ -964,7 +966,10 @@ export function poseWalk(
       setActionWeight(avatar.startAction ?? null, 0, 1);
       setActionWeight(avatar.stopAction ?? null, 0, 1);
     }
-    avatar.mixer.update(dt);
+    const walkW = avatar.walkAction?.getEffectiveWeight() ?? 0;
+    const sitW = avatar.sitAction?.getEffectiveWeight() ?? 0;
+    const blending = seated ? sitW < 0.99 : walkW > 0.02 && walkW < 0.98;
+    if (forceMix || moving || blending || (seated && sitW < 0.99)) avatar.mixer.update(dt);
     return;
   }
   if (moving) {

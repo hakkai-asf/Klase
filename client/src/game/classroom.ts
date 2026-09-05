@@ -22,11 +22,11 @@ const nuSignUrl = new URL("../../../assets/textures/NU SIGNS.png", import.meta.u
 
 const ROOM = {
   wall: 0xe3e0db,
-  door: 0xc8b79d,
+  door: 0xd2a86e,
   ceiling: 0xfaf8f6,
   ceilingLine: 0xa8a49e,
   floor: 0xe8dfd4,
-  board: 0xc4d4d3,
+  board: 0xa8d4ce,
 };
 
 function flattenPaint(std: THREE.MeshStandardMaterial, hex: number) {

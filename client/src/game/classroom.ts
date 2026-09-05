@@ -596,17 +596,70 @@ function addFrontFurniture(scene: THREE.Scene, pack: Kit, colliders: AABB[]) {
   addFireExtinguisher(scene, pack, colliders);
 }
 
+function findNamed(root: THREE.Object3D, re: RegExp) {
+  let found: THREE.Object3D | null = null;
+  root.traverse((o) => {
+    if (!found && re.test(o.name)) found = o;
+  });
+  return found;
+}
+
 function addFireExtinguisher(scene: THREE.Scene, pack: Kit, colliders: AABB[]) {
-  const prop = prepareProp(pack.extinguisher, { height: 0.86 });
-  prop.rotation.y = 0;
-  prop.position.set(-5.18, 0.05, 0);
-  scene.add(prop);
-  prop.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(prop);
+  const root = new THREE.Group();
+  const model = pack.extinguisher.clone(true);
+  root.add(model);
+  scene.add(root);
+  root.updateMatrixWorld(true);
+
+  const canisterOf = () => findNamed(root, /Canister/i) ?? root;
+  const can0 = new THREE.Box3().setFromObject(canisterOf());
+  const canH = Math.max(can0.max.y - can0.min.y, 0.001);
+  model.scale.multiplyScalar(0.55 / canH);
+  root.updateMatrixWorld(true);
+  const can1 = new THREE.Box3().setFromObject(canisterOf());
+  const mid = can1.getCenter(new THREE.Vector3());
+  model.position.x -= mid.x;
+  model.position.z -= mid.z;
+  model.position.y -= can1.min.y;
+
+  let bestRot = 0;
+  let bestScore = Number.NEGATIVE_INFINITY;
+  for (const rot of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+    root.rotation.y = rot;
+    root.updateMatrixWorld(true);
+    const can = new THREE.Box3().setFromObject(canisterOf());
+    const cc = can.getCenter(new THREE.Vector3());
+    const hose = findNamed(root, /Hose/i);
+    const front = findNamed(root, /Pressure_Gauge|Lever_Top/i);
+    const hoseX = hose ? new THREE.Box3().setFromObject(hose).getCenter(new THREE.Vector3()).x : cc.x;
+    const frontZ = front ? new THREE.Box3().setFromObject(front).getCenter(new THREE.Vector3()).z : cc.z;
+    const score = (frontZ - cc.z) * 5 + (cc.x - hoseX) * 5;
+    if (score > bestScore) {
+      bestScore = score;
+      bestRot = rot;
+    }
+  }
+  root.rotation.y = bestRot;
+  root.position.set(-5.88, 0.16, 0);
+  root.updateMatrixWorld(true);
+  const can = new THREE.Box3().setFromObject(canisterOf());
   const innerZ = -CLASSROOM.depth / 2 + CLASSROOM.wallThickness;
-  prop.position.z += innerZ + 0.03 - box.min.z;
-  prop.updateMatrixWorld(true);
-  colliders.push(aabbOf(prop, 0.02));
+  root.position.z += innerZ + 0.04 - can.min.z;
+  root.updateMatrixWorld(true);
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (mesh.isMesh) {
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+    }
+  });
+  const hit = new THREE.Box3().setFromObject(canisterOf());
+  colliders.push({
+    minX: hit.min.x - 0.02,
+    maxX: hit.max.x + 0.02,
+    minZ: hit.min.z - 0.02,
+    maxZ: hit.max.z + 0.02,
+  });
 }
 
 function addNuSign(scene: THREE.Scene, tex: THREE.Texture) {

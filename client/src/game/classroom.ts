@@ -16,6 +16,7 @@ const tvUrl = new URL("../../../assets/furnitures/flat-screen_tv.glb", import.me
 const whiteboardUrl = new URL("../../../assets/furnitures/whiteboard.glb", import.meta.url).href;
 const doorUrl = new URL("../../../assets/classroom/door.glb", import.meta.url).href;
 const airconUrl = new URL("../../../assets/furnitures/aircon.glb", import.meta.url).href;
+const nuSignUrl = new URL("../../../assets/textures/NU SIGNS.png", import.meta.url).href;
 
 const ROOM = {
   wall: 0xe3e0db,
@@ -23,7 +24,7 @@ const ROOM = {
   ceiling: 0xfaf8f6,
   ceilingLine: 0xa8a49e,
   floor: 0xe8dfd4,
-  board: 0xb1c5c4,
+  board: 0xc4d4d3,
 };
 
 function flattenPaint(std: THREE.MeshStandardMaterial, hex: number) {
@@ -48,6 +49,7 @@ type Kit = {
   whiteboard: THREE.Object3D;
   door: THREE.Object3D;
   aircon: THREE.Object3D;
+  nuSign: THREE.Texture;
 };
 
 let kit: Kit | null = null;
@@ -55,7 +57,8 @@ let kit: Kit | null = null;
 export async function preloadClassroom() {
   if (kit) return;
   const gltf = new GLTFLoader();
-  const [room, chair, ceiling, floor, light, table, tv, board, door, aircon] = await Promise.all([
+  const texLoader = new THREE.TextureLoader();
+  const [room, chair, ceiling, floor, light, table, tv, board, door, aircon, nuSign] = await Promise.all([
     gltf.loadAsync(classroomUrl),
     gltf.loadAsync(nuChairUrl),
     gltf.loadAsync(ceilingUrl),
@@ -66,7 +69,10 @@ export async function preloadClassroom() {
     gltf.loadAsync(whiteboardUrl),
     gltf.loadAsync(doorUrl),
     gltf.loadAsync(airconUrl),
+    texLoader.loadAsync(nuSignUrl),
   ]);
+  nuSign.colorSpace = THREE.SRGBColorSpace;
+  nuSign.anisotropy = 4;
   kit = {
     classroom: room.scene,
     nuChair: chair.scene,
@@ -78,6 +84,7 @@ export async function preloadClassroom() {
     whiteboard: board.scene,
     door: door.scene,
     aircon: aircon.scene,
+    nuSign,
   };
 }
 
@@ -444,7 +451,7 @@ function paintTable(root: THREE.Object3D) {
     const mesh = o as THREE.Mesh;
     if (!mesh.isMesh) return;
     mesh.material = new THREE.MeshStandardMaterial({
-      color: 0xd0cdc8,
+      color: 0x848a8e,
       roughness: 0.22,
       metalness: 0.38,
       envMapIntensity: 1.1,
@@ -576,6 +583,37 @@ function addFrontFurniture(scene: THREE.Scene, pack: Kit, colliders: AABB[]) {
   paintWhiteboard(left);
   const right = placeOnFrontWall(scene, pack.whiteboard, 3.2, 0.82, { width: 3.8, rotY: Math.PI, poke: 0.03 });
   paintWhiteboard(right);
+  addNuSign(scene, pack.nuSign);
+}
+
+function addNuSign(scene: THREE.Scene, tex: THREE.Texture) {
+  const img = tex.image as { width: number; height: number };
+  const aspect = img.width / Math.max(img.height, 1);
+  let w = 1.88;
+  let h = w / aspect;
+  if (h > 1.98) {
+    h = 1.98;
+    w = h * aspect;
+  }
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, h),
+    new THREE.MeshLambertMaterial({
+      map: tex,
+      color: 0xffffff,
+      emissive: 0x3a3a3a,
+      transparent: true,
+      alphaTest: 0.06,
+      side: THREE.DoubleSide,
+    }),
+  );
+  mesh.rotation.y = 0;
+  mesh.position.set(-5.85, 0.72 + h / 2, 0);
+  scene.add(mesh);
+  mesh.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(mesh);
+  const innerZ = -CLASSROOM.depth / 2 + CLASSROOM.wallThickness;
+  mesh.position.z += innerZ + 0.02 - box.min.z;
+  mesh.updateMatrixWorld(true);
 }
 
 function addHollowWalls(colliders: AABB[]) {
@@ -937,7 +975,7 @@ function addCeilingWash(scene: THREE.Scene, fpWalls: THREE.Group, fixture?: THRE
     for (const z of LAMP_ZS) {
       if (z > CLASSROOM.cutZ - 0.4) continue;
       const center = Math.abs(x) < 0.05;
-      const lamp = new THREE.PointLight(color, center ? 11 : 7.2, center ? 9.5 : 6.4, 1.75);
+      const lamp = new THREE.PointLight(color, center ? 12 : 7.5, center ? 9.5 : 6.4, 1.75);
       lamp.position.set(x, CEILING_Y - 0.12, z);
       lamp.castShadow = false;
       lamp.layers.enable(0);
@@ -1014,8 +1052,8 @@ export function buildClassroom(scene: THREE.Scene): {
     }
   }
 
-  scene.add(new THREE.HemisphereLight(0xf3e7dc, 0xb49e90, 1.1));
-  scene.add(new THREE.AmbientLight(0xece3d8, 0.36));
+  scene.add(new THREE.HemisphereLight(0xf3e7dc, 0xb49e90, 1.14));
+  scene.add(new THREE.AmbientLight(0xece3d8, 0.4));
   const sun = new THREE.DirectionalLight(0xf2e2d4, 0.32);
   sun.position.set(4, 18, -6);
   sun.castShadow = false;

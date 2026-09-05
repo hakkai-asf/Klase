@@ -16,6 +16,8 @@ const tvUrl = new URL("../../../assets/furnitures/flat-screen_tv.glb", import.me
 const whiteboardUrl = new URL("../../../assets/furnitures/whiteboard.glb", import.meta.url).href;
 const doorUrl = new URL("../../../assets/classroom/door.glb", import.meta.url).href;
 const airconUrl = new URL("../../../assets/furnitures/aircon.glb", import.meta.url).href;
+const windowUrl = new URL("../../../assets/classroom/window.glb", import.meta.url).href;
+const extinguisherUrl = new URL("../../../assets/furnitures/fire_extinguisher.glb", import.meta.url).href;
 const nuSignUrl = new URL("../../../assets/textures/NU SIGNS.png", import.meta.url).href;
 
 const ROOM = {
@@ -49,6 +51,8 @@ type Kit = {
   whiteboard: THREE.Object3D;
   door: THREE.Object3D;
   aircon: THREE.Object3D;
+  window: THREE.Object3D;
+  extinguisher: THREE.Object3D;
   nuSign: THREE.Texture;
 };
 
@@ -58,19 +62,22 @@ export async function preloadClassroom() {
   if (kit) return;
   const gltf = new GLTFLoader();
   const texLoader = new THREE.TextureLoader();
-  const [room, chair, ceiling, floor, light, table, tv, board, door, aircon, nuSign] = await Promise.all([
-    gltf.loadAsync(classroomUrl),
-    gltf.loadAsync(nuChairUrl),
-    gltf.loadAsync(ceilingUrl),
-    gltf.loadAsync(floorUrl),
-    gltf.loadAsync(ceilingLightUrl),
-    gltf.loadAsync(tableUrl),
-    gltf.loadAsync(tvUrl),
-    gltf.loadAsync(whiteboardUrl),
-    gltf.loadAsync(doorUrl),
-    gltf.loadAsync(airconUrl),
-    texLoader.loadAsync(nuSignUrl),
-  ]);
+  const [room, chair, ceiling, floor, light, table, tv, board, door, aircon, win, extinguisher, nuSign] =
+    await Promise.all([
+      gltf.loadAsync(classroomUrl),
+      gltf.loadAsync(nuChairUrl),
+      gltf.loadAsync(ceilingUrl),
+      gltf.loadAsync(floorUrl),
+      gltf.loadAsync(ceilingLightUrl),
+      gltf.loadAsync(tableUrl),
+      gltf.loadAsync(tvUrl),
+      gltf.loadAsync(whiteboardUrl),
+      gltf.loadAsync(doorUrl),
+      gltf.loadAsync(airconUrl),
+      gltf.loadAsync(windowUrl),
+      gltf.loadAsync(extinguisherUrl),
+      texLoader.loadAsync(nuSignUrl),
+    ]);
   nuSign.colorSpace = THREE.SRGBColorSpace;
   nuSign.anisotropy = 4;
   kit = {
@@ -84,6 +91,8 @@ export async function preloadClassroom() {
     whiteboard: board.scene,
     door: door.scene,
     aircon: aircon.scene,
+    window: win.scene,
+    extinguisher: extinguisher.scene,
     nuSign,
   };
 }
@@ -584,6 +593,20 @@ function addFrontFurniture(scene: THREE.Scene, pack: Kit, colliders: AABB[]) {
   const right = placeOnFrontWall(scene, pack.whiteboard, 3.2, 0.82, { width: 3.8, rotY: Math.PI, poke: 0.03 });
   paintWhiteboard(right);
   addNuSign(scene, pack.nuSign);
+  addFireExtinguisher(scene, pack, colliders);
+}
+
+function addFireExtinguisher(scene: THREE.Scene, pack: Kit, colliders: AABB[]) {
+  const prop = prepareProp(pack.extinguisher, { height: 0.86 });
+  prop.rotation.y = 0;
+  prop.position.set(-5.18, 0.05, 0);
+  scene.add(prop);
+  prop.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(prop);
+  const innerZ = -CLASSROOM.depth / 2 + CLASSROOM.wallThickness;
+  prop.position.z += innerZ + 0.03 - box.min.z;
+  prop.updateMatrixWorld(true);
+  colliders.push(aabbOf(prop, 0.02));
 }
 
 function addNuSign(scene: THREE.Scene, tex: THREE.Texture) {
@@ -625,6 +648,12 @@ function addHollowWalls(colliders: AABB[]) {
   colliders.push({ minX: -w / 2, maxX: w / 2, minZ: cutZ - t, maxZ: cutZ });
 }
 
+const RIGHT_WINDOW = {
+  sillY: 1.36,
+  openH: 2.08,
+  end: 0.2,
+};
+
 function addCutWall(fpWalls: THREE.Group, mat: THREE.MeshStandardMaterial) {
   const { width: w, wallHeight: h, wallThickness: t, cutZ } = CLASSROOM;
   const wall = new THREE.Mesh(new THREE.BoxGeometry(w, h, t), mat);
@@ -632,6 +661,130 @@ function addCutWall(fpWalls: THREE.Group, mat: THREE.MeshStandardMaterial) {
   wall.castShadow = false;
   wall.receiveShadow = false;
   fpWalls.add(wall);
+}
+
+function addRightWall(parent: THREE.Object3D, mat: THREE.MeshStandardMaterial) {
+  const { width: w, wallHeight: h, wallThickness: t, cutZ, depth: d } = CLASSROOM;
+  const minZ = -d / 2;
+  const playD = cutZ - minZ;
+  const midZ = (minZ + cutZ) / 2;
+  const { sillY, openH, end } = RIGHT_WINDOW;
+  const openA = minZ + t + end;
+  const openB = cutZ - t - end;
+  const x = w / 2 - t / 2;
+  const addSlab = (hh: number, dz: number, y: number, z: number) => {
+    if (hh <= 0.01 || dz <= 0.01) return;
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(t, hh, dz), mat);
+    slab.position.set(x, y, z);
+    slab.castShadow = false;
+    slab.receiveShadow = false;
+    parent.add(slab);
+  };
+  addSlab(sillY, playD, sillY / 2, midZ);
+  const topH = h - (sillY + openH);
+  addSlab(topH, playD, sillY + openH + topH / 2, midZ);
+  addSlab(openH, openA - minZ, sillY + openH / 2, (minZ + openA) / 2);
+  addSlab(openH, cutZ - openB, sillY + openH / 2, (openB + cutZ) / 2);
+
+  const sky = new THREE.Mesh(
+    new THREE.PlaneGeometry(openB - openA, openH),
+    new THREE.MeshBasicMaterial({ color: 0x8fb4cc, side: THREE.DoubleSide }),
+  );
+  sky.rotation.y = Math.PI / 2;
+  sky.position.set(w / 2 + 0.04, sillY + openH / 2, (openA + openB) / 2);
+  parent.add(sky);
+}
+
+function cheapWindowGlass(root: THREE.Object3D) {
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    const next = list.map((mat) => {
+      const phys = mat as THREE.MeshPhysicalMaterial;
+      if (!phys.isMeshPhysicalMaterial || phys.transmission <= 0) return mat;
+      const glass = phys.clone();
+      glass.transmission = 0;
+      glass.thickness = 0;
+      glass.attenuationDistance = Infinity;
+      glass.transparent = true;
+      glass.depthWrite = false;
+      glass.forceSinglePass = true;
+      return glass;
+    });
+    mesh.material = Array.isArray(mesh.material) ? next : next[0]!;
+  });
+}
+
+function bakedWindowParts(proto: THREE.Object3D) {
+  const buckets = new Map<string, { src: THREE.Material; geos: THREE.BufferGeometry[] }>();
+  proto.updateMatrixWorld(true);
+  proto.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh || Array.isArray(mesh.material)) return;
+    const geo = mesh.geometry.clone();
+    geo.applyMatrix4(mesh.matrixWorld);
+    const key = (mesh.material as THREE.Material).uuid;
+    const bucket = buckets.get(key) ?? { src: mesh.material as THREE.Material, geos: [] };
+    bucket.geos.push(geo);
+    buckets.set(key, bucket);
+  });
+  const parts: { geometry: THREE.BufferGeometry; material: THREE.Material }[] = [];
+  for (const { src, geos } of buckets.values()) {
+    const merged = geos.length === 1 ? geos[0]! : mergeGeometries(geos, false);
+    if (!merged) {
+      for (const geo of geos) parts.push({ geometry: geo, material: src });
+      continue;
+    }
+    if (geos.length > 1) for (const geo of geos) geo.dispose();
+    parts.push({ geometry: merged, material: src });
+  }
+  return parts;
+}
+
+function addRightWindows(parent: THREE.Object3D, src: THREE.Object3D) {
+  const { width: w, wallThickness: t, cutZ, depth: d } = CLASSROOM;
+  const minZ = -d / 2;
+  const { sillY, openH, end } = RIGHT_WINDOW;
+  const openA = minZ + t + end;
+  const openB = cutZ - t - end;
+  const openW = openB - openA;
+  const bank = new THREE.Group();
+  bank.position.set(w / 2 - t / 2, 0, (openA + openB) / 2);
+  bank.rotation.y = -Math.PI / 2;
+  parent.add(bank);
+
+  const proto = prepareProp(src, { height: openH * 0.98 });
+  proto.updateMatrixWorld(true);
+  const probeSize = new THREE.Box3().setFromObject(proto).getSize(new THREE.Vector3());
+  proto.rotation.y = probeSize.x >= probeSize.z ? 0 : Math.PI / 2;
+  cheapWindowGlass(proto);
+  proto.updateMatrixWorld(true);
+  const faced = new THREE.Box3().setFromObject(proto);
+  const size = faced.getSize(new THREE.Vector3());
+  const count = Math.max(1, Math.round(openW / Math.max(size.x, 0.4)));
+  const cell = openW / count;
+  const sx = cell / Math.max(size.x, 0.001);
+  const sy = (openH * 0.98) / Math.max(size.y, 0.001);
+  const zOff = -faced.getCenter(new THREE.Vector3()).z * sy;
+  const parts = bakedWindowParts(proto);
+  const dummy = new THREE.Object3D();
+  for (const part of parts) {
+    const inst = new THREE.InstancedMesh(part.geometry, part.material, count);
+    inst.castShadow = false;
+    inst.receiveShadow = false;
+    inst.frustumCulled = true;
+    for (let i = 0; i < count; i++) {
+      dummy.position.set(-openW / 2 + cell * (i + 0.5), sillY + openH * 0.01, zOff);
+      dummy.scale.set(sx, sy, 1);
+      dummy.rotation.set(0, 0, 0);
+      dummy.updateMatrix();
+      inst.setMatrixAt(i, dummy.matrix);
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    inst.computeBoundingSphere();
+    bank.add(inst);
+  }
 }
 
 function addRoomWalls(scene: THREE.Scene, fpWalls: THREE.Group) {
@@ -654,12 +807,7 @@ function addRoomWalls(scene: THREE.Scene, fpWalls: THREE.Group) {
   left.receiveShadow = false;
   scene.add(left);
 
-  const right = new THREE.Mesh(new THREE.BoxGeometry(t, h, playD), mat.clone());
-  right.position.set(w / 2 - t / 2, y, midZ);
-  right.castShadow = false;
-  right.receiveShadow = false;
-  fpWalls.add(right);
-
+  addRightWall(scene, mat.clone());
   addCutWall(fpWalls, mat.clone());
 }
 
@@ -1038,6 +1186,7 @@ export function buildClassroom(scene: THREE.Scene): {
     placeInstancedChairs(scene, kit.nuChair, [left, right, back], DESK_GRID.rotY, { height: 1.24 }, colliders);
     addFrontFurniture(scene, kit, colliders);
     addLeftWallFurniture(scene, kit, colliders);
+    addRightWindows(scene, kit.window);
   } else {
     fallbackRoom(scene, fpWalls);
     for (let row = 0; row < DESK_GRID.rows; row++) {

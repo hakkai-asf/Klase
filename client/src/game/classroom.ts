@@ -514,21 +514,38 @@ function placeOnLeftWall(
   return prop;
 }
 
-function addLeftWallFurniture(scene: THREE.Scene, pack: Kit, colliders: AABB[]) {
+const LEFT_WALL = {
+  doorW: 1.38,
+  doorH: 2.62,
+  acAlong: 2.45,
+  acH: 0.68,
+  acDeep: 0.42,
+  edge: 0.62,
+  acGap: 0.38,
+};
+
+const LEFT_MINI = {
+  sillY: 3.02,
+  openH: 0.56,
+  inset: 0.1,
+  frame: 0.07,
+};
+
+function leftWallLayout() {
   const { depth: d, wallThickness: t, cutZ } = CLASSROOM;
   const minZ = -d / 2 + t;
   const maxZ = cutZ - t;
-  const doorW = 1.38;
-  const doorH = 2.62;
-  const acAlong = 2.45;
-  const acH = 0.68;
-  const acDeep = 0.42;
-  const edge = 0.62;
-  const acGap = 0.38;
+  const { doorW, edge, acGap, acAlong } = LEFT_WALL;
   const frontDoorZ = minZ + edge + doorW / 2;
   const backDoorZ = maxZ - edge - doorW / 2;
   const frontAcZ = frontDoorZ + doorW / 2 + acGap + acAlong / 2;
   const backAcZ = backDoorZ - doorW / 2 - acGap - acAlong / 2;
+  return { minZ, maxZ, frontDoorZ, backDoorZ, frontAcZ, backAcZ };
+}
+
+function addLeftWallFurniture(scene: THREE.Scene, pack: Kit, colliders: AABB[]) {
+  const { doorW, doorH, acAlong, acH, acDeep } = LEFT_WALL;
+  const { frontDoorZ, backDoorZ, frontAcZ, backAcZ } = leftWallLayout();
   const acY = CEILING_Y - acH;
 
   const frontDoor = placeOnLeftWall(scene, pack.door, frontDoorZ, 0, {
@@ -705,7 +722,81 @@ const RIGHT_WINDOW = {
   sillY: 1.36,
   openH: 2.08,
   end: 0.2,
+  colW: DESK_GRID.spacingX * 2,
 };
+
+function addLeftMiniWindow(parent: THREE.Object3D, openA: number, openB: number) {
+  const { width: w, wallThickness: t } = CLASSROOM;
+  const { sillY, openH, frame: fw } = LEFT_MINI;
+  const x = -w / 2 + t / 2;
+  const poke = 0.035;
+  const span = openB - openA;
+  const midZ = (openA + openB) / 2;
+  const midY = sillY + openH / 2;
+  const dark = new THREE.MeshLambertMaterial({ color: 0x1a1917 });
+  const glass = new THREE.MeshLambertMaterial({
+    color: 0x6e8896,
+    transparent: true,
+    opacity: 0.38,
+    depthWrite: false,
+  });
+  const bar = (dz: number, dy: number, z: number, y: number) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(t + poke * 2, dy, dz), dark);
+    mesh.position.set(x + poke * 0.15, y, z);
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+    parent.add(mesh);
+  };
+  bar(span + fw * 0.15, fw, midZ, sillY + fw / 2);
+  bar(span + fw * 0.15, fw, midZ, sillY + openH - fw / 2);
+  bar(fw, openH, openA + fw / 2, midY);
+  bar(fw, openH, openB - fw / 2, midY);
+  const inner = span - fw * 2;
+  const pane = inner / 3;
+  bar(fw * 0.7, openH - fw, openA + fw + pane, midY);
+  bar(fw * 0.7, openH - fw, openA + fw + pane * 2, midY);
+  for (let i = 0; i < 3; i++) {
+    const z0 = openA + fw + pane * i;
+    const z1 = openA + fw + pane * (i + 1);
+    const paneMesh = new THREE.Mesh(new THREE.PlaneGeometry(z1 - z0 - fw * 0.55, openH - fw * 2), glass);
+    paneMesh.rotation.y = Math.PI / 2;
+    paneMesh.position.set(-w / 2 + t + 0.01, midY, (z0 + z1) / 2);
+    parent.add(paneMesh);
+  }
+  const sky = new THREE.Mesh(
+    new THREE.PlaneGeometry(span, openH),
+    new THREE.MeshBasicMaterial({ color: 0x8fb4cc, side: THREE.DoubleSide }),
+  );
+  sky.rotation.y = Math.PI / 2;
+  sky.position.set(-w / 2 - 0.03, midY, midZ);
+  parent.add(sky);
+}
+
+function addLeftWall(parent: THREE.Object3D, mat: THREE.MeshStandardMaterial) {
+  const { width: w, wallHeight: h, wallThickness: t, cutZ, depth: d } = CLASSROOM;
+  const minZ = -d / 2;
+  const playD = cutZ - minZ;
+  const midZ = (minZ + cutZ) / 2;
+  const { sillY, openH, inset } = LEFT_MINI;
+  const { frontAcZ, backAcZ } = leftWallLayout();
+  const openA = frontAcZ + LEFT_WALL.acAlong / 2 + inset;
+  const openB = backAcZ - LEFT_WALL.acAlong / 2 - inset;
+  const x = -w / 2 + t / 2;
+  const addSlab = (hh: number, dz: number, y: number, z: number) => {
+    if (hh <= 0.01 || dz <= 0.01) return;
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(t, hh, dz), mat);
+    slab.position.set(x, y, z);
+    slab.castShadow = false;
+    slab.receiveShadow = true;
+    parent.add(slab);
+  };
+  addSlab(sillY, playD, sillY / 2, midZ);
+  const topH = h - (sillY + openH);
+  addSlab(topH, playD, sillY + openH + topH / 2, midZ);
+  addSlab(openH, openA - minZ, sillY + openH / 2, (minZ + openA) / 2);
+  addSlab(openH, cutZ - openB, sillY + openH / 2, (openB + cutZ) / 2);
+  addLeftMiniWindow(parent, openA, openB);
+}
 
 function addCutWall(fpWalls: THREE.Group, mat: THREE.MeshStandardMaterial) {
   const { width: w, wallHeight: h, wallThickness: t, cutZ } = CLASSROOM;
@@ -721,16 +812,17 @@ function addRightWall(parent: THREE.Object3D, mat: THREE.MeshStandardMaterial) {
   const minZ = -d / 2;
   const playD = cutZ - minZ;
   const midZ = (minZ + cutZ) / 2;
-  const { sillY, openH, end } = RIGHT_WINDOW;
+  const { sillY, openH, end, colW } = RIGHT_WINDOW;
   const openA = minZ + t + end;
   const openB = cutZ - t - end;
+  const openMid = (openA + openB) / 2;
   const x = w / 2 - t / 2;
   const addSlab = (hh: number, dz: number, y: number, z: number) => {
     if (hh <= 0.01 || dz <= 0.01) return;
     const slab = new THREE.Mesh(new THREE.BoxGeometry(t, hh, dz), mat);
     slab.position.set(x, y, z);
     slab.castShadow = false;
-    slab.receiveShadow = false;
+    slab.receiveShadow = true;
     parent.add(slab);
   };
   addSlab(sillY, playD, sillY / 2, midZ);
@@ -738,13 +830,14 @@ function addRightWall(parent: THREE.Object3D, mat: THREE.MeshStandardMaterial) {
   addSlab(topH, playD, sillY + openH + topH / 2, midZ);
   addSlab(openH, openA - minZ, sillY + openH / 2, (minZ + openA) / 2);
   addSlab(openH, cutZ - openB, sillY + openH / 2, (openB + cutZ) / 2);
+  addSlab(openH, colW, sillY + openH / 2, openMid);
 
   const sky = new THREE.Mesh(
     new THREE.PlaneGeometry(openB - openA, openH),
     new THREE.MeshBasicMaterial({ color: 0x8fb4cc, side: THREE.DoubleSide }),
   );
   sky.rotation.y = Math.PI / 2;
-  sky.position.set(w / 2 + 0.04, sillY + openH / 2, (openA + openB) / 2);
+  sky.position.set(w / 2 + 0.04, sillY + openH / 2, openMid);
   parent.add(sky);
 }
 
@@ -798,7 +891,7 @@ function bakedWindowParts(proto: THREE.Object3D) {
 function addRightWindows(parent: THREE.Object3D, src: THREE.Object3D) {
   const { width: w, wallThickness: t, cutZ, depth: d } = CLASSROOM;
   const minZ = -d / 2;
-  const { sillY, openH, end } = RIGHT_WINDOW;
+  const { sillY, openH, end, colW } = RIGHT_WINDOW;
   const openA = minZ + t + end;
   const openB = cutZ - t - end;
   const openW = openB - openA;
@@ -815,21 +908,33 @@ function addRightWindows(parent: THREE.Object3D, src: THREE.Object3D) {
   proto.updateMatrixWorld(true);
   const faced = new THREE.Box3().setFromObject(proto);
   const size = faced.getSize(new THREE.Vector3());
-  const count = Math.max(1, Math.round(openW / Math.max(size.x, 0.4)));
-  const cell = openW / count;
-  const sx = cell / Math.max(size.x, 0.001);
   const sy = (openH * 0.98) / Math.max(size.y, 0.001);
   const zOff = -faced.getCenter(new THREE.Vector3()).z * sy;
   const parts = bakedWindowParts(proto);
+
+  const bays = [
+    { from: -openW / 2, to: -colW / 2 },
+    { from: colW / 2, to: openW / 2 },
+  ];
+  const xs: { x: number; sx: number }[] = [];
+  for (const bay of bays) {
+    const span = bay.to - bay.from;
+    if (span < 0.35) continue;
+    const count = Math.max(1, Math.round(span / Math.max(size.x, 0.4)));
+    const cell = span / count;
+    const sx = cell / Math.max(size.x, 0.001);
+    for (let i = 0; i < count; i++) xs.push({ x: bay.from + cell * (i + 0.5), sx });
+  }
+
   const dummy = new THREE.Object3D();
   for (const part of parts) {
-    const inst = new THREE.InstancedMesh(part.geometry, part.material, count);
+    const inst = new THREE.InstancedMesh(part.geometry, part.material, xs.length);
     inst.castShadow = false;
     inst.receiveShadow = false;
     inst.frustumCulled = true;
-    for (let i = 0; i < count; i++) {
-      dummy.position.set(-openW / 2 + cell * (i + 0.5), sillY + openH * 0.01, zOff);
-      dummy.scale.set(sx, sy, 1);
+    for (let i = 0; i < xs.length; i++) {
+      dummy.position.set(xs[i]!.x, sillY + openH * 0.01, zOff);
+      dummy.scale.set(xs[i]!.sx, sy, 1);
       dummy.rotation.set(0, 0, 0);
       dummy.updateMatrix();
       inst.setMatrixAt(i, dummy.matrix);
@@ -854,11 +959,7 @@ function addRoomWalls(scene: THREE.Scene, fpWalls: THREE.Group) {
   board.receiveShadow = false;
   scene.add(board);
 
-  const left = new THREE.Mesh(new THREE.BoxGeometry(t, h, playD), mat);
-  left.position.set(-w / 2 + t / 2, y, midZ);
-  left.castShadow = false;
-  left.receiveShadow = false;
-  scene.add(left);
+  addLeftWall(scene, mat.clone());
 
   addRightWall(fpWalls, mat.clone());
   addCutWall(fpWalls, mat.clone());

@@ -162,13 +162,13 @@ export function resolvePlayerMove(
 export const DESK_GRID = {
   rows: 5,
   cols: 10,
-  originX: -5.78,
+  originX: -5.58,
   originZ: -10.25,
   spacingX: 0.92,
   spacingZ: 1.58,
   /** Extra X gap after this many left-side chairs (5 | aisle | 5). */
   aisleAfter: 5,
-  aisleWidth: 3.28,
+  aisleWidth: 2.88,
   /** nu-chair forward is local +X; π/2 maps that to the board (−Z). */
   rotY: Math.PI / 2,
   /**

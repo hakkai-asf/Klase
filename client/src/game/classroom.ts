@@ -425,15 +425,27 @@ function paintDoor(root: THREE.Object3D) {
     metalness: 0.04,
   });
   const metal = new THREE.MeshStandardMaterial({
-    color: 0xc8ccd0,
-    roughness: 0.3,
-    metalness: 0.72,
+    color: 0xb7bcc1,
+    roughness: 0.28,
+    metalness: 0.78,
+  });
+  const glass = new THREE.MeshPhysicalMaterial({
+    color: 0x8a9aa3,
+    roughness: 0.04,
+    metalness: 0,
+    transparent: true,
+    opacity: 0.28,
+    transmission: 0.7,
+    thickness: 0.04,
   });
   root.traverse((o) => {
     const mesh = o as THREE.Mesh;
     if (!mesh.isMesh) return;
     mesh.material = /Cylinder/i.test(mesh.name) ? metal : wood;
   });
+  const pane = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.5), glass);
+  pane.position.set(-0.1, 1.58, 0.08);
+  root.add(pane);
 }
 
 function placeOnLeftWall(
@@ -484,16 +496,16 @@ function addLeftWallFurniture(scene: THREE.Scene, pack: Kit, colliders: AABB[]) 
   const frontDoor = placeOnLeftWall(scene, pack.door, frontDoorZ, 0, {
     width: doorW,
     height: doorH,
-    rotY: -Math.PI / 2,
-    poke: 0.015,
+    rotY: Math.PI / 2,
+    poke: -0.14,
   });
   paintDoor(frontDoor);
   colliders.push(aabbOf(frontDoor, 0.02));
   const backDoor = placeOnLeftWall(scene, pack.door, backDoorZ, 0, {
     width: doorW,
     height: doorH,
-    rotY: -Math.PI / 2,
-    poke: 0.015,
+    rotY: Math.PI / 2,
+    poke: -0.14,
   });
   paintDoor(backDoor);
   colliders.push(aabbOf(backDoor, 0.02));
@@ -799,16 +811,15 @@ function addNewFloor(scene: THREE.Scene, src: THREE.Object3D) {
 }
 
 function liftAircon(root: THREE.Object3D) {
+  const body = new THREE.MeshStandardMaterial({
+    color: 0xf3f4f6,
+    roughness: 0.38,
+    metalness: 0.06,
+  });
   root.traverse((o) => {
     const mesh = o as THREE.Mesh;
     if (!mesh.isMesh) return;
-    const src = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    const next = src.map((m) => {
-      const std = (m as THREE.MeshStandardMaterial).clone();
-      std.color.setRGB(1.55, 1.58, 1.62);
-      return std;
-    });
-    mesh.material = Array.isArray(mesh.material) ? next : next[0]!;
+    mesh.material = body;
   });
 }
 
@@ -871,8 +882,8 @@ function addNewCeiling(host: THREE.Object3D, src: THREE.Object3D) {
   }
 }
 
-const LAMP_XS = [-4.21, -1.12, 1.98];
-const LAMP_ZS = [-11.7, -7.06, -2.42];
+const LAMP_XS = [-4.35, 0, 4.35];
+const LAMP_ZS = [-12.45, -7.15, -1.85];
 const CEILING_Y = 3.91;
 const LIGHT_POKE = 0.022;
 const LIGHT_XZ = 0.42;
@@ -903,7 +914,7 @@ function addCeilingWash(scene: THREE.Scene, fpWalls: THREE.Group, fixture?: THRE
   for (const x of LAMP_XS) {
     for (const z of LAMP_ZS) {
       if (z > CLASSROOM.cutZ - 0.4) continue;
-      const center = Math.abs(x + 1.12) < 0.05;
+      const center = Math.abs(x) < 0.05;
       const lamp = new THREE.PointLight(color, center ? 9 : 7.2, center ? 9.5 : 6.4, 1.75);
       lamp.position.set(x, CEILING_Y - 0.12, z);
       lamp.castShadow = false;

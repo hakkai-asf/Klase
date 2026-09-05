@@ -111,7 +111,7 @@ export class World {
     this.renderer.shadowMap.enabled = false;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.toneMappingExposure = 1.06;
     this.scene.background = new THREE.Color(0xe4e8f4);
     const built = buildClassroom(this.scene);
     this.colliders = built.colliders;

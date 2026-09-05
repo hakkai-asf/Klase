@@ -445,31 +445,20 @@ function paintTable(root: THREE.Object3D) {
     if (!mesh.isMesh) return;
     mesh.material = new THREE.MeshStandardMaterial({
       color: 0xd0cdc8,
-      roughness: 0.62,
-      metalness: 0.06,
+      roughness: 0.22,
+      metalness: 0.38,
+      envMapIntensity: 1.1,
     });
   });
 }
 
 function paintDoor(root: THREE.Object3D) {
-  const wood = new THREE.MeshStandardMaterial({
-    color: ROOM.door,
-    roughness: 0.7,
-    metalness: 0.04,
-  });
-  const metal = new THREE.MeshStandardMaterial({
-    color: 0xb7bcc1,
-    roughness: 0.28,
-    metalness: 0.78,
-  });
-  const glass = new THREE.MeshPhysicalMaterial({
+  const wood = new THREE.MeshLambertMaterial({ color: ROOM.door });
+  const metal = new THREE.MeshLambertMaterial({ color: 0xb7bcc1 });
+  const glass = new THREE.MeshBasicMaterial({
     color: 0x8a9aa3,
-    roughness: 0.04,
-    metalness: 0,
     transparent: true,
-    opacity: 0.28,
-    transmission: 0.7,
-    thickness: 0.04,
+    opacity: 0.32,
   });
   root.traverse((o) => {
     const mesh = o as THREE.Mesh;
@@ -571,7 +560,7 @@ function addFrontFurniture(scene: THREE.Scene, pack: Kit, colliders: AABB[]) {
   const tv = placeOnFrontWall(scene, pack.tv, 0, 2.12, {
     width: 2.05,
     rotY: Math.PI,
-    poke: 0.2,
+    poke: 0.08,
     flip: true,
   });
   tv.traverse((o) => {
@@ -948,7 +937,7 @@ function addCeilingWash(scene: THREE.Scene, fpWalls: THREE.Group, fixture?: THRE
     for (const z of LAMP_ZS) {
       if (z > CLASSROOM.cutZ - 0.4) continue;
       const center = Math.abs(x) < 0.05;
-      const lamp = new THREE.PointLight(color, center ? 9 : 7.2, center ? 9.5 : 6.4, 1.75);
+      const lamp = new THREE.PointLight(color, center ? 11 : 7.2, center ? 9.5 : 6.4, 1.75);
       lamp.position.set(x, CEILING_Y - 0.12, z);
       lamp.castShadow = false;
       lamp.layers.enable(0);
@@ -1025,8 +1014,8 @@ export function buildClassroom(scene: THREE.Scene): {
     }
   }
 
-  scene.add(new THREE.HemisphereLight(0xf3e7dc, 0xb49e90, 1.02));
-  scene.add(new THREE.AmbientLight(0xece3d8, 0.28));
+  scene.add(new THREE.HemisphereLight(0xf3e7dc, 0xb49e90, 1.1));
+  scene.add(new THREE.AmbientLight(0xece3d8, 0.36));
   const sun = new THREE.DirectionalLight(0xf2e2d4, 0.32);
   sun.position.set(4, 18, -6);
   sun.castShadow = false;

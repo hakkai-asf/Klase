@@ -40,6 +40,7 @@ export class World {
   readonly fpCam: THREE.PerspectiveCamera;
   firstPerson = false;
   freeCam = false;
+  aerialCamMode = false;
   private spectator = false;
   private spectatorAvatarsVisible = false;
   readonly localId: string;

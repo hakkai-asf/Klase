@@ -707,3 +707,313 @@ button, input, select { font-family: inherit; }
 .touch-ui .fp-hints { display: none !important; }
 
 .hidden { display: none !important; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NEOBRUTALIST ONBOARDING  — light / warm-cream palette
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.neo-card {
+  --neo-bg:       #fef9f4;
+  --neo-border:   #1a1a1a;
+  --neo-ink:      #1a1a1a;
+  --neo-orange:   #e07a3d;
+  --neo-orange-dk:#c45c28;
+  --neo-muted:    #6b5a50;
+  --neo-item-bg:  #ffffff;
+  --neo-shadow:   6px 6px 0 #1a1a1a;
+  --neo-radius:   20px;
+
+  background:    var(--neo-bg);
+  color:         var(--neo-ink);
+  border:        3px solid var(--neo-border);
+  border-radius: var(--neo-radius);
+  box-shadow:    var(--neo-shadow);
+  width:         min(680px, 94vw);
+  max-height:    min(88vh, 760px);
+  display:       flex;
+  flex-direction: column;
+  padding:       1.8rem 1.6rem 1.4rem;
+  box-sizing:    border-box;
+  position:      relative;
+  overflow:      hidden;
+}
+
+/* ── Card header ─────────────────────────────────────────────────────────── */
+.neo-card-head {
+  display:        flex;
+  flex-direction: column;
+  align-items:    center;
+  justify-content: center;
+  margin-bottom:  1rem;
+  padding-bottom: 0.85rem;
+  border-bottom:  2.5px solid #e4d6c7;
+  gap:            0.45rem;
+}
+
+.neo-card-tag {
+  align-self:      center;
+  background:      var(--neo-orange);
+  color:           #fff;
+  border:          2.5px solid var(--neo-border);
+  border-radius:   99px;
+  padding:         0.18rem 0.8rem;
+  font-size:       0.72rem;
+  font-weight:     900;
+  letter-spacing:  0.08em;
+  text-transform:  uppercase;
+  box-shadow:      2px 2px 0 var(--neo-border);
+}
+
+.neo-card-title-img {
+  max-width:   88%;
+  max-height:  50px;
+  object-fit:  contain;
+  filter:      drop-shadow(1px 2px 0 rgba(0,0,0,0.18));
+}
+
+.neo-card-subtitle {
+  margin:      0;
+  font-size:   0.85rem;
+  font-weight: 700;
+  color:       var(--neo-muted);
+  text-align:  center;
+  letter-spacing: 0.01em;
+}
+
+/* ── Card body ───────────────────────────────────────────────────────────── */
+.neo-card-body {
+  overflow-y:     auto;
+  padding-right:  0.4rem;
+  display:        flex;
+  flex-direction: column;
+  gap:            0.75rem;
+  flex:           1;
+}
+
+.neo-card-body::-webkit-scrollbar        { width: 6px; }
+.neo-card-body::-webkit-scrollbar-track  { background: #f0e8de; border-radius: 99px; }
+.neo-card-body::-webkit-scrollbar-thumb  { background: var(--neo-orange); border-radius: 99px; }
+
+/* ── List items (How Klase Works / Guidelines) ───────────────────────────── */
+.neo-list-item {
+  display:      flex;
+  align-items:  flex-start;
+  gap:          0.8rem;
+  background:   var(--neo-item-bg);
+  color:        var(--neo-ink);
+  border:       2.5px solid var(--neo-border);
+  border-radius: 14px;
+  padding:      0.8rem 1rem;
+  box-shadow:   4px 4px 0 var(--neo-border);
+  font-weight:  700;
+  font-size:    0.96rem;
+  line-height:  1.42;
+  transition:   transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.neo-list-item:hover {
+  transform:   translate(-1px, -1px);
+  box-shadow:  5px 5px 0 var(--neo-border);
+}
+
+/* ── Numbered badges ─────────────────────────────────────────────────────── */
+.neo-badge {
+  flex-shrink:   0;
+  width:         28px;
+  height:        28px;
+  border-radius: 50%;
+  background:    var(--neo-orange);
+  color:         #fff;
+  border:        2px solid var(--neo-border);
+  display:       grid;
+  place-items:   center;
+  font-weight:   900;
+  font-size:     0.85rem;
+  box-shadow:    2px 2px 0 var(--neo-border);
+}
+
+/* Warning (!) variant — filled orange, dark text */
+.neo-badge-warn {
+  background: #fff3e8;
+  color:      var(--neo-orange-dk);
+  border-color: var(--neo-orange-dk);
+  font-size:  1.05rem;
+}
+
+/* ── Policy blocks (Terms / Privacy) ─────────────────────────────────────── */
+.neo-policy-block {
+  background:    var(--neo-item-bg);
+  color:         var(--neo-ink);
+  border:        2.5px solid var(--neo-border);
+  border-radius: 14px;
+  padding:       0.9rem 1.1rem;
+  box-shadow:    4px 4px 0 var(--neo-border);
+  display:       flex;
+  flex-direction: column;
+  gap:           0.35rem;
+}
+
+.neo-policy-title {
+  font-size:   1rem;
+  font-weight: 900;
+  color:       var(--neo-orange-dk);
+  margin:      0;
+  letter-spacing: -0.01em;
+}
+
+.neo-policy-text {
+  margin:      0;
+  font-size:   0.9rem;
+  font-weight: 600;
+  color:       #3a2e28;
+  line-height: 1.5;
+}
+
+.neo-policy-sublist {
+  margin:      0.25rem 0 0;
+  padding-left: 1.1rem;
+  display:     flex;
+  flex-direction: column;
+  gap:         0.2rem;
+  font-size:   0.88rem;
+  font-weight: 600;
+  color:       #3a2e28;
+  line-height: 1.45;
+}
+
+/* ── Consent checkboxes ──────────────────────────────────────────────────── */
+.neo-consent-box {
+  display:        flex;
+  flex-direction: column;
+  gap:            0.75rem;
+  margin:         0.4rem 0;
+}
+
+.neo-checkbox-label {
+  display:      flex;
+  align-items:  center;
+  gap:          0.85rem;
+  background:   var(--neo-item-bg);
+  color:        var(--neo-ink);
+  border:       2.5px solid var(--neo-border);
+  border-radius: 14px;
+  padding:      0.9rem 1.1rem;
+  box-shadow:   4px 4px 0 var(--neo-border);
+  cursor:       pointer;
+  font-weight:  800;
+  font-size:    0.96rem;
+  user-select:  none;
+  transition:   transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.neo-checkbox-label:hover {
+  transform:  translate(-1px, -1px);
+  box-shadow: 5px 5px 0 var(--neo-border);
+}
+
+.neo-checkbox {
+  appearance:  none;
+  -webkit-appearance: none;
+  width:       22px;
+  height:      22px;
+  border:      2.5px solid var(--neo-border);
+  border-radius: 7px;
+  background:  #fff;
+  cursor:      pointer;
+  display:     grid;
+  place-items: center;
+  flex-shrink: 0;
+  transition:  background 0.15s ease;
+}
+
+.neo-checkbox:checked               { background: var(--neo-orange); border-color: var(--neo-orange-dk); }
+.neo-checkbox:checked::after        { content: "✓"; color: #fff; font-weight: 900; font-size: 0.95rem; }
+
+/* ── Card footer ─────────────────────────────────────────────────────────── */
+.neo-card-foot {
+  display:      flex;
+  justify-content: space-between;
+  align-items:  center;
+  margin-top:   1.1rem;
+  padding-top:  0.85rem;
+  border-top:   2.5px solid #e4d6c7;
+  gap:          0.75rem;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.neo-btn {
+  font-family:   inherit;
+  cursor:        pointer;
+  border:        2.5px solid var(--neo-border);
+  background:    var(--neo-orange);
+  color:         #fff;
+  border-radius: 14px;
+  padding:       0.75rem 1.5rem;
+  font-size:     1.05rem;
+  font-weight:   900;
+  letter-spacing: 0.02em;
+  box-shadow:    4px 4px 0 var(--neo-border);
+  transition:    transform 0.08s ease, box-shadow 0.08s ease, filter 0.1s ease, opacity 0.15s ease;
+  user-select:   none;
+  display:       inline-flex;
+  align-items:   center;
+  gap:           0.35rem;
+}
+
+/* Back button — light ghost style */
+.neo-btn.neo-btn-back {
+  background:  #fff;
+  color:       var(--neo-ink);
+  border-color: var(--neo-border);
+}
+
+.neo-btn.neo-btn-back:hover:not(:disabled) {
+  background:  #f5ede4;
+  filter:      none;
+}
+
+.neo-btn:hover:not(:disabled) {
+  filter:    brightness(1.06);
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 var(--neo-border);
+}
+
+.neo-btn:active:not(:disabled) {
+  transform:  translate(3px, 3px);
+  box-shadow: 1px 1px 0 var(--neo-border);
+}
+
+.neo-btn:disabled {
+  opacity:    0.45;
+  cursor:     not-allowed;
+  filter:     grayscale(0.4);
+  box-shadow: 2px 2px 0 var(--neo-border);
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 540px) {
+  .neo-card {
+    padding:      1.1rem 0.9rem 1rem;
+    border-radius: 16px;
+    box-shadow:   4px 4px 0 var(--neo-border);
+  }
+  .neo-list-item,
+  .neo-policy-block,
+  .neo-checkbox-label {
+    font-size:    0.86rem;
+    padding:      0.7rem 0.8rem;
+    gap:          0.6rem;
+    border-radius: 12px;
+    box-shadow:   3px 3px 0 var(--neo-border);
+  }
+  .neo-badge  { width: 24px; height: 24px; font-size: 0.78rem; }
+  .neo-card-foot { gap: 0.45rem; }
+  .neo-btn {
+    flex:         1;
+    justify-content: center;
+    padding:      0.7rem 0.5rem;
+    font-size:    0.9rem;
+    box-shadow:   3px 3px 0 var(--neo-border);
+  }
+}
+

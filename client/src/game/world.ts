@@ -40,6 +40,8 @@ export class World {
   readonly fpCam: THREE.PerspectiveCamera;
   firstPerson = false;
   freeCam = false;
+  private spectator = false;
+  private spectatorAvatarsVisible = false;
   readonly localId: string;
   localX = SPAWN.x;
   localZ = SPAWN.z;
@@ -139,7 +141,9 @@ export class World {
     this.mouseHint.hidden = true;
     this.hintWrap.append(this.viewHint, this.mouseHint);
     canvas.parentElement?.append(this.hintWrap);
-    this.upsert(localId, localName, look, this.localX, this.localZ, this.localRot, "");
+    if (localId) {
+      this.upsert(localId, localName, look, this.localX, this.localZ, this.localRot, "");
+    }
     this.bindLook(canvas);
 
     window.addEventListener("keydown", (e) => {
@@ -196,6 +200,7 @@ export class World {
 
   private isoFrustum() {
     const base = this.touchUi ? ISO_FRUSTUM_TOUCH : ISO_FRUSTUM;
+    if (this.spectator) return base * 1.55;
     const t = this.isoZoomT;
     const mul =
       t <= 0.5 ? ISO_ZOOM_IN + (t / 0.5) * (1 - ISO_ZOOM_IN) : 1 + ((t - 0.5) / 0.5) * (ISO_ZOOM_OUT - 1);
@@ -270,6 +275,37 @@ export class World {
     this.onFreeCamChange?.(false);
   }
 
+  setSpectatorAvatars(visible: boolean) {
+    this.spectatorAvatarsVisible = visible;
+    for (const [id, a] of this.avatars) {
+      if (id === this.localId) {
+        a.root.visible = !this.spectator;
+      } else {
+        a.root.visible = visible || !this.spectator;
+      }
+    }
+  }
+
+  setLocalId(localId: string, name: string, look: Look) {
+    (this as any).localId = localId;
+    this.upsert(localId, name, look, this.localX, this.localZ, this.localRot, "");
+  }
+
+  setSpectatorMode(on: boolean) {
+    this.spectator = on;
+    if (this.hintWrap) this.hintWrap.style.display = on ? "none" : "";
+    if (this.sitPrompt) this.sitPrompt.style.display = on ? "none" : "";
+    for (const a of this.avatars.values()) {
+      a.root.visible = !on;
+    }
+    this.resize();
+  }
+
+  setAerial(on: boolean) {
+    this.setSpectatorMode(on);
+    this.scene.background = new THREE.Color(on ? 0xe4e8f4 : (this.firstPerson || this.freeCam ? 0xe3e0db : 0xe4e8f4));
+  }
+
   private poseFp() {
     const eyeY = this.localSeatId ? EYE_SIT : EYE_STAND;
     const fx = Math.sin(this.localRot) * EYE_FWD;
@@ -295,7 +331,11 @@ export class World {
       };
       this.scene.add(a.root);
       this.avatars.set(id, a);
-      if (id === this.localId) setLocalFpPresentation(a, this.firstPerson, Boolean(this.localSeatId));
+      if (this.spectator) {
+        a.root.visible = false;
+      } else if (id === this.localId) {
+        setLocalFpPresentation(a, this.firstPerson, Boolean(this.localSeatId));
+      }
     } else if (
       a.look.hat !== look.hat ||
       a.look.top !== look.top ||
@@ -461,7 +501,7 @@ export class World {
   }
 
   private updateSitPrompt(seat: Seat | null) {
-    if (this.freeCam) {
+    if (this.freeCam || this.aerialCamMode) {
       this.sitPrompt.hidden = true;
       if (this.sitBtn) this.sitBtn.hidden = true;
       return;
@@ -593,7 +633,7 @@ export class World {
       }
     } else {
       const near = this.nearestSeat();
-      if (pressedE && near) {
+      if (pressedE && near && !this.aerialCamMode) {
         this.localSeatId = near.id;
         this.localX = near.x;
         this.localZ = near.z;
@@ -605,7 +645,7 @@ export class World {
     }
 
     let moved = false;
-    if (!this.localSeatId) {
+    if (!this.localSeatId && !this.aerialCamMode) {
       let sx = 0;
       let sy = 0;
       if (this.keys.has("w") || this.keys.has("arrowup")) sy += 1;
@@ -673,6 +713,12 @@ export class World {
       }
       layoutHeadSprites(a);
     }
+    if (this.spectator) {
+      for (const a of this.avatars.values()) {
+        a.root.visible = false;
+      }
+    }
+
     const localHud = this.avatars.get(this.localId);
     if (localHud) setLocalFpPresentation(localHud, this.firstPerson, Boolean(this.localSeatId));
 
@@ -680,15 +726,16 @@ export class World {
     if (this.firstPerson) {
       this.poseFp();
     } else {
-      const player = new THREE.Vector3(this.localX, 0.75, this.localZ);
-      this.lookAt.lerp(player, Math.min(1, 6 * dt));
+      const target = this.spectator ? new THREE.Vector3(0, 0.75, 0) : new THREE.Vector3(this.localX, 0.75, this.localZ);
+      this.lookAt.lerp(target, Math.min(1, 6 * dt));
       this.isoCam.position.copy(this.lookAt).add(ISO);
       this.isoCam.lookAt(this.lookAt);
       this.isoCam.updateMatrixWorld();
     }
-    this.updateSitPrompt(this.localSeatId ? null : this.nearestSeat());
+    this.updateSitPrompt(this.spectator ? null : (this.localSeatId ? null : this.nearestSeat()));
     this.renderer.render(this.scene, cam);
 
+    if (this.spectator) return null;
     if (event) return event;
     this.moveAcc += dt;
     if (moved && this.moveAcc > 0.05) {

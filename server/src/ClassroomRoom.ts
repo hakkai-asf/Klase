@@ -25,7 +25,9 @@ export class ClassroomRoom extends Room<ClassroomState> {
   }
 
   private pushChat(line: ChatLine) {
+    // Append new chat line to the circular buffer
     this.chatLog.push(line);
+    // Trim oldest entries when buffer exceeds max
     if (this.chatLog.length > CHAT_LOG_MAX) this.chatLog.splice(0, this.chatLog.length - CHAT_LOG_MAX);
   }
 
@@ -39,6 +41,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
       if (!p || p.seatId) return;
       if (typeof data.x !== "number" || typeof data.z !== "number") return;
       const clamped = clampClassroom(data.x, data.z);
+      // Filter out self, then map to just x,z coordinates for collision checking
       const others = [...this.state.players.values()]
         .filter((o) => o.sessionId !== p.sessionId)
         .map((o) => ({ x: o.x, z: o.z }));
@@ -53,8 +56,10 @@ export class ClassroomRoom extends Room<ClassroomState> {
     this.onMessage("sit", (client, data: { seatId?: string }) => {
       const p = this.state.players.get(client.sessionId);
       if (!p) return;
+      // Locate the requested seat by ID
       const seat = seats.find((s) => s.id === String(data?.seatId ?? ""));
       if (!seat) return;
+      // Check if any other player is currently occupying this seat
       const taken = [...this.state.players.values()].some(
         (o) => o.sessionId !== p.sessionId && o.seatId === seat.id,
       );
@@ -80,6 +85,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
 
     this.onMessage("need-history", (client) => {
       if (!this.state.players.has(client.sessionId)) return;
+      // Send a non-destructive copy of the chat history
       client.send("chat-history", this.chatLog.slice());
     });
 
@@ -106,9 +112,13 @@ export class ClassroomRoom extends Room<ClassroomState> {
       }
     });
 
-    this.onMessage("customize", (client, data: { hat?: string; top?: string; accessory?: string; body?: string }) => {
+    this.onMessage("customize", (client, data: { name?: string; hat?: string; top?: string; accessory?: string; body?: string }) => {
       const p = this.state.players.get(client.sessionId);
       if (!p) return;
+      if (typeof data?.name === "string") {
+        const rawName = data.name.trim().slice(0, 24);
+        if (rawName) p.name = rawName;
+      }
       const look = normalizeLook({
         hat: String(data?.hat ?? p.hat),
         top: String(data?.top ?? p.top),
@@ -127,6 +137,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
       const from = this.state.players.get(client.sessionId);
       if (!from) return;
       const toId = String(data?.to ?? "");
+      // Look up target WebSocket client by sessionId
       const target = this.clients.find((c) => c.sessionId === toId);
       if (!target || toId === client.sessionId) return;
       target.send("voice", {
@@ -155,12 +166,14 @@ export class ClassroomRoom extends Room<ClassroomState> {
         if (action === "mute") target.serverMuted = true;
         if (action === "unmute") target.serverMuted = false;
         if (action === "kick") {
+          // Look up target WebSocket client by sessionId
           const tClient = this.clients.find((c) => c.sessionId === target.sessionId);
           tClient?.leave(4000);
         }
         if (action === "ban") {
           banName(target.name);
           if (target.userId) void setBanned(target.userId, true);
+          // Look up target WebSocket client by sessionId
           const tClient = this.clients.find((c) => c.sessionId === target.sessionId);
           tClient?.leave(4001);
         }
@@ -195,6 +208,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
 
   onJoin(client: Client) {
     const ident = client.auth as Awaited<ReturnType<typeof resolveIdentity>>;
+    // Filter regular users and count length to enforce room capacity
     const regulars = [...this.state.players.values()].filter((p) => p.role === "user").length;
     if (ident.role === "user" && regulars >= REGULAR_CAP) {
       throw new ServerError(403, "ROOM_FULL");
@@ -276,6 +290,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
   }
 
   private syncMeta() {
+    // Filter regular users and count length
     const regulars = [...this.state.players.values()].filter((p) => p.role === "user").length;
     this.setMetadata({ roomKey: this.state.roomKey, regulars, clients: this.state.players.size });
   }

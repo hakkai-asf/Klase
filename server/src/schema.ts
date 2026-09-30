@@ -1,5 +1,11 @@
 import { Schema, MapSchema, defineTypes } from "@colyseus/schema";
 
+/**
+ * Note: Fields like 'role' are intentionally kept public.
+ * Colyseus's @colyseus/schema requires plain public properties for state synchronization.
+ * For an example of proper encapsulation in this codebase, see the private fields
+ * 'chatLog' and 'lastActive' in ClassroomRoom.ts.
+ */
 export class Player extends Schema {
   sessionId = "";
   name = "";

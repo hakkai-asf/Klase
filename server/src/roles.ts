@@ -42,6 +42,7 @@ export type Identity = {
   userId: string;
 };
 
+// This function is async because it performs I/O operations (fetching user token & profile)
 export async function resolveIdentity(options: {
   name?: string;
   hat?: string;
@@ -59,8 +60,10 @@ export async function resolveIdentity(options: {
   const guestName = String(options?.name ?? "Guest").trim().slice(0, 24) || "Guest";
 
   if (options?.accessToken && supabaseEnabled()) {
+    // Suspends execution while fetching user from token
     const user = await userFromToken(options.accessToken);
     if (!user) throw new ServerError(401, "AUTH");
+    // Suspends execution while fetching the user's profile
     const profile = await loadProfile(user.id);
     if (profile?.banned) throw new ServerError(403, "BANNED");
     const role = roleForAccount(user, profile);
@@ -75,6 +78,7 @@ export async function resolveIdentity(options: {
   }
 
   if (isBannedGuest(guestName, "")) throw new ServerError(403, "BANNED");
+  // Fast-path for guests, no await required
   return {
     name: guestName,
     role: resolveGuestRole(guestName),

@@ -4,22 +4,51 @@ import { World } from "./game/world";
 import { preloadAvatars } from "./game/avatar";
 import { preloadClassroom } from "./game/classroom";
 import { joinClassroom, pickRoom, type RemotePlayer } from "./net";
-import { addChat, disposeLandingPreviews, renderGameShell, renderJoining, renderLanding, setChatOpen, setFreeCamButton, setMicButton, setMuteAllButton, setViewButton, setZoomHud, showCustomize, showPlayers, type ChatLine } from "./ui";
+import { addChat, disposeLandingPreviews, renderGameShell, renderJoining, renderLanding, renderOnboarding, setChatOpen, setFreeCamButton, setGameHudVisible, setMicButton, setMuteAllButton, setViewButton, setZoomHud, showCustomize, showPlayers, type ChatLine } from "./ui";
 import { bindJoystick, isTouchUi } from "./joystick";
 import { currentSession, loadSavedLook, signIn, signUp } from "./auth";
 import { VoiceMesh } from "./voice";
 import type { Room } from "colyseus.js";
 
 const app = document.getElementById("app")!;
+// Create a dedicated overlay container so we can layer UI over the live game canvas
+const overlayRoot = document.createElement("div");
+overlayRoot.style.position = "absolute";
+overlayRoot.style.inset = "0";
+overlayRoot.style.zIndex = "100";
 let joining = false;
+let globalRoom: Room | null = null;
+let globalWorld: World | null = null;
+let globalVoice: VoiceMesh | null = null;
+let globalUi: ReturnType<typeof renderGameShell> | null = null;
 
-function startLanding(err = "") {
+function showOnboarding() {
   joining = false;
+  // Skip onboarding if user has already accepted consent (persists across refreshes via localStorage)
+  if (localStorage.getItem("klase_consent_accepted") === "true") {
+    startLanding("", "play");
+    return;
+  }
+  renderOnboarding(overlayRoot, () => {
+    startLanding("", "play");
+  });
+}
+
+function startLanding(err = "", startAt?: "menu" | "play" | "account") {
+  joining = false;
+  // If there's an active game world, show the landing over it; otherwise replace the full app
+  const landingRoot = globalWorld ? overlayRoot : app;
+  overlayRoot.style.display = globalWorld ? "block" : "none";
+  if (globalWorld && !overlayRoot.parentElement) app.append(overlayRoot);
   renderLanding(
-    app,
-    (payload) => void enterWorld(payload.name, payload.look, payload.accessToken),
+    landingRoot,
+    (payload) => void finalizeJoin(payload.name, payload.look),
     (mode, email, password, name) => void accountJoin(mode, email, password, name),
     err,
+    startAt ?? "play",
+    () => {
+      showOnboarding();
+    },
   );
 }
 
@@ -38,18 +67,27 @@ async function accountJoin(mode: "in" | "up", email: string, password: string, n
     })();
     const look = normalizeLook(saved?.look ?? stored);
     look.body = stored.body;
-    await enterWorld(saved?.name || name, look, session?.access_token);
+    await finalizeJoin(saved?.name || name, look);
   } catch (e) {
     startLanding(e instanceof Error ? e.message : "Could not sign in.");
   }
 }
 
-async function enterWorld(name: string, look: Look, accessToken?: string) {
+async function finalizeJoin(name: string, look: Look) {
+  if (joining) return;
+  const session = await currentSession();
+  await bootWorld(name, look, session?.access_token, false);
+}
+
+async function bootWorld(name: string, look: Look, accessToken?: string, isPregame = false) {
   if (joining) return;
   joining = true;
   disposeLandingPreviews();
   look = normalizeLook(look);
-  const loader = renderJoining(app);
+  
+  // Use overlayRoot for joining UI if it's not pregame
+  const loader = renderJoining(isPregame ? app : overlayRoot);
+  if (!isPregame && !overlayRoot.parentElement) app.append(overlayRoot);
   const fail = (err: string) => {
     loader.dispose();
     startLanding(err);
@@ -136,6 +174,15 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
   loader.dispose();
 
   const ui = renderGameShell(app);
+  setGameHudVisible(ui, !isPregame);
+  if (isPregame) {
+    app.append(overlayRoot);
+  } else {
+    overlayRoot.style.display = "none";
+  }
+  
+  globalUi = ui;
+  globalRoom = room;
   const typing = (t: EventTarget | null) => {
     const el = t as HTMLElement | null;
     return Boolean(el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA"));
@@ -190,8 +237,17 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
   });
   voice = new VoiceMesh(room, selfId);
   voice.localMuted = muted;
+  globalVoice = voice;
+  
   const scene = world;
   const mesh = voice;
+  globalWorld = world;
+  
+  if (isPregame) {
+    world.setSpectatorMode(true);
+    mesh.muteAll = true; // Mute until joined
+  }
+  
   const setMuteAll = (on: boolean) => {
     mesh.muteAll = on;
     setMuteAllButton(ui.muteAllBtn, on);
@@ -425,19 +481,61 @@ async function enterWorld(name: string, look: Look, accessToken?: string) {
     requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);
-}
-
-if (!localStorage.getItem("klase-look")) {
-  localStorage.setItem("klase-look", JSON.stringify(randomLook()));
-} else {
-  try {
-    localStorage.setItem(
-      "klase-look",
-      JSON.stringify(normalizeLook(JSON.parse(localStorage.getItem("klase-look") ?? "null"))),
-    );
-  } catch {
-    localStorage.setItem("klase-look", JSON.stringify(randomLook()));
+  
+  if (isPregame) {
+    joining = false;
+    showOnboarding();
   }
 }
 
-startLanding();
+async function startApp() {
+  if (!localStorage.getItem("klase-look")) {
+    localStorage.setItem("klase-look", JSON.stringify(randomLook()));
+  } else {
+    try {
+      localStorage.setItem(
+        "klase-look",
+        JSON.stringify(normalizeLook(JSON.parse(localStorage.getItem("klase-look") ?? "null"))),
+      );
+    } catch {
+      localStorage.setItem("klase-look", JSON.stringify(randomLook()));
+    }
+  }
+
+  const loader = renderJoining(app);
+  loader.setStage("find");
+  
+  const saved = await loadSavedLook();
+  const stored = normalizeLook(JSON.parse(localStorage.getItem("klase-look") ?? "null"));
+  const look = normalizeLook(saved?.look ?? stored);
+  
+  loader.setStage("load");
+  await preloadClassroom();
+  
+  const ui = renderGameShell(app);
+  setGameHudVisible(ui, false);
+  app.append(overlayRoot);
+  
+  const world = new World(ui.canvas, "", saved?.name || localStorage.getItem("klase-name") || "Guest", look);
+  world.setSpectatorMode(true);
+  globalWorld = world;
+  globalUi = ui;
+  
+  let last = performance.now();
+  const spectatorLoop = (now: number) => {
+    if (globalRoom) return;
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    world.step(dt);
+    requestAnimationFrame(spectatorLoop);
+  };
+  requestAnimationFrame(spectatorLoop);
+  
+  loader.setStage("ready");
+  await new Promise((r) => window.setTimeout(r, 280));
+  loader.dispose();
+  
+  showOnboarding();
+}
+
+startApp();

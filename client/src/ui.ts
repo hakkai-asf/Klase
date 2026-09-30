@@ -3,6 +3,12 @@ import type { RemotePlayer } from "./net";
 import { authEnabled } from "./auth";
 import { paintBodyPortrait, preloadAvatars } from "./game/avatar";
 import { isTouchUi } from "./joystick";
+import gameMenuUrl from "../../assets/menu-screen/game-menu.png";
+import howKlaseWorksTextUrl from "../../assets/menu-screen/how-klase-works-text.png";
+import communityGuidelinesTextUrl from "../../assets/menu-screen/klase-community-guidelines-text.png";
+import infoAndRulesTextUrl from "../../assets/menu-screen/klase-info-and-rules-text.png";
+import loadingScreenUrl from "../../assets/menu-screen/loading-screen.png";
+import blueLoadingData from "../../assets/menu-screen/blue-loading.json";
 
 export type ChatLine = {
   from: string;
@@ -50,18 +56,85 @@ function menuBrand(lede: string) {
 export function renderJoining(root: HTMLElement) {
   disposeLandingPreviews();
   root.innerHTML = "";
-  const wrap = el("div", "landing");
-  const shell = el("div", "menu-shell");
+
+  const wrap = el("div", "onboarding-wrap");
+  wrap.style.position = "absolute";
+  wrap.style.inset = "0";
+  wrap.style.zIndex = "999";
+  wrap.style.display = "flex";
+  wrap.style.alignItems = "center";
+  wrap.style.justifyContent = "center";
+  wrap.style.background = "#f4ece2";
+
+  const box = el("div", "loading-box");
+  box.style.display = "flex";
+  box.style.flexDirection = "column";
+  box.style.alignItems = "center";
+  box.style.justifyContent = "center";
+  box.style.width = "min(960px, 94vw)";
+
+  const img = el("img") as HTMLImageElement;
+  img.src = loadingScreenUrl;
+  img.style.width = "100%";
+  img.style.maxHeight = "55vh";
+  img.style.objectFit = "contain";
+  img.style.display = "block";
+
+  const overlay = el("div", "loading-overlay-content");
+  overlay.style.display = "flex";
+  overlay.style.flexDirection = "column";
+  overlay.style.alignItems = "center";
+  overlay.style.width = "100%";
+  overlay.style.marginTop = "-6.5rem";
+
+  const lottieContainer = el("div", "lottie-loader");
+  lottieContainer.style.width = "125px";
+  lottieContainer.style.height = "125px";
+  lottieContainer.style.marginBottom = "0.1rem";
+
+  let lottieAnim: any = null;
+  const loadLottie = () => {
+    const lottie = (window as any).lottie;
+    if (lottie) {
+      try {
+        lottieAnim = lottie.loadAnimation({
+          container: lottieContainer,
+          renderer: "svg",
+          loop: true,
+          autoplay: true,
+          animationData: blueLoadingData,
+        });
+      } catch (e) {
+        console.warn("Lottie animation error", e);
+      }
+    }
+  };
+  loadLottie();
+
   const status = el("p", "lede joining-status", JOIN_STAGE.find.copy[0]!);
-  const dots = el("div", "joining-dots");
-  dots.innerHTML = "<span></span><span></span><span></span>";
+  status.style.margin = "0.1rem 0 0.5rem";
+  status.style.color = "#2a1a12";
+  status.style.fontSize = "1.3rem";
+  status.style.fontWeight = "800";
+  status.style.textAlign = "center";
+
   const track = el("div", "joining-track");
+  track.style.width = "100%";
+  track.style.maxWidth = "480px";
+  track.style.height = "1.35rem";
+  track.style.borderRadius = "999px";
+  track.style.background = "#e4d6c7";
+  track.style.boxShadow = "inset 0 2px 4px rgba(0,0,0,0.18)";
+
   const fill = el("div", "joining-fill");
+  fill.style.height = "100%";
+  fill.style.borderRadius = "999px";
+  fill.style.background = "linear-gradient(90deg, #c45c28, #e07a3d)";
   track.append(fill);
-  const nav = el("div", "menu-nav");
-  nav.append(status, dots, track);
-  shell.append(menuBrand("Connecting you to a classroom."), nav);
-  wrap.append(shell);
+
+  overlay.append(lottieContainer, status, track);
+  box.append(img, overlay);
+  wrap.append(box);
   root.append(wrap);
 
   let stage: JoinStage = "find";
@@ -102,9 +175,249 @@ export function renderJoining(root: HTMLElement) {
       alive = false;
       cancelAnimationFrame(raf);
       window.clearInterval(copyTimer);
+      lottieAnim?.destroy?.();
     },
   };
 }
+
+export function renderOnboarding(root: HTMLElement, onComplete: () => void) {
+  disposeLandingPreviews();
+
+  const wrap = el("div", "onboarding-wrap");
+  wrap.style.position = "absolute";
+  wrap.style.inset = "0";
+  wrap.style.zIndex = "999";
+  wrap.style.backdropFilter = "blur(6px)";
+  wrap.style.webkitBackdropFilter = "blur(6px)";
+  wrap.style.display = "flex";
+  wrap.style.alignItems = "center";
+  wrap.style.justifyContent = "center";
+  wrap.style.background = "rgba(255, 248, 240, 0.55)";
+
+  let step = 0;
+
+  const renderStep = () => {
+    wrap.innerHTML = "";
+
+    // Step 0: Game menu overlay
+    if (step === 0) {
+      const img = el("img") as HTMLImageElement;
+      img.src = gameMenuUrl;
+      img.style.maxWidth = "100%";
+      img.style.maxHeight = "100%";
+      img.style.objectFit = "contain";
+      img.style.cursor = "pointer";
+      img.addEventListener("click", () => { step++; renderStep(); });
+      wrap.append(img);
+      return;
+    }
+
+    // ── helpers ──────────────────────────────────────────────────────────────
+
+    const createHeader = (titleImgUrl: string, titleAlt: string, tagText: string, subtitleText = "") => {
+      const head = el("div", "neo-card-head");
+      const tag = el("div", "neo-card-tag", tagText);
+      const titleImg = el("img", "neo-card-title-img") as HTMLImageElement;
+      titleImg.src = titleImgUrl;
+      titleImg.alt = titleAlt;
+      head.append(tag, titleImg);
+      if (subtitleText) head.append(el("p", "neo-card-subtitle", subtitleText));
+      return head;
+    };
+
+    /** showBack = false on step 1 (first content step) */
+    const createFooter = (
+      showBack: boolean,
+      nextLabel: string,
+      onNext: () => void,
+      nextDisabled = false,
+    ) => {
+      const foot = el("div", "neo-card-foot");
+      if (showBack) {
+        const backBtn = el("button", "neo-btn neo-btn-back", "← Back");
+        backBtn.type = "button";
+        backBtn.addEventListener("click", () => { step--; renderStep(); });
+        foot.append(backBtn);
+      }
+      const nextBtn = el("button", "neo-btn", nextLabel) as HTMLButtonElement;
+      nextBtn.type = "button";
+      nextBtn.disabled = nextDisabled;
+      nextBtn.addEventListener("click", onNext);
+      foot.append(nextBtn);
+      return { foot, nextBtn };
+    };
+
+    // ── Step 1: How Klase Works ───────────────────────────────────────────────
+    if (step === 1) {
+      const card = el("div", "neo-card");
+      const head = createHeader(howKlaseWorksTextUrl, "How Klase Works", "Step 1 of 5");
+      const body = el("div", "neo-card-body");
+      const items = [
+        "Move around freely using WASD or arrow keys, walk right up to classmates to chat.",
+        "Voice chat is proximity-based, you'll only hear people near you.",
+        "Each classroom holds up to 12 people. If a room is full, you'll automatically join the next one.",
+        "Play as a guest, or sign in to keep the same identity across sessions.",
+        "Sit at desks, hang out, or just walk around, the room is yours to explore.",
+        "Mute anyone from the player list anytime, it only affects what you see and hear.",
+      ];
+      items.forEach((text, i) => {
+        const row = el("div", "neo-list-item");
+        row.append(el("div", "neo-badge", String(i + 1)), el("div", "", text));
+        body.append(row);
+      });
+      const { foot } = createFooter(false, "Next →", () => { step++; renderStep(); });
+      card.append(head, body, foot);
+      wrap.append(card);
+      return;
+    }
+
+    // ── Step 2: Community Guidelines ─────────────────────────────────────────
+    if (step === 2) {
+      const card = el("div", "neo-card");
+      const head = createHeader(communityGuidelinesTextUrl, "Community Guidelines", "Step 2 of 5");
+      const body = el("div", "neo-card-body");
+      const items = [
+        "Be respectful, harassment, hate speech, or bullying will get you banned.",
+        "No inappropriate content in chat, voice, or your character name, this includes slurs, sexual content, and spam.",
+        "Don't impersonate admins, teachers, or other students.",
+        "Voice chat is not recorded, but admins can mute you if reported.",
+        "This is a school-context space, keep it appropriate for everyone.",
+        "Repeated violations lead to permanent IP bans, moderators' decisions are final.",
+      ];
+      items.forEach((text) => {
+        const row = el("div", "neo-list-item");
+        row.append(el("div", "neo-badge neo-badge-warn", "!"), el("div", "", text));
+        body.append(row);
+      });
+      const { foot } = createFooter(true, "Next →", () => { step++; renderStep(); });
+      card.append(head, body, foot);
+      wrap.append(card);
+      return;
+    }
+
+    // ── Step 3: Terms & Conditions ────────────────────────────────────────────
+    if (step === 3) {
+      const card = el("div", "neo-card");
+      const head = createHeader(infoAndRulesTextUrl, "Terms & Conditions", "Step 3 of 5", "Terms & Conditions");
+      const body = el("div", "neo-card-body");
+      const terms = [
+        { title: "1. Acceptance of Terms", text: "By accessing or using Klase, you agree to comply with and be bound by these Terms & Conditions and our Community Guidelines." },
+        { title: "2. Beta & Academic Disclaimer", text: "Klase is a student academic project developed by Harry Lagto (BSIT student at National University Manila) currently in active beta testing. Service availability, features, and user data may change or reset at any time." },
+        { title: "3. Acceptable Use & Conduct", text: "Users must refrain from harassment, hate speech, spamming, impersonation, or exploiting system vulnerabilities. Violation of these rules may lead to temporary muting or permanent IP bans." },
+        { title: "4. User Accounts & Session Identity", text: "Guest sessions do not collect personal identifiers. Registered account users are responsible for keeping their login credentials secure." },
+        { title: "5. Moderation Rights", text: "Klase administrators reserve the right to moderate real-time voice and text channels, mute, kick, or permanently block any user violating guidelines." },
+      ];
+      terms.forEach((item) => {
+        const block = el("div", "neo-policy-block");
+        block.append(el("h4", "neo-policy-title", item.title), el("p", "neo-policy-text", item.text));
+        body.append(block);
+      });
+      const { foot } = createFooter(true, "Next →", () => { step++; renderStep(); });
+      card.append(head, body, foot);
+      wrap.append(card);
+      return;
+    }
+
+    // ── Step 4: Privacy Policy ────────────────────────────────────────────────
+    if (step === 4) {
+      const card = el("div", "neo-card");
+      const head = createHeader(infoAndRulesTextUrl, "Privacy Policy", "Step 4 of 5", "Privacy Policy");
+      const body = el("div", "neo-card-body");
+      const sections: Array<{ title: string; text?: string; list?: string[] }> = [
+        { title: "1. Overview", text: "This Privacy Policy explains what information Klase collects, how it is used, and your choices regarding that information. Klase is a student academic project developed by Harry Lagto, BSIT student at National University Manila, currently in beta." },
+        { title: "2. Information We Collect", list: [
+            "Guest Users: No persistent personal data is collected. Guest sessions (display name, character appearance) exist only for the duration of your session and are not saved after you disconnect.",
+            "Registered Users (if signed in): Basic account information such as email (used for authentication) and display name.",
+            "Character customization choices (e.g., appearance selections), if saved to your profile.",
+            "Role/status information (e.g., whether you are an admin, or have been muted/banned), used solely for moderation purposes.",
+          ] },
+        { title: "3. What We Do Not Collect", list: [
+            "Voice chat is not recorded or stored.",
+            "Text chat messages are not permanently logged or stored beyond what is necessary for real-time delivery and short-term moderation.",
+            "We do not collect payment information, government IDs, or other sensitive personal identifiers.",
+          ] },
+        { title: "4. How Information Is Used", list: [
+            "Maintain your identity and customization across sessions (registered users)",
+            "Enforce moderation actions (mute, kick, ban) where applicable",
+            "Improve and debug the application during beta testing",
+          ] },
+        { title: "5. Data Sharing", text: "Klase does not sell, rent, or share your information with third parties. Data may be stored using third-party infrastructure providers (e.g., Supabase for authentication/database, Render for hosting) solely to operate the application." },
+        { title: "6. Data Retention", text: "As Klase is in active beta, data handling practices may evolve. Account data may be deleted periodically during development, testing, or redeployment without prior notice." },
+        { title: "7. Your Choices", text: "You may use Klase as a guest to avoid providing any account information. If you have a registered account, you may request account/data deletion by contacting harrylagto@gmail.com." },
+        { title: "8. Children's Privacy", text: "Klase is intended for users 18 years of age or older and is not directed toward children. We do not knowingly collect information from users under 18." },
+        { title: "9. Changes to This Policy", text: "This Privacy Policy may be updated as the project develops. Continued use of Klase after changes constitutes acceptance of the revised Policy." },
+        { title: "10. Contact", text: "For privacy-related questions or data deletion requests, contact: harrylagto@gmail.com" },
+      ];
+      sections.forEach((sec) => {
+        const block = el("div", "neo-policy-block");
+        block.append(el("h4", "neo-policy-title", sec.title));
+        if (sec.text) block.append(el("p", "neo-policy-text", sec.text));
+        if (sec.list) {
+          const ul = el("ul", "neo-policy-sublist");
+          sec.list.forEach((itm) => ul.append(el("li", "", itm)));
+          block.append(ul);
+        }
+        body.append(block);
+      });
+      const { foot } = createFooter(true, "Next →", () => { step++; renderStep(); });
+      card.append(head, body, foot);
+      wrap.append(card);
+      return;
+    }
+
+    // ── Step 5: Consent & Agreement ───────────────────────────────────────────
+    if (step === 5) {
+      const card = el("div", "neo-card");
+      const head = createHeader(infoAndRulesTextUrl, "Consent & Agreement", "Step 5 of 5", "Final Consent");
+      const body = el("div", "neo-card-body");
+
+      const intro = el("div", "neo-policy-block");
+      intro.append(
+        el("h4", "neo-policy-title", "Please confirm before proceeding"),
+        el("p", "neo-policy-text", "You must be 18 years or older and agree to the Terms & Conditions and Privacy Policy to enter Klase."),
+      );
+      body.append(intro);
+
+      const consentBox = el("div", "neo-consent-box");
+
+      const lblAge = el("label", "neo-checkbox-label");
+      const chkAge = el("input", "neo-checkbox") as HTMLInputElement;
+      chkAge.type = "checkbox";
+      lblAge.append(chkAge, document.createTextNode(" I am 18 years of age or older."));
+
+      const lblAgree = el("label", "neo-checkbox-label");
+      const chkAgree = el("input", "neo-checkbox") as HTMLInputElement;
+      chkAgree.type = "checkbox";
+      lblAgree.append(chkAgree, document.createTextNode(" I have read and agree to the Terms & Conditions and Privacy Policy."));
+
+      consentBox.append(lblAge, lblAgree);
+      body.append(consentBox);
+
+      const { foot, nextBtn } = createFooter(true, "▶  Play", () => {
+        // Persist consent so future page loads skip onboarding entirely
+        try { localStorage.setItem("klase_consent_accepted", "true"); } catch { /* ignore */ }
+        wrap.remove();
+        onComplete();
+      }, true /* starts disabled */);
+
+      const update = () => { nextBtn.disabled = !(chkAge.checked && chkAgree.checked); };
+      chkAge.addEventListener("change", update);
+      chkAgree.addEventListener("change", update);
+
+      card.append(head, body, foot);
+      wrap.append(card);
+      return;
+    }
+  };
+
+  renderStep();
+  root.append(wrap);
+
+  return {
+    dispose() { wrap.remove(); },
+  };
+}
+
 
 let chooserDispose: (() => void) | null = null;
 
@@ -189,6 +502,8 @@ export function renderLanding(
   onJoin: (payload: JoinPayload) => void,
   onAccount: (mode: "in" | "up", email: string, password: string, name: string) => void,
   initialError = "",
+  startAt?: "menu" | "play" | "account",
+  onBackToMenu?: () => void,
 ) {
   disposeLandingPreviews();
   root.innerHTML = "";
@@ -196,11 +511,13 @@ export function renderLanding(
   root.append(wrap);
 
   type MenuScreen = "menu" | "play" | "account";
-  const startScreen: MenuScreen = /sign|account|email|password/i.test(initialError)
-    ? "account"
-    : initialError
-      ? "play"
-      : "menu";
+  const startScreen: MenuScreen = startAt ?? (
+    /sign|account|email|password/i.test(initialError)
+      ? "account"
+      : initialError
+        ? "play"
+        : "menu"
+  );
 
   const lockJoin = (btn: HTMLButtonElement) => {
     if (btn.disabled) return false;
@@ -227,19 +544,12 @@ export function renderLanding(
     const nav = el("div", "menu-nav");
 
     if (screen === "menu") {
-      shell.append(menuBrand("Walk a shared classroom. Chat with people near you."));
-      const play = el("button", "clay-btn primary", "Play") as HTMLButtonElement;
-      play.type = "button";
-      play.addEventListener("click", () => show("play"));
-      nav.append(play);
-      if (authEnabled()) {
-        const acct = el("button", "clay-btn", "Account") as HTMLButtonElement;
-        acct.type = "button";
-        acct.addEventListener("click", () => show("account"));
-        nav.append(acct);
+      if (onBackToMenu) {
+        wrap.remove();
+        onBackToMenu();
+        return;
       }
-      shell.append(nav);
-      wrap.append(shell);
+      show("play");
       return;
     }
 
@@ -292,7 +602,14 @@ export function renderLanding(
       });
       const back = el("button", "clay-btn", "Back") as HTMLButtonElement;
       back.type = "button";
-      back.addEventListener("click", () => show("menu"));
+      back.addEventListener("click", () => {
+        if (onBackToMenu) {
+          wrap.remove();
+          onBackToMenu();
+        } else {
+          show("play");
+        }
+      });
       nav.append(go, back);
       shell.append(nav);
       wrap.append(shell);
@@ -413,6 +730,7 @@ export function renderGameShell(root: HTMLElement) {
   shell.append(canvas, top, chat, joyWrap, layer);
   root.append(shell);
   return {
+    top,
     canvas,
     roomChip,
     micBtn,
@@ -436,6 +754,16 @@ export function renderGameShell(root: HTMLElement) {
     joyKnob,
     sitBtn,
   };
+}
+
+export function setGameHudVisible(ui: ReturnType<typeof renderGameShell> | null, visible: boolean) {
+  if (!ui) return;
+  ui.top.style.display = visible ? "" : "none";
+  ui.chat.style.display = visible ? "none" : "none"; // chat remains controlled by setChatOpen when visible
+  if (visible) {
+    ui.chat.style.display = "";
+  }
+  ui.joyWrap.style.display = visible ? "" : "none";
 }
 
 export function setChatOpen(
@@ -476,9 +804,12 @@ export function addChat(
   if (line.kind === "join-owner" || line.kind === "join" || line.kind === "leave" || line.kind === "leave-owner" || line.kind === "system") b.classList.add("system");
   if (line.kind === "join-admin" || line.kind === "leave-admin") b.classList.add("admin");
   if (line.kind === "chat") {
+    // Security: Using `textContent` (via el) instead of `innerHTML` prevents XSS injection from player names
     const who = el("strong", "", line.name);
+    // Security: Using `createTextNode` prevents XSS injection from the chat message itself
     b.append(who, document.createTextNode(line.text));
   } else {
+    // Security: Using `textContent` assignment protects against XSS in system messages
     b.textContent = line.text;
   }
   log.append(b);

@@ -531,6 +531,11 @@ const LEFT_MINI = {
   frame: 0.07,
 };
 
+const LEFT_TRANSOM = {
+  sillY: LEFT_WALL.doorH + 0.04,
+  openH: 0.48,
+};
+
 function leftWallLayout() {
   const { depth: d, wallThickness: t, cutZ } = CLASSROOM;
   const minZ = -d / 2 + t;
@@ -725,9 +730,16 @@ const RIGHT_WINDOW = {
   colW: DESK_GRID.spacingX * 2,
 };
 
-function addLeftMiniWindow(parent: THREE.Object3D, openA: number, openB: number) {
+function addLeftFramedWindow(
+  parent: THREE.Object3D,
+  openA: number,
+  openB: number,
+  sillY: number,
+  openH: number,
+  panes: number,
+) {
   const { width: w, wallThickness: t } = CLASSROOM;
-  const { sillY, openH, frame: fw } = LEFT_MINI;
+  const fw = LEFT_MINI.frame;
   const x = -w / 2 + t / 2;
   const poke = 0.035;
   const span = openB - openA;
@@ -752,10 +764,9 @@ function addLeftMiniWindow(parent: THREE.Object3D, openA: number, openB: number)
   bar(fw, openH, openA + fw / 2, midY);
   bar(fw, openH, openB - fw / 2, midY);
   const inner = span - fw * 2;
-  const pane = inner / 3;
-  bar(fw * 0.7, openH - fw, openA + fw + pane, midY);
-  bar(fw * 0.7, openH - fw, openA + fw + pane * 2, midY);
-  for (let i = 0; i < 3; i++) {
+  const pane = inner / panes;
+  for (let i = 1; i < panes; i++) bar(fw * 0.7, openH - fw, openA + fw + pane * i, midY);
+  for (let i = 0; i < panes; i++) {
     const z0 = openA + fw + pane * i;
     const z1 = openA + fw + pane * (i + 1);
     const paneMesh = new THREE.Mesh(new THREE.PlaneGeometry(z1 - z0 - fw * 0.55, openH - fw * 2), glass);
@@ -775,12 +786,16 @@ function addLeftMiniWindow(parent: THREE.Object3D, openA: number, openB: number)
 function addLeftWall(parent: THREE.Object3D, mat: THREE.MeshStandardMaterial) {
   const { width: w, wallHeight: h, wallThickness: t, cutZ, depth: d } = CLASSROOM;
   const minZ = -d / 2;
-  const playD = cutZ - minZ;
-  const midZ = (minZ + cutZ) / 2;
   const { sillY, openH, inset } = LEFT_MINI;
-  const { frontAcZ, backAcZ } = leftWallLayout();
+  const { frontAcZ, backAcZ, frontDoorZ, backDoorZ } = leftWallLayout();
   const openA = frontAcZ + LEFT_WALL.acAlong / 2 + inset;
   const openB = backAcZ - LEFT_WALL.acAlong / 2 - inset;
+  const half = LEFT_WALL.doorW / 2;
+  const holes = [
+    { z0: openA, z1: openB, y0: sillY, y1: sillY + openH },
+    { z0: frontDoorZ - half, z1: frontDoorZ + half, y0: LEFT_TRANSOM.sillY, y1: LEFT_TRANSOM.sillY + LEFT_TRANSOM.openH },
+    { z0: backDoorZ - half, z1: backDoorZ + half, y0: LEFT_TRANSOM.sillY, y1: LEFT_TRANSOM.sillY + LEFT_TRANSOM.openH },
+  ];
   const x = -w / 2 + t / 2;
   const addSlab = (hh: number, dz: number, y: number, z: number) => {
     if (hh <= 0.01 || dz <= 0.01) return;
@@ -790,12 +805,27 @@ function addLeftWall(parent: THREE.Object3D, mat: THREE.MeshStandardMaterial) {
     slab.receiveShadow = true;
     parent.add(slab);
   };
-  addSlab(sillY, playD, sillY / 2, midZ);
-  const topH = h - (sillY + openH);
-  addSlab(topH, playD, sillY + openH + topH / 2, midZ);
-  addSlab(openH, openA - minZ, sillY + openH / 2, (minZ + openA) / 2);
-  addSlab(openH, cutZ - openB, sillY + openH / 2, (openB + cutZ) / 2);
-  addLeftMiniWindow(parent, openA, openB);
+  const ys = [0, h, ...holes.flatMap((hole) => [hole.y0, hole.y1])];
+  ys.sort((a, b) => a - b);
+  const uniq: number[] = [];
+  for (const y of ys) if (!uniq.length || Math.abs(uniq[uniq.length - 1]! - y) > 0.005) uniq.push(y);
+  for (let i = 0; i < uniq.length - 1; i++) {
+    const ya = uniq[i]!;
+    const yb = uniq[i + 1]!;
+    const blocked = holes
+      .filter((hole) => hole.y0 < yb - 0.002 && hole.y1 > ya + 0.002)
+      .map((hole) => ({ z0: hole.z0, z1: hole.z1 }))
+      .sort((a, b) => a.z0 - b.z0);
+    let cursor = minZ;
+    for (const b of blocked) {
+      addSlab(yb - ya, b.z0 - cursor, (ya + yb) / 2, (cursor + b.z0) / 2);
+      cursor = Math.max(cursor, b.z1);
+    }
+    addSlab(yb - ya, cutZ - cursor, (ya + yb) / 2, (cursor + cutZ) / 2);
+  }
+  addLeftFramedWindow(parent, openA, openB, sillY, openH, 3);
+  addLeftFramedWindow(parent, frontDoorZ - half, frontDoorZ + half, LEFT_TRANSOM.sillY, LEFT_TRANSOM.openH, 1);
+  addLeftFramedWindow(parent, backDoorZ - half, backDoorZ + half, LEFT_TRANSOM.sillY, LEFT_TRANSOM.openH, 1);
 }
 
 function addCutWall(fpWalls: THREE.Group, mat: THREE.MeshStandardMaterial) {

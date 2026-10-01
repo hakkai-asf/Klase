@@ -148,6 +148,8 @@ export class World {
     this.bindLook(canvas);
 
     window.addEventListener("keydown", (e) => {
+      // All gameplay input is blocked until the user officially joins via Play button
+      if (this.spectator) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
       const key = e.key.toLowerCase();
@@ -172,7 +174,10 @@ export class World {
         void this.renderer.domElement.requestPointerLock();
       }
     });
-    window.addEventListener("keyup", (e) => this.keys.delete(e.key.toLowerCase()));
+    window.addEventListener("keyup", (e) => {
+      // Always remove from keys set (cleanup), but spectator check is redundant since spectator never adds
+      this.keys.delete(e.key.toLowerCase());
+    });
     window.addEventListener("resize", () => this.resize());
     this.resize();
   }
@@ -294,6 +299,16 @@ export class World {
 
   setSpectatorMode(on: boolean) {
     this.spectator = on;
+    if (on) {
+      // Clear all active input state so no stale keys/drag carry over
+      this.keys.clear();
+      this.justPressed.clear();
+      this.dragging = false;
+      // Release pointer lock if held
+      if (document.pointerLockElement === this.renderer.domElement) {
+        document.exitPointerLock();
+      }
+    }
     if (this.hintWrap) this.hintWrap.style.display = on ? "none" : "";
     if (this.sitPrompt) this.sitPrompt.style.display = on ? "none" : "";
     for (const a of this.avatars.values()) {
@@ -378,15 +393,18 @@ export class World {
 
   private bindLook(canvas: HTMLCanvasElement) {
     canvas.addEventListener("click", () => {
+      if (this.spectator) return;
       if ((!this.firstPerson && !this.freeCam) || this.touchUi) return;
       if (document.pointerLockElement !== canvas) void canvas.requestPointerLock();
     });
     document.addEventListener("mousemove", (e) => {
+      if (this.spectator) return;
       if (!this.firstPerson && !this.freeCam) return;
       if (document.pointerLockElement !== canvas) return;
       this.applyLookDelta(e.movementX, e.movementY);
     });
     canvas.addEventListener("pointerdown", (e) => {
+      if (this.spectator) return;
       if ((!this.firstPerson && !this.freeCam) || !this.touchUi) return;
       if (e.pointerType === "mouse") return;
       this.dragging = true;
@@ -395,6 +413,7 @@ export class World {
       canvas.setPointerCapture(e.pointerId);
     });
     canvas.addEventListener("pointermove", (e) => {
+      if (this.spectator) return;
       if ((!this.firstPerson && !this.freeCam) || !this.dragging) return;
       this.applyLookDelta(e.clientX - this.lastPtrX, e.clientY - this.lastPtrY);
       this.lastPtrX = e.clientX;

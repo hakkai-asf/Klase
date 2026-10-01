@@ -19,6 +19,10 @@ export class ClassroomRoom extends Room<ClassroomState> {
   maxClients = 48;
   private chatLog: ChatLine[] = [];
   private lastActive = new Map<string, number>();
+  /** Only sessionIds that have completed the full onJoin flow are in this set.
+   *  Every message handler checks this first — no action is taken for connections
+   *  that haven't been fully initialized as real players. */
+  private joined = new Set<string>();
 
   private touch(sessionId: string) {
     this.lastActive.set(sessionId, Date.now());
@@ -37,6 +41,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
     this.syncMeta();
 
     this.onMessage("move", (client, data: { x: number; z: number; rotY: number }) => {
+      if (!this.joined.has(client.sessionId)) return; // reject pre-join connections
       const p = this.state.players.get(client.sessionId);
       if (!p || p.seatId) return;
       if (typeof data.x !== "number" || typeof data.z !== "number") return;
@@ -54,6 +59,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
 
     const seats = classroomSeats();
     this.onMessage("sit", (client, data: { seatId?: string }) => {
+      if (!this.joined.has(client.sessionId)) return; // reject pre-join connections
       const p = this.state.players.get(client.sessionId);
       if (!p) return;
       // Locate the requested seat by ID
@@ -73,6 +79,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
     });
 
     this.onMessage("stand", (client) => {
+      if (!this.joined.has(client.sessionId)) return; // reject pre-join connections
       const p = this.state.players.get(client.sessionId);
       if (!p) return;
       p.seatId = "";
@@ -80,16 +87,19 @@ export class ClassroomRoom extends Room<ClassroomState> {
     });
 
     this.onMessage("poke", (client) => {
+      if (!this.joined.has(client.sessionId)) return; // reject pre-join connections
       if (this.state.players.has(client.sessionId)) this.touch(client.sessionId);
     });
 
     this.onMessage("need-history", (client) => {
+      if (!this.joined.has(client.sessionId)) return; // reject pre-join connections
       if (!this.state.players.has(client.sessionId)) return;
       // Send a non-destructive copy of the chat history
       client.send("chat-history", this.chatLog.slice());
     });
 
     this.onMessage("chat", (client, data: { text?: string }) => {
+      if (!this.joined.has(client.sessionId)) return; // reject pre-join connections
       const p = this.state.players.get(client.sessionId);
       if (!p || p.serverMuted) return;
       const raw = String(data?.text ?? "").slice(0, 240).trim();
@@ -113,6 +123,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
     });
 
     this.onMessage("customize", (client, data: { name?: string; hat?: string; top?: string; accessory?: string; body?: string }) => {
+      if (!this.joined.has(client.sessionId)) return; // reject pre-join connections
       const p = this.state.players.get(client.sessionId);
       if (!p) return;
       if (typeof data?.name === "string") {
@@ -134,6 +145,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
     });
 
     this.onMessage("voice", (client, data: { to?: string; type?: string; payload?: unknown }) => {
+      if (!this.joined.has(client.sessionId)) return; // reject pre-join connections
       const from = this.state.players.get(client.sessionId);
       if (!from) return;
       const toId = String(data?.to ?? "");
@@ -148,6 +160,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
     });
 
     this.onMessage("voice-level", (client, data: { level?: number }) => {
+      if (!this.joined.has(client.sessionId)) return; // reject pre-join connections
       if (!this.state.players.has(client.sessionId)) return;
       const level = Math.max(0, Math.min(1, Number(data?.level) || 0));
       this.broadcast("voice-level", { from: client.sessionId, level }, { except: client });
@@ -156,6 +169,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
     this.onMessage(
       "moderate",
       (client, data: { action?: string; targetId?: string }) => {
+        if (!this.joined.has(client.sessionId)) return; // reject pre-join connections
         const actor = this.state.players.get(client.sessionId);
         if (!actor) return;
         const target = this.state.players.get(String(data?.targetId ?? ""));
@@ -191,6 +205,8 @@ export class ClassroomRoom extends Room<ClassroomState> {
     this.clock.setInterval(() => {
       const now = Date.now();
       for (const client of [...this.clients]) {
+        // Only apply idle timeout to fully-joined players
+        if (!this.joined.has(client.sessionId)) continue;
         const t = this.lastActive.get(client.sessionId) ?? now;
         if (now - t < IDLE_MS) continue;
         client.send("dropped", { reason: "idle" });
@@ -231,6 +247,8 @@ export class ClassroomRoom extends Room<ClassroomState> {
     p.seatId = "";
     this.state.players.set(client.sessionId, p);
     this.touch(client.sessionId);
+    // Mark this client as a fully-joined real player — now messages will be processed
+    this.joined.add(client.sessionId);
     this.syncMeta();
 
     const joinLine: ChatLine =
@@ -261,6 +279,8 @@ export class ClassroomRoom extends Room<ClassroomState> {
   onLeave(client: Client) {
     const p = this.state.players.get(client.sessionId);
     this.lastActive.delete(client.sessionId);
+    // Remove from joined set — this session is no longer a real player
+    this.joined.delete(client.sessionId);
     this.state.players.delete(client.sessionId);
     this.syncMeta();
     if (!p) return;

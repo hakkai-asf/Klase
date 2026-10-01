@@ -292,6 +292,7 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
         p.z,
         p.rotY,
         p.seatId ?? "",
+        p.role ?? "",
       );
       if (p.serverMuted) mutedIds.push(p.sessionId);
     }
@@ -418,23 +419,6 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
   });
   ui.zoomSlider.addEventListener("input", applyIsoZoom);
   ui.zoomSlider.addEventListener("change", applyIsoZoom);
-
-  ui.lookBtn.addEventListener("click", () => {
-    panelOpen = "look";
-    showCustomize(
-      ui.layer,
-      currentLook,
-      (next) => {
-        currentLook = next;
-        localStorage.setItem("klase-look", JSON.stringify(next));
-        scene.applyLocalLook(next);
-        room.send("customize", next);
-      },
-      () => {
-        panelOpen = null;
-      },
-    );
-  });
 
   ui.playersBtn.addEventListener("click", () => {
     const me = snapshot().find((p) => p.sessionId === selfId);

@@ -537,16 +537,16 @@ function attachSockets(model: THREE.Object3D) {
   return sockets;
 }
 
-function nametagSprite(name: string, height: number) {
+function nametagSprite(name: string, height: number, role = "") {
   const canvas = document.createElement("canvas");
   canvas.width = 256;
-  canvas.height = 64;
+  canvas.height = 80;
   const tex = new THREE.CanvasTexture(canvas);
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
   sprite.position.y = height + 0.18;
-  sprite.scale.set(1.4, 0.35, 1);
+  sprite.scale.set(1.5, 0.47, 1);
   sprite.name = "nametag";
-  drawName(canvas, tex, name);
+  drawName(canvas, tex, name, role);
   return { canvas, tex, sprite };
 }
 
@@ -568,14 +568,14 @@ function speechSprite(height: number) {
 
 function micSprite(height: number) {
   const canvas = document.createElement("canvas");
-  canvas.width = 64;
-  canvas.height = 96;
+  canvas.width = 128;
+  canvas.height = 72;
   const tex = new THREE.CanvasTexture(canvas);
   const sprite = new THREE.Sprite(
     new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }),
   );
-  sprite.position.y = height + 0.5;
-  sprite.scale.set(0.32, 0.48, 1);
+  sprite.position.y = height + 0.52;
+  sprite.scale.set(0.64, 0.36, 1);
   sprite.visible = false;
   sprite.renderOrder = 11;
   sprite.name = "mic";
@@ -583,13 +583,86 @@ function micSprite(height: number) {
   return { canvas, tex, sprite };
 }
 
-function capsulePath(ctx: CanvasRenderingContext2D, cx: number, top: number, bot: number, r: number) {
+export function drawName(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, name: string, role = "") {
+  const ctx = canvas.getContext("2d")!;
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const r = role.toLowerCase();
+  const hasBadge = r === "owner" || r === "admin";
+  const boxW = 236;
+  const boxH = 46;
+  const boxX = (w - boxW) / 2;
+  const boxY = hasBadge ? 24 : 16;
+
+  // 1. Hard offset drop shadow for transparent-neobrutalist box
+  ctx.fillStyle = "rgba(26, 26, 26, 0.45)";
   ctx.beginPath();
-  ctx.moveTo(cx - r, top + r);
-  ctx.arc(cx, top + r, r, Math.PI, 0);
-  ctx.lineTo(cx + r, bot - r);
-  ctx.arc(cx, bot - r, r, 0, Math.PI);
-  ctx.closePath();
+  ctx.roundRect(boxX + 4, boxY + 4, boxW, boxH, 12);
+  ctx.fill();
+
+  // 2. Translucent cream base — reads as part of 3D scene
+  ctx.fillStyle = "rgba(254, 249, 244, 0.45)";
+  ctx.beginPath();
+  ctx.roundRect(boxX, boxY, boxW, boxH, 12);
+  ctx.fill();
+
+  // 3. Bold black border
+  ctx.strokeStyle = "#1a1a1a";
+  ctx.lineWidth = 3.5;
+  ctx.stroke();
+
+  // 4. Username Text
+  ctx.fillStyle = "#1a1a1a";
+  ctx.font = "900 24px Nunito, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(name.slice(0, 18), w / 2, boxY + boxH / 2 + 1);
+
+  // 5. Role Badge (Owner = Rainbow, Admin = Red)
+  if (hasBadge) {
+    const badgeW = 76;
+    const badgeH = 22;
+    const badgeX = (w - badgeW) / 2;
+    const badgeY = 6;
+
+    // Badge shadow
+    ctx.fillStyle = "#1a1a1a";
+    ctx.beginPath();
+    ctx.roundRect(badgeX + 2, badgeY + 2, badgeW, badgeH, 7);
+    ctx.fill();
+
+    // Badge Background
+    if (r === "owner") {
+      const grad = ctx.createLinearGradient(badgeX, badgeY, badgeX + badgeW, badgeY);
+      grad.addColorStop(0, "#ff4545");
+      grad.addColorStop(0.25, "#ffa500");
+      grad.addColorStop(0.5, "#38ef7d");
+      grad.addColorStop(0.75, "#00b4db");
+      grad.addColorStop(1, "#9b51e0");
+      ctx.fillStyle = grad;
+    } else {
+      ctx.fillStyle = "#ff3333";
+    }
+
+    ctx.beginPath();
+    ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 7);
+    ctx.fill();
+
+    ctx.strokeStyle = "#1a1a1a";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Badge Text
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 12px Nunito, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(r.toUpperCase(), w / 2, badgeY + badgeH / 2 + 1);
+  }
+
+  tex.needsUpdate = true;
 }
 
 export function drawMic(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, fill: number) {
@@ -597,34 +670,67 @@ export function drawMic(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, fil
   const w = canvas.width;
   const h = canvas.height;
   ctx.clearRect(0, 0, w, h);
-  const cx = w / 2;
-  const bodyTop = 10;
-  const bodyBot = 56;
-  const bodyR = 13;
+
   const f = Math.max(0, Math.min(1, fill));
-  ctx.save();
-  capsulePath(ctx, cx, bodyTop, bodyBot, bodyR - 2.5);
-  ctx.clip();
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.fillRect(0, 0, w, h);
-  ctx.fillStyle = "#3dba6a";
-  ctx.fillRect(0, bodyBot - (bodyBot - bodyTop) * f, w, (bodyBot - bodyTop) * f);
-  ctx.restore();
-  ctx.strokeStyle = "#4a4e5c";
-  ctx.lineWidth = 2.8;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  capsulePath(ctx, cx, bodyTop, bodyBot, bodyR);
-  ctx.stroke();
+
+  const boxW = 86;
+  const boxH = 44;
+  const boxX = (w - boxW) / 2;
+  const boxY = (h - boxH) / 2;
+
+  // 1. Hard offset drop shadow
+  ctx.fillStyle = "#1a1a1a";
   ctx.beginPath();
-  ctx.arc(cx, bodyBot, bodyR + 7, 0.12 * Math.PI, 0.88 * Math.PI);
-  ctx.stroke();
+  ctx.roundRect(boxX + 3.5, boxY + 3.5, boxW, boxH, 12);
+  ctx.fill();
+
+  // 2. Off-white/cream base box
+  ctx.fillStyle = "#fef9f4";
   ctx.beginPath();
-  ctx.moveTo(cx, bodyBot + 7);
-  ctx.lineTo(cx, h - 12);
-  ctx.moveTo(cx - 9, h - 12);
-  ctx.lineTo(cx + 9, h - 12);
+  ctx.roundRect(boxX, boxY, boxW, boxH, 12);
+  ctx.fill();
+
+  // 3. Bold black border
+  ctx.strokeStyle = "#1a1a1a";
+  ctx.lineWidth = 3;
   ctx.stroke();
+
+  // 4. Dynamic Green Audio Wave Bars (5 vertical bars)
+  const barCount = 5;
+  const barW = 7;
+  const gap = 5;
+  const totalW = barCount * barW + (barCount - 1) * gap;
+  const startX = boxX + (boxW - totalW) / 2;
+  const centerY = boxY + boxH / 2;
+
+  const heights = [0.4, 0.75, 1.0, 0.75, 0.4];
+
+  for (let i = 0; i < barCount; i++) {
+    const mult = heights[i]!;
+    const minH = 6;
+    const maxH = 26;
+    const barH = minH + (maxH - minH) * f * mult;
+    const bx = startX + i * (barW + gap);
+    const by = centerY - barH / 2;
+
+    // Bar shadow
+    ctx.fillStyle = "#1a1a1a";
+    ctx.beginPath();
+    ctx.roundRect(bx + 1.5, by + 1.5, barW, barH, 3.5);
+    ctx.fill();
+
+    // Vibrant green bar fill
+    ctx.fillStyle = "#2ecc71";
+    ctx.beginPath();
+    ctx.roundRect(bx, by, barW, barH, 3.5);
+    ctx.fill();
+
+    // Bar black border
+    ctx.strokeStyle = "#1a1a1a";
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+  }
+
   tex.needsUpdate = true;
 }
 
@@ -667,7 +773,7 @@ export function setLocalFpPresentation(
   });
 }
 
-function primitiveAvatar(look: Look, nametag: string) {
+function primitiveAvatar(look: Look, nametag: string, role = "") {
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
@@ -694,7 +800,7 @@ function primitiveAvatar(look: Look, nametag: string) {
   sockets.top.position.set(0, 0.92, 0);
   sockets.accessory.position.set(0, 0.95, -0.22);
   body.add(sockets.hat, sockets.top, sockets.accessory);
-  const tag = nametagSprite(nametag, 1.85);
+  const tag = nametagSprite(nametag, 1.85, role);
   const speech = speechSprite(1.85);
   const mic = micSprite(1.85);
   root.add(tag.sprite, speech.sprite, mic.sprite);
@@ -716,6 +822,7 @@ function primitiveAvatar(look: Look, nametag: string) {
     micSprite: mic.sprite,
     micFill: -1,
     voiceUntil: 0,
+    role,
     look: { ...look },
     limbs: { lArm, rArm, lLeg, rLeg },
     walkT: 0,
@@ -733,9 +840,9 @@ function primitiveAvatar(look: Look, nametag: string) {
   };
 }
 
-export function createAvatar(look: Look, nametag: string) {
+export function createAvatar(look: Look, nametag: string, role = "") {
   const rig = pickRig(look.body);
-  if (!rig) return primitiveAvatar(look, nametag);
+  if (!rig) return primitiveAvatar(look, nametag, role);
 
   const root = new THREE.Group();
   const model = cloneModel(rig.template);
@@ -750,7 +857,7 @@ export function createAvatar(look: Look, nametag: string) {
 
   const sockets = attachSockets(model);
   const headH = measureBox(model).max.y;
-  const tag = nametagSprite(nametag, headH);
+  const tag = nametagSprite(nametag, headH, role);
   const speech = speechSprite(headH);
   const mic = micSprite(headH);
   root.add(tag.sprite, speech.sprite, mic.sprite);
@@ -803,6 +910,7 @@ export function createAvatar(look: Look, nametag: string) {
     micSprite: mic.sprite,
     micFill: -1,
     voiceUntil: 0,
+    role,
     look: { ...look },
     limbs: {
       lArm: new THREE.Group(),
@@ -987,20 +1095,6 @@ export function poseWalk(
     avatar.limbs.rArm.rotation.x *= 0.8;
     (avatar.body as THREE.Group).position.y *= 0.8;
   }
-}
-
-export function drawName(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, name: string) {
-  const ctx = canvas.getContext("2d")!;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "rgba(40, 42, 55, 0.55)";
-  ctx.beginPath();
-  ctx.roundRect(8, 12, 240, 40, 12);
-  ctx.fill();
-  ctx.fillStyle = "#fff";
-  ctx.font = "700 28px Nunito, sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText(name.slice(0, 18), 128, 40);
-  tex.needsUpdate = true;
 }
 
 export function drawSpeech(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, text: string) {

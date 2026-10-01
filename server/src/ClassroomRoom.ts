@@ -15,8 +15,16 @@ function dist(a: Player, b: Player) {
 
 type ChatLine = { from: string; name: string; text: string; kind: string };
 
+function formatRoomLabel(key: string) {
+  if (key === "klase-1") return "Classroom 1";
+  if (key === "klase-2") return "Classroom 2";
+  if (key === "klase-3") return "Classroom 3";
+  return key;
+}
+
 export class ClassroomRoom extends Room<ClassroomState> {
   maxClients = 48;
+  private static activeRooms = new Set<ClassroomRoom>();
   private chatLog: ChatLine[] = [];
   private lastActive = new Map<string, number>();
   /** Only sessionIds that have completed the full onJoin flow are in this set.
@@ -36,6 +44,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
   }
 
   onCreate(options: { roomKey?: string }) {
+    ClassroomRoom.activeRooms.add(this);
     this.setState(new ClassroomState());
     this.state.roomKey = String(options.roomKey ?? "klase-1");
     this.syncMeta();
@@ -251,15 +260,23 @@ export class ClassroomRoom extends Room<ClassroomState> {
     this.joined.add(client.sessionId);
     this.syncMeta();
 
-    const joinLine: ChatLine =
-      ident.role === "owner"
-        ? {
-            from: "system",
-            name: "Klase",
-            text: `Owner ${supabaseEnabled() ? ident.name : ownerName()} has joined`,
-            kind: "join-owner",
-          }
-        : ident.role === "admin"
+    if (ident.role === "owner") {
+      const roomLabel = formatRoomLabel(this.state.roomKey);
+      const ownerNameStr = supabaseEnabled() ? ident.name : ownerName();
+      const ownerJoinLine: ChatLine = {
+        from: "system",
+        name: "Klase",
+        text: `Owner ${ownerNameStr} has joined ${roomLabel}`,
+        kind: "join-owner",
+      };
+      // Broadcast owner join to ALL active rooms across the server
+      for (const roomInstance of ClassroomRoom.activeRooms) {
+        roomInstance.pushChat(ownerJoinLine);
+        roomInstance.broadcast("chat", ownerJoinLine);
+      }
+    } else {
+      const joinLine: ChatLine =
+        ident.role === "admin"
           ? {
               from: "system",
               name: "Klase",
@@ -272,8 +289,9 @@ export class ClassroomRoom extends Room<ClassroomState> {
               text: `${ident.name} has joined`,
               kind: "join",
             };
-    this.pushChat(joinLine);
-    this.broadcast("chat", joinLine, { except: client });
+      this.pushChat(joinLine);
+      this.broadcast("chat", joinLine, { except: client });
+    }
   }
 
   onLeave(client: Client) {
@@ -307,6 +325,10 @@ export class ClassroomRoom extends Room<ClassroomState> {
             };
     this.pushChat(leaveLine);
     this.broadcast("chat", leaveLine);
+  }
+
+  onDispose() {
+    ClassroomRoom.activeRooms.delete(this);
   }
 
   private syncMeta() {

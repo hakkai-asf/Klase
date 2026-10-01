@@ -892,7 +892,6 @@ export function renderGameShell(root: HTMLElement) {
   freeCamBtn.hidden = true;
   setFreeCamButton(freeCamBtn, false, false);
   const playersBtn = el("button", "clay-btn", "Players");
-  const lookBtn = el("button", "clay-btn", "Look");
   const chatBtn = el("button", "clay-btn", "Chat");
   const zoomWrap = el("div", "zoom-hud");
   const zoomBtn = el("button", "clay-btn", "Zoom");
@@ -918,7 +917,7 @@ export function renderGameShell(root: HTMLElement) {
   zoomTrack.append(zoomTick, zoomSlider);
   zoomPanel.append(zoomTrack);
   zoomWrap.append(zoomBtn, zoomPanel);
-  actions.append(micBtn, muteAllBtn, chatBtn, playersBtn, lookBtn, viewBtn, freeCamBtn, zoomWrap);
+  actions.append(micBtn, muteAllBtn, chatBtn, playersBtn, viewBtn, freeCamBtn, zoomWrap);
   top.append(roomChip, actions);
 
   const chat = el("div", "chat-dock game-chat empty collapsed");
@@ -952,7 +951,6 @@ export function renderGameShell(root: HTMLElement) {
     chatBtn,
     chat,
     playersBtn,
-    lookBtn,
     viewBtn,
     freeCamBtn,
     zoomWrap,

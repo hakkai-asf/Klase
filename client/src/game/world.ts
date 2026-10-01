@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { CLASSROOM, MOVE_SPEED, SEAT_REACH, SPAWN, type Look, type Seat } from "@klase/shared";
-import { applyLook, createAvatar, drawMic, drawSpeech, layoutHeadSprites, poseWalk, setLocalFpPresentation } from "./avatar";
+import { applyLook, createAvatar, drawMic, drawName, drawSpeech, layoutHeadSprites, poseWalk, setLocalFpPresentation } from "./avatar";
 import { buildClassroom, findClearStand, resolveMove, type AABB } from "./classroom";
 
 type AvatarHandle = ReturnType<typeof createAvatar> & {
@@ -292,9 +292,9 @@ export class World {
     }
   }
 
-  setLocalId(localId: string, name: string, look: Look) {
+  setLocalId(localId: string, name: string, look: Look, role = "") {
     (this as any).localId = localId;
-    this.upsert(localId, name, look, this.localX, this.localZ, this.localRot, "");
+    this.upsert(localId, name, look, this.localX, this.localZ, this.localRot, "", role);
   }
 
   setSpectatorMode(on: boolean) {
@@ -331,7 +331,7 @@ export class World {
     this.fpCam.updateMatrixWorld();
   }
 
-  upsert(id: string, name: string, look: Look, x: number, z: number, rotY: number, seatId = "") {
+  upsert(id: string, name: string, look: Look, x: number, z: number, rotY: number, seatId = "", role = "") {
     let a = this.avatars.get(id);
     if (a && a.look.body !== look.body) {
       this.scene.remove(a.root);
@@ -340,10 +340,11 @@ export class World {
     }
     if (!a) {
       a = {
-        ...createAvatar(look, name),
+        ...createAvatar(look, name, role),
         target: new THREE.Vector3(x, 0, z),
         targetRot: rotY,
         seatId,
+        role,
       };
       this.scene.add(a.root);
       this.avatars.set(id, a);
@@ -352,13 +353,19 @@ export class World {
       } else if (id === this.localId) {
         setLocalFpPresentation(a, this.firstPerson, Boolean(this.localSeatId));
       }
-    } else if (
-      a.look.hat !== look.hat ||
-      a.look.top !== look.top ||
-      a.look.accessory !== look.accessory
-    ) {
-      applyLook(a.sockets, look);
-      a.look = { ...look };
+    } else {
+      if (
+        a.look.hat !== look.hat ||
+        a.look.top !== look.top ||
+        a.look.accessory !== look.accessory
+      ) {
+        applyLook(a.sockets, look);
+        a.look = { ...look };
+      }
+      if (a.role !== role) {
+        a.role = role;
+        drawName(a.canvas, a.tex, name, role);
+      }
     }
     a.seatId = seatId;
     if (id !== this.localId) {

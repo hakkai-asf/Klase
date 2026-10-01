@@ -690,8 +690,19 @@ button, input, select { font-family: inherit; }
   box-shadow: 1px 1px 0 #1a1a1a;
 }
 
-.badge.owner { background: #e07a3d; color: #ffffff; }
-.badge.admin { background: #fff0e0; color: #c45c28; }
+.badge.owner {
+  background: linear-gradient(90deg, #ff4545, #ffa500, #38ef7d, #00b4db, #9b51e0);
+  color: #ffffff;
+  border: 1.5px solid #1a1a1a;
+  box-shadow: 1.5px 1.5px 0 #1a1a1a;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.badge.admin {
+  background: #ff3333;
+  color: #ffffff;
+  border: 1.5px solid #1a1a1a;
+  box-shadow: 1.5px 1.5px 0 #1a1a1a;
+}
 
 .sit-prompt {
   position: absolute;

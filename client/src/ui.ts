@@ -1,7 +1,7 @@
 import { BODY_LABELS, BODIES, CHAT_LOG_MAX, WEARABLE_LABELS, WEARABLES, normalizeLook, type BodyId, type Look, type WearableSlot } from "@klase/shared";
 import type { RemotePlayer } from "./net";
 import { authEnabled } from "./auth";
-import { paintBodyPortrait, preloadAvatars } from "./game/avatar";
+import { createLiveAvatarPreview, paintBodyPortrait, preloadAvatars } from "./game/avatar";
 import { isTouchUi } from "./joystick";
 import gameMenuUrl from "../../assets/menu-screen/game-menu.png";
 import howKlaseWorksTextUrl from "../../assets/menu-screen/how-klase-works-text.png";
@@ -564,55 +564,254 @@ export function renderLanding(
     }
 
     if (screen === "play") {
-      shell.append(menuBrand("Pick a body and a name, then jump in."));
-      const look = storedLook();
-      let body: BodyId = look.body;
-      const portraits = new Map<BodyId, HTMLImageElement>();
-      const pick = el("div", "char-pick");
-      for (const id of BODIES) {
-        const btn = el("button", `char-card char-${id}${body === id ? " on" : ""}`) as HTMLButtonElement;
-        btn.type = "button";
-        const frame = el("div", "char-frame");
-        const img = el("img") as HTMLImageElement;
-        img.alt = BODY_LABELS[id];
-        frame.append(img);
-        btn.append(frame, el("span", "", BODY_LABELS[id]));
-        btn.addEventListener("click", () => {
-          body = id;
-          look.body = id;
-          localStorage.setItem("klase-look", JSON.stringify(look));
-          pick.querySelectorAll(".char-card").forEach((n) => n.classList.remove("on"));
-          btn.classList.add("on");
-        });
-        pick.append(btn);
-        portraits.set(id, img);
-      }
-      nav.append(el("label", "", "Character"), pick);
-      nav.append(el("label", "", "Display name"));
-      const name = el("input", "clay-input") as HTMLInputElement;
-      name.id = "name";
-      name.maxLength = 24;
-      name.placeholder = "Guest";
-      name.value = localStorage.getItem("klase-name") ?? "";
-      nav.append(name);
-      if (initialError) nav.append(el("div", "error-banner", initialError));
-      const go = el("button", "clay-btn primary", "Join as guest") as HTMLButtonElement;
-      go.type = "button";
-      go.addEventListener("click", () => {
-        if (!lockJoin(go)) return;
-        nav.querySelectorAll("button").forEach((b) => {
-          (b as HTMLButtonElement).disabled = true;
-        });
-        go.textContent = "Joining…";
-        const n = name.value.trim() || "Guest";
-        localStorage.setItem("klase-name", n);
-        const next = { ...storedLook(), body };
-        localStorage.setItem("klase-look", JSON.stringify(next));
-        onJoin({ name: n, look: next });
+      const pickerFrame = el("div", "neo-picker-frame");
+
+      // ── Header Bar ────────────────────────────────────────────────────────
+      const pickerHead = el("div", "neo-picker-head");
+      const headTitleWrap = el("div", "neo-picker-head-title");
+      headTitleWrap.append(
+        el("div", "neo-card-tag", "CHARACTER SELECTION"),
+        el("h2", "neo-picker-title-text", "Choose Your Avatar"),
+      );
+      const headAccountBtn = el("button", "neo-btn neo-btn-ghost-sm neo-btn-disabled-soon") as HTMLButtonElement;
+      headAccountBtn.type = "button";
+      headAccountBtn.disabled = true;
+      headAccountBtn.append(
+        document.createTextNode("🔐 Account "),
+        el("span", "neo-badge-soon", "Coming Soon"),
+      );
+      pickerHead.append(headTitleWrap, headAccountBtn);
+
+      // ── Main 3-Column Body ─────────────────────────────────────────────────
+      const pickerBody = el("div", "neo-picker-body");
+
+      // 1. LEFT COLUMN: Scrollable Grid of Character Cards
+      const leftCol = el("div", "neo-picker-left");
+
+      // Category filter tabs
+      const tabsBar = el("div", "neo-picker-tabs");
+      type CategoryTab = "body" | "hat" | "top" | "accessory";
+      let activeTab: CategoryTab = "body";
+
+      const tabItems: Array<{ id: CategoryTab; label: string; disabled?: boolean }> = [
+        { id: "body", label: "Characters" },
+        { id: "hat", label: "Hats", disabled: true },
+        { id: "top", label: "Tops", disabled: true },
+        { id: "accessory", label: "Accs", disabled: true },
+      ];
+
+      const tabBtnsMap = new Map<CategoryTab, HTMLButtonElement>();
+      tabItems.forEach((tab) => {
+        const classes = `neo-tab-btn${activeTab === tab.id ? " active" : ""}${tab.disabled ? " disabled" : ""}`;
+        const tBtn = el("button", classes) as HTMLButtonElement;
+        tBtn.type = "button";
+        tBtn.append(document.createTextNode(tab.label));
+        if (tab.disabled) {
+          tBtn.disabled = true;
+          tBtn.append(el("span", "neo-tab-soon", "Soon"));
+        } else {
+          tBtn.addEventListener("click", () => {
+            activeTab = tab.id;
+            tabBtnsMap.forEach((b, k) => b.classList.toggle("active", k === activeTab));
+            renderCardGrid();
+          });
+        }
+        tabBtnsMap.set(tab.id, tBtn);
+        tabsBar.append(tBtn);
       });
-      const back = el("button", "clay-btn", "Back") as HTMLButtonElement;
-      back.type = "button";
-      back.addEventListener("click", () => {
+      leftCol.append(tabsBar);
+
+      const cardsGridContainer = el("div", "neo-picker-grid-container");
+      leftCol.append(cardsGridContainer);
+
+      let currentLook: Look = storedLook();
+      const portraits = new Map<BodyId, HTMLImageElement>();
+
+      let updateRightPanelSummary: () => void = () => {};
+      let livePreviewHandle: ReturnType<typeof createLiveAvatarPreview> | null = null;
+
+      const renderCardGrid = () => {
+        cardsGridContainer.innerHTML = "";
+        const grid = el("div", "neo-picker-grid");
+
+        const addSectionHeading = (title: string) => {
+          const h = el("div", "neo-grid-heading", title);
+          grid.append(h);
+        };
+
+        // ── Character Cards (Selectable)
+        if (activeTab === "body") {
+          addSectionHeading("Characters");
+          for (const id of BODIES) {
+            const card = el("button", `neo-char-card${currentLook.body === id ? " active" : ""}`) as HTMLButtonElement;
+            card.type = "button";
+            const thumb = el("div", "neo-char-card-thumb");
+            const img = el("img") as HTMLImageElement;
+            img.alt = BODY_LABELS[id];
+            thumb.append(img);
+            portraits.set(id, img);
+
+            const info = el("div", "neo-char-card-info");
+            info.append(
+              el("span", "neo-char-card-name", BODY_LABELS[id]),
+              el("span", "neo-char-card-tag", "Character"),
+            );
+            const check = el("div", "neo-char-card-check", "✓");
+
+            card.append(thumb, info, check);
+            card.addEventListener("click", () => {
+              currentLook.body = id;
+              localStorage.setItem("klase-look", JSON.stringify(currentLook));
+              renderCardGrid();
+              livePreviewHandle?.updateLook(currentLook);
+              updateRightPanelSummary();
+            });
+            grid.append(card);
+          }
+        }
+
+        // ── Wearable Cards (Hats) - Disabled / Coming Soon
+        if (activeTab === "hat") {
+          addSectionHeading("Hats (Coming Soon)");
+          for (const hatId of WEARABLES.hat) {
+            const card = el("button", "neo-char-card disabled") as HTMLButtonElement;
+            card.type = "button";
+            card.disabled = true;
+            const info = el("div", "neo-char-card-info");
+            info.append(
+              el("span", "neo-char-card-name", WEARABLE_LABELS[hatId] || "None"),
+              el("span", "neo-char-card-soon-tag", "Coming Soon"),
+            );
+            card.append(info);
+            grid.append(card);
+          }
+        }
+
+        // ── Wearable Cards (Tops) - Disabled / Coming Soon
+        if (activeTab === "top") {
+          addSectionHeading("Tops (Coming Soon)");
+          for (const topId of WEARABLES.top) {
+            const card = el("button", "neo-char-card disabled") as HTMLButtonElement;
+            card.type = "button";
+            card.disabled = true;
+            const info = el("div", "neo-char-card-info");
+            info.append(
+              el("span", "neo-char-card-name", WEARABLE_LABELS[topId] || "None"),
+              el("span", "neo-char-card-soon-tag", "Coming Soon"),
+            );
+            card.append(info);
+            grid.append(card);
+          }
+        }
+
+        // ── Wearable Cards (Accessories) - Disabled / Coming Soon
+        if (activeTab === "accessory") {
+          addSectionHeading("Accessories (Coming Soon)");
+          for (const accId of WEARABLES.accessory) {
+            const card = el("button", "neo-char-card disabled") as HTMLButtonElement;
+            card.type = "button";
+            card.disabled = true;
+            const info = el("div", "neo-char-card-info");
+            info.append(
+              el("span", "neo-char-card-name", WEARABLE_LABELS[accId] || "None"),
+              el("span", "neo-char-card-soon-tag", "Coming Soon"),
+            );
+            card.append(info);
+            grid.append(card);
+          }
+        }
+
+        cardsGridContainer.append(grid);
+        paintPortraits(cardsGridContainer, portraits);
+      };
+
+      renderCardGrid();
+
+      // 2. CENTER COLUMN: Live 3D Avatar Render Viewport
+      const centerCol = el("div", "neo-picker-center");
+      const centerView = el("div", "neo-char-center-view");
+      const centerHint = el("div", "neo-center-hint", "🔄 Drag to rotate avatar");
+      centerView.append(centerHint);
+      centerCol.append(centerView);
+
+      void preloadAvatars().then(() => {
+        if (centerView.isConnected) {
+          livePreviewHandle = createLiveAvatarPreview(centerView, currentLook);
+          chooserDispose = () => {
+            livePreviewHandle?.dispose();
+            livePreviewHandle = null;
+          };
+        }
+      });
+
+      // 3. RIGHT COLUMN: Details & Action Panel
+      const rightCol = el("div", "neo-picker-right");
+
+      const summaryCard = el("div", "neo-summary-card");
+      const avatarTitle = el("h3", "neo-summary-title", BODY_LABELS[currentLook.body]);
+      const avatarTags = el("div", "neo-summary-tags");
+
+      updateRightPanelSummary = () => {
+        avatarTitle.textContent = BODY_LABELS[currentLook.body];
+        avatarTags.innerHTML = "";
+
+        const items = [
+          WEARABLE_LABELS[currentLook.top],
+          WEARABLE_LABELS[currentLook.hat],
+          WEARABLE_LABELS[currentLook.accessory],
+        ].filter((x) => x && x !== "None");
+
+        if (items.length === 0) {
+          avatarTags.append(el("span", "neo-pill-tag", "Default Outfit"));
+        } else {
+          items.forEach((item) => avatarTags.append(el("span", "neo-pill-tag", item)));
+        }
+      };
+
+      updateRightPanelSummary();
+      summaryCard.append(
+        el("div", "neo-summary-badge", "SELECTED AVATAR"),
+        avatarTitle,
+        avatarTags,
+        el("p", "neo-summary-desc", "Customizable student avatar for proximity voice chat and classroom exploration."),
+      );
+
+      // Display Name Form
+      const nameForm = el("div", "neo-name-form");
+      nameForm.append(
+        el("label", "neo-input-label", "DISPLAY NAME"),
+        el("span", "neo-input-sub", "How you'll appear to classmates in room"),
+      );
+
+      const nameInput = el("input", "neo-input") as HTMLInputElement;
+      nameInput.id = "name";
+      nameInput.maxLength = 24;
+      nameInput.placeholder = "Enter display name...";
+      nameInput.value = localStorage.getItem("klase-name") ?? "";
+      nameForm.append(nameInput);
+
+      if (initialError) {
+        rightCol.append(el("div", "error-banner", initialError));
+      }
+
+      // Action Buttons
+      const actionsWrap = el("div", "neo-picker-actions");
+
+      const playBtn = el("button", "neo-btn neo-btn-play", "▶  Play") as HTMLButtonElement;
+      playBtn.type = "button";
+      playBtn.addEventListener("click", () => {
+        if (!lockJoin(playBtn)) return;
+        playBtn.disabled = true;
+        playBtn.textContent = "Joining…";
+        const n = nameInput.value.trim() || "Guest";
+        localStorage.setItem("klase-name", n);
+        localStorage.setItem("klase-look", JSON.stringify(currentLook));
+        onJoin({ name: n, look: currentLook });
+      });
+
+      const backBtn = el("button", "neo-btn neo-btn-back", "← Menu") as HTMLButtonElement;
+      backBtn.type = "button";
+      backBtn.addEventListener("click", () => {
         if (onBackToMenu) {
           wrap.remove();
           onBackToMenu();
@@ -620,10 +819,15 @@ export function renderLanding(
           show("play");
         }
       });
-      nav.append(go, back);
-      shell.append(nav);
-      wrap.append(shell);
-      paintPortraits(wrap, portraits);
+
+      actionsWrap.append(playBtn, backBtn);
+
+      rightCol.append(summaryCard, nameForm, actionsWrap);
+
+      // Assemble
+      pickerBody.append(leftCol, centerCol, rightCol);
+      pickerFrame.append(pickerHead, pickerBody);
+      wrap.append(pickerFrame);
       return;
     }
 

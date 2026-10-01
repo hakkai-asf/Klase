@@ -1150,7 +1150,7 @@ export function paintBodyPortrait(img: HTMLImageElement, body: BodyId) {
     const idle = mixer.clipAction(rig.idle);
     idle.play();
     mixer.update(0.35);
-    mixer.stopAllAction();
+    idle.paused = true;
   }
   model.updateMatrixWorld(true);
 
@@ -1164,5 +1164,156 @@ export function paintBodyPortrait(img: HTMLImageElement, body: BodyId) {
   renderer.dispose();
   return () => {
     img.removeAttribute("src");
+  };
+}
+
+export function createLiveAvatarPreview(container: HTMLElement, initialLook: Look) {
+  let currentLook = { ...initialLook };
+  const canvas = document.createElement("canvas");
+  canvas.className = "neo-avatar-canvas";
+  container.append(canvas);
+
+  const renderer = new THREE.WebGLRenderer({
+    canvas,
+    antialias: true,
+    alpha: true,
+    preserveDrawingBuffer: true,
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.setClearColor(0x000000, 0);
+
+  const scene = new THREE.Scene();
+
+  const hemi = new THREE.HemisphereLight(0xfff3e6, 0x3a2a22, 1.25);
+  scene.add(hemi);
+
+  const sun = new THREE.DirectionalLight(0xfff5ea, 1.4);
+  sun.position.set(2, 3, 2.5);
+  scene.add(sun);
+
+  const fill = new THREE.DirectionalLight(0xffc8a0, 0.6);
+  fill.position.set(-2, 1.5, -1);
+  scene.add(fill);
+
+  const backLight = new THREE.DirectionalLight(0xffe0c0, 0.4);
+  backLight.position.set(0, 2, -2.5);
+  scene.add(backLight);
+
+  // Soft subtle ground disk shadow under avatar
+  const groundGeo = new THREE.CircleGeometry(0.65, 32);
+  const groundMat = new THREE.MeshBasicMaterial({
+    color: 0x1a1a1a,
+    transparent: true,
+    opacity: 0.12,
+  });
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = 0.005;
+  scene.add(ground);
+
+  // Avatar model
+  let avatar = createAvatar(currentLook, "");
+  scene.add(avatar.root);
+
+  const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 50);
+
+  const updateSize = () => {
+    const w = container.clientWidth || 300;
+    const h = container.clientHeight || 400;
+    renderer.setSize(w, h, false);
+    const aspect = w / h;
+    camera.aspect = aspect;
+
+    // Position camera far enough so 1.7m tall avatar is fully visible head-to-toe with padding
+    const dist = aspect < 1 ? 3.8 / Math.min(1, aspect * 0.92) : 3.65;
+    camera.position.set(0, 0.88, Math.min(5.2, dist));
+    camera.lookAt(0, 0.85, 0);
+
+    camera.updateProjectionMatrix();
+  };
+
+  const resizeObserver = new ResizeObserver(() => updateSize());
+  resizeObserver.observe(container);
+  updateSize();
+
+  let isDragging = false;
+  let prevMouseX = 0;
+  let targetRotY = 0;
+  let currentRotY = 0;
+
+  const onPointerDown = (e: PointerEvent) => {
+    isDragging = true;
+    prevMouseX = e.clientX;
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+  };
+
+  const onPointerMove = (e: PointerEvent) => {
+    if (!isDragging) return;
+    const delta = e.clientX - prevMouseX;
+    prevMouseX = e.clientX;
+    targetRotY += delta * 0.012;
+  };
+
+  const onPointerUp = (e: PointerEvent) => {
+    isDragging = false;
+    (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+  };
+
+  canvas.addEventListener("pointerdown", onPointerDown);
+  canvas.addEventListener("pointermove", onPointerMove);
+  canvas.addEventListener("pointerup", onPointerUp);
+  canvas.addEventListener("pointercancel", onPointerUp);
+
+  let animId = 0;
+  let lastTime = performance.now();
+
+  const animate = (now: number) => {
+    const dt = Math.min(0.05, (now - lastTime) / 1000);
+    lastTime = now;
+
+    if (!isDragging) {
+      targetRotY += dt * 0.22;
+    }
+
+    currentRotY += (targetRotY - currentRotY) * Math.min(1, dt * 10);
+    if (avatar.root) {
+      avatar.root.rotation.y = currentRotY;
+    }
+
+    if (avatar.mixer) {
+      avatar.mixer.update(dt);
+    }
+
+    renderer.render(scene, camera);
+    animId = requestAnimationFrame(animate);
+  };
+
+  animId = requestAnimationFrame(animate);
+
+  return {
+    updateLook(nextLook: Look) {
+      const bodyChanged = nextLook.body !== currentLook.body;
+      currentLook = { ...nextLook };
+
+      if (bodyChanged) {
+        scene.remove(avatar.root);
+        avatar = createAvatar(currentLook, "");
+        scene.add(avatar.root);
+        avatar.root.rotation.y = currentRotY;
+      } else {
+        applyLook(avatar.sockets, currentLook);
+      }
+    },
+    dispose() {
+      cancelAnimationFrame(animId);
+      resizeObserver.disconnect();
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerup", onPointerUp);
+      canvas.removeEventListener("pointercancel", onPointerUp);
+      renderer.dispose();
+      canvas.remove();
+    },
   };
 }

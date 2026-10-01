@@ -3,6 +3,36 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import type { BodyId, Look } from "@klase/shared";
 
+// ── Hi-DPI sprite textures ────────────────────────────────────────────────
+// All canvases are rendered at SPRITE_DPR × their logical size, then the
+// draw functions use ctx.scale() so coordinates stay in logical pixels.
+const SPRITE_DPR = 2;
+let _spriteAnisotropy = 1;
+const _allSpriteTex: THREE.CanvasTexture[] = [];
+
+/** Call once with renderer.capabilities.getMaxAnisotropy() after the
+ *  WebGLRenderer is created.  Applies to every current & future sprite. */
+export function setGlobalAnisotropy(maxAniso: number) {
+  _spriteAnisotropy = Math.max(1, maxAniso);
+  for (const t of _allSpriteTex) {
+    t.anisotropy = _spriteAnisotropy;
+    t.needsUpdate = true;
+  }
+}
+
+function makeSpriteTex(logicalW: number, logicalH: number) {
+  const canvas = document.createElement("canvas");
+  canvas.width  = logicalW * SPRITE_DPR;
+  canvas.height = logicalH * SPRITE_DPR;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter      = THREE.LinearMipmapLinearFilter;
+  tex.magFilter      = THREE.LinearFilter;
+  tex.generateMipmaps = true;
+  tex.anisotropy     = _spriteAnisotropy;
+  _allSpriteTex.push(tex);
+  return { canvas, tex };
+}
+
 const SKIN = 0xe8d5c4;
 const BODY = 0xf2ebe3;
 
@@ -538,10 +568,7 @@ function attachSockets(model: THREE.Object3D) {
 }
 
 function nametagSprite(name: string, height: number, role = "") {
-  const canvas = document.createElement("canvas");
-  canvas.width = 256;
-  canvas.height = 96;
-  const tex = new THREE.CanvasTexture(canvas);
+  const { canvas, tex } = makeSpriteTex(256, 96);
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
   sprite.position.y = height + 0.22;
   sprite.scale.set(1.5, 0.56, 1);
@@ -551,10 +578,7 @@ function nametagSprite(name: string, height: number, role = "") {
 }
 
 function speechSprite(height: number) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 160;
-  const tex = new THREE.CanvasTexture(canvas);
+  const { canvas, tex } = makeSpriteTex(512, 160);
   const sprite = new THREE.Sprite(
     new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, opacity: 0 }),
   );
@@ -567,10 +591,7 @@ function speechSprite(height: number) {
 }
 
 function micSprite(height: number) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 128;
-  canvas.height = 72;
-  const tex = new THREE.CanvasTexture(canvas);
+  const { canvas, tex } = makeSpriteTex(128, 72);
   const sprite = new THREE.Sprite(
     new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }),
   );
@@ -585,9 +606,10 @@ function micSprite(height: number) {
 
 export function drawName(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, name: string, role = "") {
   const ctx = canvas.getContext("2d")!;
-  const w = canvas.width;
-  const h = canvas.height;
-  ctx.clearRect(0, 0, w, h);
+  // Logical dimensions (independent of SPRITE_DPR backing resolution)
+  const lw = canvas.width  / SPRITE_DPR;
+  const lh = canvas.height / SPRITE_DPR;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   // If no display name (e.g. preview avatar in character selection), do not draw placeholder box
   if (!name || !name.trim()) {
@@ -595,14 +617,15 @@ export function drawName(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, na
     return;
   }
 
+  ctx.save();
+  ctx.scale(SPRITE_DPR, SPRITE_DPR); // draw in logical pixels from here on
+
   const r = role.toLowerCase();
   const hasBadge = r === "owner" || r === "admin";
   const boxW = 232;
   const boxH = 46;
-  const boxX = (w - boxW) / 2;
+  const boxX = (lw - boxW) / 2;
   const boxY = hasBadge ? 36 : 22; // 8px spacing below badge (badge ends at y=28)
-
-  ctx.save();
 
   // 1. Role Glowing Border (Owner = Rainbow glow, Admin = Red glow)
   if (r === "owner") {
@@ -612,7 +635,6 @@ export function drawName(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, na
     rainbowGrad.addColorStop(0.5, "#38ef7d");
     rainbowGrad.addColorStop(0.75, "#00b4db");
     rainbowGrad.addColorStop(1, "#9b51e0");
-
     ctx.strokeStyle = rainbowGrad;
     ctx.lineWidth = 9;
     ctx.lineJoin = "round";
@@ -656,13 +678,13 @@ export function drawName(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, na
   ctx.font = "900 23px Nunito, sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(name.slice(0, 18), w / 2, boxY + boxH / 2 + 1);
+  ctx.fillText(name.slice(0, 18), lw / 2, boxY + boxH / 2 + 1);
 
   // 6. Role Badge Tag (Owner / Admin) with clear spacing
   if (hasBadge) {
     const badgeW = 78;
     const badgeH = 22;
-    const badgeX = (w - badgeW) / 2;
+    const badgeX = (lw - badgeW) / 2;
     const badgeY = 6; // Ends at y=28 (8px gap before box at y=36)
 
     // Badge shadow
@@ -697,7 +719,7 @@ export function drawName(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, na
     ctx.font = "900 12px Nunito, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(r.toUpperCase(), w / 2, badgeY + badgeH / 2 + 1);
+    ctx.fillText(r.toUpperCase(), lw / 2, badgeY + badgeH / 2 + 1);
   }
 
   ctx.restore();
@@ -706,16 +728,19 @@ export function drawName(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, na
 
 export function drawMic(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, fill: number) {
   const ctx = canvas.getContext("2d")!;
-  const w = canvas.width;
-  const h = canvas.height;
-  ctx.clearRect(0, 0, w, h);
+  const lw = canvas.width  / SPRITE_DPR;
+  const lh = canvas.height / SPRITE_DPR;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  ctx.save();
+  ctx.scale(SPRITE_DPR, SPRITE_DPR); // draw in logical pixels from here on
 
   const f = Math.max(0, Math.min(1, fill));
 
   const boxW = 86;
   const boxH = 44;
-  const boxX = (w - boxW) / 2;
-  const boxY = (h - boxH) / 2;
+  const boxX = (lw - boxW) / 2;
+  const boxY = (lh - boxH) / 2;
 
   // 1. Hard offset drop shadow
   ctx.fillStyle = "#1a1a1a";
@@ -770,6 +795,7 @@ export function drawMic(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, fil
     ctx.stroke();
   }
 
+  ctx.restore();
   tex.needsUpdate = true;
 }
 
@@ -1138,12 +1164,16 @@ export function poseWalk(
 
 export function drawSpeech(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, text: string) {
   const ctx = canvas.getContext("2d")!;
-  const w = canvas.width;
-  const h = canvas.height;
-  ctx.clearRect(0, 0, w, h);
+  const lw = canvas.width  / SPRITE_DPR;
+  const lh = canvas.height / SPRITE_DPR;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  ctx.save();
+  ctx.scale(SPRITE_DPR, SPRITE_DPR); // draw in logical pixels from here on
+
   const raw = text.replace(/\s+/g, " ").trim().slice(0, 120);
   ctx.font = "700 28px Nunito, sans-serif";
-  const maxWidth = w - 48;
+  const maxWidth = lw - 48;
   const words = raw.split(" ");
   const lines: string[] = [];
   let cur = "";
@@ -1166,26 +1196,27 @@ export function drawSpeech(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, 
   const lineH = 34;
   const padY = 18;
   const boxH = padY * 2 + lines.length * lineH;
-  const boxY = h - boxH - 18;
+  const boxY = lh - boxH - 18;
   ctx.fillStyle = "rgba(255, 255, 255, 0.94)";
   ctx.strokeStyle = "rgba(40, 42, 55, 0.12)";
   ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.roundRect(16, boxY, w - 32, boxH, 18);
+  ctx.roundRect(16, boxY, lw - 32, boxH, 18);
   ctx.fill();
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(w / 2 - 14, boxY + boxH);
-  ctx.lineTo(w / 2, boxY + boxH + 14);
-  ctx.lineTo(w / 2 + 14, boxY + boxH);
+  ctx.moveTo(lw / 2 - 14, boxY + boxH);
+  ctx.lineTo(lw / 2, boxY + boxH + 14);
+  ctx.lineTo(lw / 2 + 14, boxY + boxH);
   ctx.closePath();
   ctx.fill();
   ctx.fillStyle = "#2a2d3a";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   lines.forEach((line, i) => {
-    ctx.fillText(line, w / 2, boxY + padY + lineH * i + lineH / 2);
+    ctx.fillText(line, lw / 2, boxY + padY + lineH * i + lineH / 2);
   });
+  ctx.restore();
   tex.needsUpdate = true;
 }
 

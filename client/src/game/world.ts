@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { CLASSROOM, MOVE_SPEED, SEAT_REACH, SPAWN, type Look, type Seat } from "@klase/shared";
-import { applyLook, createAvatar, drawMic, drawName, drawSpeech, layoutHeadSprites, poseWalk, setLocalFpPresentation } from "./avatar";
+import { applyLook, createAvatar, drawMic, drawName, drawSpeech, layoutHeadSprites, poseWalk, setGlobalAnisotropy, setLocalFpPresentation } from "./avatar";
 import { buildClassroom, findClearStand, resolveMove, type AABB } from "./classroom";
 
 type AvatarHandle = ReturnType<typeof createAvatar> & {
@@ -115,6 +115,8 @@ export class World {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
+    // Push max anisotropy into sprite textures so nametags/speech/mic are crisp
+    setGlobalAnisotropy(this.renderer.capabilities.getMaxAnisotropy());
     this.scene.background = new THREE.Color(0xe4e8f4);
     const built = buildClassroom(this.scene);
     this.colliders = built.colliders;

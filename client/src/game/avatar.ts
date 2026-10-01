@@ -568,10 +568,14 @@ function attachSockets(model: THREE.Object3D) {
 }
 
 function nametagSprite(name: string, height: number, role = "") {
-  const { canvas, tex } = makeSpriteTex(256, 96);
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
-  sprite.position.y = height + 0.22;
-  sprite.scale.set(1.5, 0.56, 1);
+  // Logical canvas is 256×128 — extra height gives clear space above the head
+  const { canvas, tex } = makeSpriteTex(256, 128);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+  mat.toneMapped = false; // prevent ACESFilmic from washing out colors
+  const sprite = new THREE.Sprite(mat);
+  // +0.55 lifts the label well above the tallest head bounding box
+  sprite.position.y = height + 0.55;
+  sprite.scale.set(1.5, 0.75, 1); // taller scale to match new 128px logical height
   sprite.name = "nametag";
   drawName(canvas, tex, name, role);
   return { canvas, tex, sprite };
@@ -579,9 +583,9 @@ function nametagSprite(name: string, height: number, role = "") {
 
 function speechSprite(height: number) {
   const { canvas, tex } = makeSpriteTex(512, 160);
-  const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, opacity: 0 }),
-  );
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, opacity: 0 });
+  mat.toneMapped = false;
+  const sprite = new THREE.Sprite(mat);
   sprite.position.y = height + 0.62;
   sprite.scale.set(1.85, 0.58, 1);
   sprite.visible = false;
@@ -592,9 +596,9 @@ function speechSprite(height: number) {
 
 function micSprite(height: number) {
   const { canvas, tex } = makeSpriteTex(128, 72);
-  const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }),
-  );
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  mat.toneMapped = false;
+  const sprite = new THREE.Sprite(mat);
   sprite.position.y = height + 0.52;
   sprite.scale.set(0.64, 0.36, 1);
   sprite.visible = false;
@@ -625,101 +629,112 @@ export function drawName(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, na
   const boxW = 232;
   const boxH = 46;
   const boxX = (lw - boxW) / 2;
-  const boxY = hasBadge ? 36 : 22; // 8px spacing below badge (badge ends at y=28)
+  // Elements are drawn in the BOTTOM portion of the canvas.
+  // The top portion is empty vertical clearance above the head.
+  // Badge sits at bottom of canvas; box is 8px below it.
+  const badgeH = 24;
+  const badgeY = lh - badgeH - boxH - 16;  // badge near bottom-ish, box below it
+  const boxY  = badgeY + badgeH + 8;       // 8px gap badge→box
+  const effectiveBoxY = hasBadge ? boxY : lh - boxH - 10; // no badge: box near bottom
 
-  // 1. Role Glowing Border (Owner = Rainbow glow, Admin = Red glow)
+  // 1. Role Glowing Border — draw BEFORE fill so glow sits under the box
   if (r === "owner") {
-    const rainbowGrad = ctx.createLinearGradient(boxX - 8, boxY, boxX + boxW + 8, boxY);
-    rainbowGrad.addColorStop(0, "#ff4545");
-    rainbowGrad.addColorStop(0.25, "#ffa500");
-    rainbowGrad.addColorStop(0.5, "#38ef7d");
-    rainbowGrad.addColorStop(0.75, "#00b4db");
-    rainbowGrad.addColorStop(1, "#9b51e0");
+    const rainbowGrad = ctx.createLinearGradient(boxX - 8, effectiveBoxY, boxX + boxW + 8, effectiveBoxY);
+    rainbowGrad.addColorStop(0,    "#ff0000");
+    rainbowGrad.addColorStop(0.2,  "#ff8800");
+    rainbowGrad.addColorStop(0.4,  "#00ee44");
+    rainbowGrad.addColorStop(0.65, "#0088ff");
+    rainbowGrad.addColorStop(1,    "#cc00ff");
     ctx.strokeStyle = rainbowGrad;
-    ctx.lineWidth = 9;
+    ctx.lineWidth = 10;
     ctx.lineJoin = "round";
-    ctx.shadowColor = "rgba(255, 165, 0, 0.85)";
-    ctx.shadowBlur = 14;
+    ctx.shadowColor = "rgba(255, 140, 0, 0.9)";
+    ctx.shadowBlur = 16;
     ctx.beginPath();
-    ctx.roundRect(boxX, boxY, boxW, boxH, 12);
+    ctx.roundRect(boxX - 2, effectiveBoxY - 2, boxW + 4, boxH + 4, 14);
     ctx.stroke();
     ctx.shadowBlur = 0;
   } else if (r === "admin") {
-    ctx.strokeStyle = "#ff3333";
-    ctx.lineWidth = 8.5;
+    ctx.strokeStyle = "#ff2222";
+    ctx.lineWidth = 9;
     ctx.lineJoin = "round";
-    ctx.shadowColor = "rgba(255, 51, 51, 0.85)";
-    ctx.shadowBlur = 14;
+    ctx.shadowColor = "rgba(255, 34, 34, 0.9)";
+    ctx.shadowBlur = 16;
     ctx.beginPath();
-    ctx.roundRect(boxX, boxY, boxW, boxH, 12);
+    ctx.roundRect(boxX - 2, effectiveBoxY - 2, boxW + 4, boxH + 4, 14);
     ctx.stroke();
     ctx.shadowBlur = 0;
   }
 
-  // 2. Hard offset drop shadow (Neobrutalist)
-  ctx.fillStyle = "#1a1a1a";
+  // 2. Hard offset drop shadow
+  ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
   ctx.beginPath();
-  ctx.roundRect(boxX + 3.5, boxY + 3.5, boxW, boxH, 12);
+  ctx.roundRect(boxX + 4, effectiveBoxY + 4, boxW, boxH, 12);
   ctx.fill();
 
-  // 3. High-Contrast Base Fill (~88% opaque cream for legibility over 3D scene)
-  ctx.fillStyle = "rgba(254, 249, 244, 0.88)";
+  // 3. Dark semi-transparent box background — readable over any 3D scene
+  ctx.fillStyle = "rgba(18, 18, 18, 0.72)";
   ctx.beginPath();
-  ctx.roundRect(boxX, boxY, boxW, boxH, 12);
+  ctx.roundRect(boxX, effectiveBoxY, boxW, boxH, 12);
   ctx.fill();
 
-  // 4. Bold black border
-  ctx.strokeStyle = "#1a1a1a";
-  ctx.lineWidth = 3.5;
+  // 4. Thin white border (neobrutalist on dark)
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
+  ctx.lineWidth = 2;
   ctx.stroke();
 
-  // 5. Username Text (High contrast, sharp 900 weight)
-  ctx.fillStyle = "#1a1a1a";
-  ctx.font = "900 23px Nunito, sans-serif";
+  // 5. Username Text — white for dark background
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "800 22px Nunito, sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(name.slice(0, 18), lw / 2, boxY + boxH / 2 + 1);
+  // Soft text shadow so it pops over lighter scenes too
+  ctx.shadowColor = "rgba(0,0,0,0.8)";
+  ctx.shadowBlur = 4;
+  ctx.fillText(name.slice(0, 18), lw / 2, effectiveBoxY + boxH / 2 + 1);
+  ctx.shadowBlur = 0;
 
-  // 6. Role Badge Tag (Owner / Admin) with clear spacing
+  // 6. Role Badge Tag (Owner / Admin)
   if (hasBadge) {
-    const badgeW = 78;
-    const badgeH = 22;
+    const badgeW = 80;
     const badgeX = (lw - badgeW) / 2;
-    const badgeY = 6; // Ends at y=28 (8px gap before box at y=36)
 
     // Badge shadow
-    ctx.fillStyle = "#1a1a1a";
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
     ctx.beginPath();
-    ctx.roundRect(badgeX + 2, badgeY + 2, badgeW, badgeH, 7);
+    ctx.roundRect(badgeX + 2.5, badgeY + 2.5, badgeW, badgeH, 8);
     ctx.fill();
 
-    // Badge Background
+    // Badge background — fully saturated, no alpha reduction
     if (r === "owner") {
       const grad = ctx.createLinearGradient(badgeX, badgeY, badgeX + badgeW, badgeY);
-      grad.addColorStop(0, "#ff4545");
-      grad.addColorStop(0.25, "#ffa500");
-      grad.addColorStop(0.5, "#38ef7d");
-      grad.addColorStop(0.75, "#00b4db");
-      grad.addColorStop(1, "#9b51e0");
+      grad.addColorStop(0,    "#ff0000");
+      grad.addColorStop(0.2,  "#ff8800");
+      grad.addColorStop(0.4,  "#00ee44");
+      grad.addColorStop(0.65, "#0088ff");
+      grad.addColorStop(1,    "#cc00ff");
       ctx.fillStyle = grad;
     } else {
-      ctx.fillStyle = "#ff3333";
+      ctx.fillStyle = "#ff2222";
     }
-
     ctx.beginPath();
-    ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 7);
+    ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 8);
     ctx.fill();
 
-    ctx.strokeStyle = "#1a1a1a";
-    ctx.lineWidth = 2;
+    // Badge border
+    ctx.strokeStyle = "rgba(255,255,255,0.45)";
+    ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    // Badge Text
+    // Badge text
     ctx.fillStyle = "#ffffff";
-    ctx.font = "900 12px Nunito, sans-serif";
+    ctx.font = "900 13px Nunito, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
+    ctx.shadowColor = "rgba(0,0,0,0.7)";
+    ctx.shadowBlur = 3;
     ctx.fillText(r.toUpperCase(), lw / 2, badgeY + badgeH / 2 + 1);
+    ctx.shadowBlur = 0;
   }
 
   ctx.restore();

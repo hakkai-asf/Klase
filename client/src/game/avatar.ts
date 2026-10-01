@@ -540,11 +540,11 @@ function attachSockets(model: THREE.Object3D) {
 function nametagSprite(name: string, height: number, role = "") {
   const canvas = document.createElement("canvas");
   canvas.width = 256;
-  canvas.height = 80;
+  canvas.height = 96;
   const tex = new THREE.CanvasTexture(canvas);
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
-  sprite.position.y = height + 0.18;
-  sprite.scale.set(1.5, 0.47, 1);
+  sprite.position.y = height + 0.22;
+  sprite.scale.set(1.5, 0.56, 1);
   sprite.name = "nametag";
   drawName(canvas, tex, name, role);
   return { canvas, tex, sprite };
@@ -589,43 +589,81 @@ export function drawName(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, na
   const h = canvas.height;
   ctx.clearRect(0, 0, w, h);
 
+  // If no display name (e.g. preview avatar in character selection), do not draw placeholder box
+  if (!name || !name.trim()) {
+    tex.needsUpdate = true;
+    return;
+  }
+
   const r = role.toLowerCase();
   const hasBadge = r === "owner" || r === "admin";
-  const boxW = 236;
+  const boxW = 232;
   const boxH = 46;
   const boxX = (w - boxW) / 2;
-  const boxY = hasBadge ? 24 : 16;
+  const boxY = hasBadge ? 36 : 22; // 8px spacing below badge (badge ends at y=28)
 
-  // 1. Hard offset drop shadow for transparent-neobrutalist box
-  ctx.fillStyle = "rgba(26, 26, 26, 0.45)";
+  ctx.save();
+
+  // 1. Role Glowing Border (Owner = Rainbow glow, Admin = Red glow)
+  if (r === "owner") {
+    const rainbowGrad = ctx.createLinearGradient(boxX - 8, boxY, boxX + boxW + 8, boxY);
+    rainbowGrad.addColorStop(0, "#ff4545");
+    rainbowGrad.addColorStop(0.25, "#ffa500");
+    rainbowGrad.addColorStop(0.5, "#38ef7d");
+    rainbowGrad.addColorStop(0.75, "#00b4db");
+    rainbowGrad.addColorStop(1, "#9b51e0");
+
+    ctx.strokeStyle = rainbowGrad;
+    ctx.lineWidth = 9;
+    ctx.lineJoin = "round";
+    ctx.shadowColor = "rgba(255, 165, 0, 0.85)";
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.roundRect(boxX, boxY, boxW, boxH, 12);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  } else if (r === "admin") {
+    ctx.strokeStyle = "#ff3333";
+    ctx.lineWidth = 8.5;
+    ctx.lineJoin = "round";
+    ctx.shadowColor = "rgba(255, 51, 51, 0.85)";
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.roundRect(boxX, boxY, boxW, boxH, 12);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  // 2. Hard offset drop shadow (Neobrutalist)
+  ctx.fillStyle = "#1a1a1a";
   ctx.beginPath();
-  ctx.roundRect(boxX + 4, boxY + 4, boxW, boxH, 12);
+  ctx.roundRect(boxX + 3.5, boxY + 3.5, boxW, boxH, 12);
   ctx.fill();
 
-  // 2. Translucent cream base — reads as part of 3D scene
-  ctx.fillStyle = "rgba(254, 249, 244, 0.45)";
+  // 3. High-Contrast Base Fill (~88% opaque cream for legibility over 3D scene)
+  ctx.fillStyle = "rgba(254, 249, 244, 0.88)";
   ctx.beginPath();
   ctx.roundRect(boxX, boxY, boxW, boxH, 12);
   ctx.fill();
 
-  // 3. Bold black border
+  // 4. Bold black border
   ctx.strokeStyle = "#1a1a1a";
   ctx.lineWidth = 3.5;
   ctx.stroke();
 
-  // 4. Username Text
+  // 5. Username Text (High contrast, sharp 900 weight)
   ctx.fillStyle = "#1a1a1a";
-  ctx.font = "900 24px Nunito, sans-serif";
+  ctx.font = "900 23px Nunito, sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(name.slice(0, 18), w / 2, boxY + boxH / 2 + 1);
 
-  // 5. Role Badge (Owner = Rainbow, Admin = Red)
+  // 6. Role Badge Tag (Owner / Admin) with clear spacing
   if (hasBadge) {
-    const badgeW = 76;
+    const badgeW = 78;
     const badgeH = 22;
     const badgeX = (w - badgeW) / 2;
-    const badgeY = 6;
+    const badgeY = 6; // Ends at y=28 (8px gap before box at y=36)
 
     // Badge shadow
     ctx.fillStyle = "#1a1a1a";
@@ -662,6 +700,7 @@ export function drawName(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, na
     ctx.fillText(r.toUpperCase(), w / 2, badgeY + badgeH / 2 + 1);
   }
 
+  ctx.restore();
   tex.needsUpdate = true;
 }
 

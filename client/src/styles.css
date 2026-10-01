@@ -690,18 +690,29 @@ button, input, select { font-family: inherit; }
   box-shadow: 1px 1px 0 #1a1a1a;
 }
 
+.player-row.owner {
+  border: 2.5px solid #1a1a1a;
+  box-shadow: 3px 3px 0 #1a1a1a, 0 0 10px rgba(255, 165, 0, 0.65), 0 0 18px rgba(155, 81, 224, 0.45);
+}
+
+.player-row.admin {
+  border: 2.5px solid #ff3333;
+  box-shadow: 3px 3px 0 #1a1a1a, 0 0 12px rgba(255, 51, 51, 0.6);
+}
+
 .badge.owner {
   background: linear-gradient(90deg, #ff4545, #ffa500, #38ef7d, #00b4db, #9b51e0);
   color: #ffffff;
   border: 1.5px solid #1a1a1a;
-  box-shadow: 1.5px 1.5px 0 #1a1a1a;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  box-shadow: 1.5px 1.5px 0 #1a1a1a, 0 0 8px rgba(255, 165, 0, 0.7);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
 }
+
 .badge.admin {
   background: #ff3333;
   color: #ffffff;
   border: 1.5px solid #1a1a1a;
-  box-shadow: 1.5px 1.5px 0 #1a1a1a;
+  box-shadow: 1.5px 1.5px 0 #1a1a1a, 0 0 8px rgba(255, 51, 51, 0.75);
 }
 
 .sit-prompt {

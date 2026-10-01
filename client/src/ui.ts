@@ -207,7 +207,17 @@ export function renderOnboarding(root: HTMLElement, onComplete: () => void) {
       img.style.maxHeight = "100%";
       img.style.objectFit = "contain";
       img.style.cursor = "pointer";
-      img.addEventListener("click", () => { step++; renderStep(); });
+      img.addEventListener("click", () => {
+        try {
+          if (sessionStorage.getItem("klase_consent_accepted") === "true") {
+            wrap.remove();
+            onComplete();
+            return;
+          }
+        } catch { /* ignore */ }
+        step++;
+        renderStep();
+      });
       wrap.append(img);
       return;
     }
@@ -341,7 +351,7 @@ export function renderOnboarding(root: HTMLElement, onComplete: () => void) {
             "Enforce moderation actions (mute, kick, ban) where applicable",
             "Improve and debug the application during beta testing",
           ] },
-        { title: "5. Data Sharing", text: "Klase does not sell, rent, or share your information with third parties. Data may be stored using third-party infrastructure providers (e.g., Supabase for authentication/database, Render for hosting) solely to operate the application." },
+        { title: "5. Data Sharing", text: "Klase does not sell, rent, or share your information with third parties. Data may be stored using third-party infrastructure providers solely to operate the application." },
         { title: "6. Data Retention", text: "As Klase is in active beta, data handling practices may evolve. Account data may be deleted periodically during development, testing, or redeployment without prior notice." },
         { title: "7. Your Choices", text: "You may use Klase as a guest to avoid providing any account information. If you have a registered account, you may request account/data deletion by contacting harrylagto@gmail.com." },
         { title: "8. Children's Privacy", text: "Klase is intended for users 18 years of age or older and is not directed toward children. We do not knowingly collect information from users under 18." },
@@ -394,8 +404,8 @@ export function renderOnboarding(root: HTMLElement, onComplete: () => void) {
       body.append(consentBox);
 
       const { foot, nextBtn } = createFooter(true, "▶  Play", () => {
-        // Persist consent so future page loads skip onboarding entirely
-        try { localStorage.setItem("klase_consent_accepted", "true"); } catch { /* ignore */ }
+        // Persist consent in sessionStorage so refreshes within the same tab skip full onboarding sequence
+        try { sessionStorage.setItem("klase_consent_accepted", "true"); } catch { /* ignore */ }
         wrap.remove();
         onComplete();
       }, true /* starts disabled */);

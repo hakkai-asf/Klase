@@ -24,11 +24,6 @@ let globalUi: ReturnType<typeof renderGameShell> | null = null;
 
 function showOnboarding() {
   joining = false;
-  // Skip onboarding if user has already accepted consent (persists across refreshes via localStorage)
-  if (localStorage.getItem("klase_consent_accepted") === "true") {
-    startLanding("", "play");
-    return;
-  }
   renderOnboarding(overlayRoot, () => {
     startLanding("", "play");
   });

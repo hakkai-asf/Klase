@@ -1427,9 +1427,10 @@ export function createLiveAvatarPreview(container: HTMLElement, initialLook: Loo
     const aspect = w / h;
     camera.aspect = aspect;
 
-    // Position camera far enough so 1.7m tall avatar is fully visible head-to-toe with padding
-    const dist = aspect < 1 ? 3.8 / Math.min(1, aspect * 0.92) : 3.65;
-    camera.position.set(0, 0.88, Math.min(5.2, dist));
+    // Position camera so 1.7m tall avatar fills ~85% of box height (~10% total top/bottom padding, zero clipping)
+    const targetDist = aspect < 1 ? 3.3 / Math.max(0.72, aspect * 0.88) : 3.3;
+    const dist = Math.min(3.8, Math.max(2.7, targetDist));
+    camera.position.set(0, 0.85, dist);
     camera.lookAt(0, 0.85, 0);
 
     camera.updateProjectionMatrix();

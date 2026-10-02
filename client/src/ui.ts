@@ -578,7 +578,7 @@ export function renderLanding(
       headAccountBtn.type = "button";
       headAccountBtn.disabled = true;
       headAccountBtn.append(
-        document.createTextNode("🔐 Account "),
+        document.createTextNode("Account "),
         el("span", "neo-badge-soon", "Coming Soon"),
       );
       pickerHead.append(headTitleWrap, headAccountBtn);
@@ -632,6 +632,8 @@ export function renderLanding(
       let livePreviewHandle: ReturnType<typeof createLiveAvatarPreview> | null = null;
 
       const renderCardGrid = () => {
+        const prevScrollLeft = cardsGridContainer.scrollLeft;
+        const prevScrollTop = cardsGridContainer.scrollTop;
         cardsGridContainer.innerHTML = "";
         const grid = el("div", "neo-picker-grid");
 
@@ -723,6 +725,8 @@ export function renderLanding(
         }
 
         cardsGridContainer.append(grid);
+        cardsGridContainer.scrollLeft = prevScrollLeft;
+        cardsGridContainer.scrollTop = prevScrollTop;
         paintPortraits(cardsGridContainer, portraits);
       };
 
@@ -731,7 +735,7 @@ export function renderLanding(
       // 2. CENTER COLUMN: Live 3D Avatar Render Viewport
       const centerCol = el("div", "neo-picker-center");
       const centerView = el("div", "neo-char-center-view");
-      const centerHint = el("div", "neo-center-hint", "🔄 Drag to rotate avatar");
+      const centerHint = el("div", "neo-center-hint", "Drag to rotate avatar");
       centerView.append(centerHint);
       centerCol.append(centerView);
 

@@ -1635,59 +1635,318 @@ button, input, select { font-family: inherit; }
   background: #f07328;
 }
 
-/* ── Responsive adjustments for mobile ────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE LAYOUT REBUILD — Character Selection (≤768px, target 360–390px)
+   Single-column stack, 14px (0.875rem) section gaps throughout
+   ═══════════════════════════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
+
+  /* ── Outer wrapper: center the panel inside the dark page background ─── */
+  .landing {
+    padding: 0.5rem;
+    box-sizing: border-box;
+    width: 100vw;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    overflow-x: hidden;
+  }
+
+  /* ── Picker panel frame ───────────────────────────────────────────────── */
   .neo-picker-frame {
-    width:      96vw;
-    height:     auto;
-    max-height: 92vh;
-    padding:    1rem 0.85rem;
+    width: 100%;
+    max-width: 480px;
+    height: auto;
+    max-height: none;       /* let content set height; outer .landing scrolls */
+    min-height: 0;
+    padding: 0.875rem 0.75rem;
     border-radius: 18px;
-    box-shadow: 5px 5px 0 var(--neo-border);
-    overflow-y: auto;
+    box-shadow: 4px 4px 0 var(--neo-border);
+    overflow: visible;      /* do NOT clip card labels */
+    margin: 0;
+    box-sizing: border-box;
+    /* reset desktop fixed height */
+    flex: none;
   }
+
+  /* Section 1+2: Header — CHARACTER SELECTION badge + "Choose Your Avatar" title
+                           + Account button (disabled) on same row              */
   .neo-picker-head {
-    flex-wrap:   wrap;
-    gap:         0.4rem;
-    margin-bottom: 0.65rem;
-    padding-bottom: 0.55rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding-bottom: 0.75rem;
+    margin-bottom: 0.875rem;  /* 14px gap before Section 3 */
+    border-bottom: 2.5px solid #e8ded3;
   }
+
+  .neo-picker-head-title {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+  }
+
   .neo-picker-title-text {
-    font-size:   1.1rem;
+    font-size: 1.1rem;
+    margin: 0;
   }
-  .neo-card-tag {
-    font-size:   0.65rem;
-    padding:     0.12rem 0.6rem;
+
+  .neo-picker-head .neo-btn-ghost-sm {
+    align-self: flex-start;
+    font-size: 0.78rem;
+    padding: 0.3rem 0.7rem;
   }
+
+  /* Section 3: Category tabs */
   .neo-picker-body {
-    grid-template-columns: 1fr;
-    gap:         0.85rem;
+    /* Override desktop 3-column grid → single column stack */
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0.875rem;          /* 14px between every major section */
+    min-height: 0;
   }
+
+  /* Left column holds Tabs (Section 3) + Card Row (Section 4) */
   .neo-picker-left {
     order: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;           /* 12px between tabs and card row */
+    width: 100%;
+    min-height: 0;
+    overflow: visible;
   }
+
+  .neo-picker-tabs {
+    display: flex;
+    width: 100%;
+    gap: 0.25rem;
+    overflow-x: auto;
+    box-sizing: border-box;
+    flex-shrink: 0;
+  }
+
+  .neo-tab-btn {
+    padding: 0.3rem 0.35rem;
+    font-size: 0.74rem;
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+  }
+
+  /* Section 4: Horizontal scrollable character card row */
   .neo-picker-grid-container {
-    max-height: 160px;
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: visible;    /* MUST be visible — clips labels if hidden */
+    padding-bottom: 0.5rem; /* space for scrollbar */
+    padding-top: 0.1rem;
+    touch-action: pan-x;
+    -webkit-overflow-scrolling: touch;
+    box-sizing: border-box;
+    /* Ensure the container is tall enough for card + label */
+    min-height: 140px;
   }
+
+  .neo-picker-grid-container::-webkit-scrollbar { height: 4px; }
+  .neo-picker-grid-container::-webkit-scrollbar-track { background: #f0e6da; border-radius: 99px; }
+  .neo-picker-grid-container::-webkit-scrollbar-thumb { background: var(--neo-orange); border-radius: 99px; }
+
+  /* Grid becomes a horizontal flex row */
+  .neo-picker-grid {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap;
+    gap: 0.75rem;
+    width: max-content;
+    align-items: flex-start;
+    padding-bottom: 0.25rem;
+  }
+
+  /* Section heading hidden in horizontal layout — redundant with tabs */
+  .neo-grid-heading {
+    display: none !important;
+  }
+
+  /* Individual character card — fixed width, auto height to fit label */
+  .neo-char-card {
+    flex: 0 0 110px !important;
+    width: 110px !important;
+    height: auto !important;
+    min-height: 0 !important;
+    padding: 0.45rem 0.4rem 0.5rem !important;
+    gap: 0.3rem !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    box-sizing: border-box !important;
+    overflow: visible !important;
+  }
+
+  /* Thumbnail image area */
+  .neo-char-card-thumb {
+    width: 100% !important;
+    height: 68px !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* Label block — MUST be visible */
+  .neo-char-card-info {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    width: 100% !important;
+    flex-shrink: 0 !important;
+    gap: 0.08rem !important;
+  }
+
+  .neo-char-card-name {
+    display: block !important;
+    font-size: 0.8rem !important;
+    font-weight: 800 !important;
+    color: var(--neo-ink) !important;
+    line-height: 1.2 !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    max-width: 100% !important;
+  }
+
+  .neo-char-card-tag {
+    display: block !important;
+    font-size: 0.62rem !important;
+    font-weight: 700 !important;
+    color: var(--neo-muted) !important;
+    text-align: center !important;
+    line-height: 1.2 !important;
+  }
+
+  /* Checkmark badge stays top-right */
+  .neo-char-card-check {
+    top: 4px;
+    right: 4px;
+    width: 18px;
+    height: 18px;
+    font-size: 0.68rem;
+  }
+
+  /* Section 5+6: Center column — 3D avatar preview + hint text */
   .neo-picker-center {
     order: 2;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
   }
+
+  /* Avatar preview box — tall enough for full-body model */
   .neo-char-center-view {
-    min-height: 250px;
-    height:     280px;
-    max-height: 320px;
+    width: 100%;
+    height: 260px;
+    min-height: 240px;
+    max-height: 300px;
+    box-shadow: 4px 4px 0 var(--neo-border);
+    box-sizing: border-box;
   }
+
+  /* Section 6: Drag hint */
+  .neo-center-hint {
+    bottom: 10px;
+    font-size: 0.68rem;
+    padding: 0.22rem 0.7rem;
+  }
+
+  /* Sections 7-11: Right column — outfit tag, description, name input, buttons */
   .neo-picker-right {
     order: 3;
-    padding: 0.9rem;
-    gap:     0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;          /* 14px between each subsection */
+    padding: 0.875rem;
+    box-shadow: 4px 4px 0 var(--neo-border);
+    box-sizing: border-box;
   }
-  .neo-summary-title {
-    font-size: 1.25rem;
-  }
-  .neo-btn-play {
-    font-size: 1.05rem;
-    padding:   0.75rem 0.85rem;
-  }
-}
 
+  /* Section 7: Outfit tag + Section 8: Description */
+  .neo-summary-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding-bottom: 0.875rem;
+    border-bottom: 2px solid #f0e6da;
+  }
+
+  .neo-summary-badge {
+    font-size: 0.6rem;
+  }
+
+  .neo-summary-title {
+    font-size: 1.2rem;
+    margin: 0;
+  }
+
+  .neo-summary-tags {
+    gap: 0.3rem;
+  }
+
+  .neo-pill-tag {
+    font-size: 0.7rem;
+    padding: 0.12rem 0.5rem;
+  }
+
+  /* Section 8: Description */
+  .neo-summary-desc {
+    font-size: 0.8rem;
+    line-height: 1.4;
+    margin: 0;
+  }
+
+  /* Section 9: Display name label + input */
+  .neo-name-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .neo-input-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+  }
+
+  .neo-input-sub {
+    font-size: 0.7rem;
+  }
+
+  .neo-input {
+    font-size: 0.95rem;
+    padding: 0.65rem 0.8rem;
+  }
+
+  /* Sections 10+11: Play + Menu buttons */
+  .neo-picker-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;          /* 10px between buttons */
+    margin-top: 0;
+  }
+
+  /* Section 10: Play button */
+  .neo-btn-play {
+    width: 100%;
+    font-size: 1.05rem;
+    padding: 0.8rem 1rem;
+  }
+
+  /* Section 11: Menu button */
+  .neo-btn-back {
+    width: 100%;
+    font-size: 0.95rem;
+    padding: 0.65rem 1rem;
+    justify-content: center;
+  }
+
+}

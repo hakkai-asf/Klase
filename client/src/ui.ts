@@ -15,6 +15,7 @@ export type ChatLine = {
   name: string;
   text: string;
   kind: string;
+  role?: string;
 };
 
 export type JoinPayload = { name: string; look: Look; accessToken?: string };
@@ -1017,7 +1018,11 @@ export function addChat(
   if (line.kind === "join-admin" || line.kind === "leave-admin") b.classList.add("admin");
   if (line.kind === "chat") {
     // Security: Using `textContent` (via el) instead of `innerHTML` prevents XSS injection from player names
-    const who = el("strong", "", line.name);
+    const who = el("strong");
+    who.append(document.createTextNode(line.name));
+    if (line.role === "owner" || line.role === "admin") {
+      who.append(el("span", `badge ${line.role}`, line.role.toUpperCase()));
+    }
     // Security: Using `createTextNode` prevents XSS injection from the chat message itself
     b.append(who, document.createTextNode(line.text));
   } else {

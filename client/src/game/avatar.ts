@@ -586,7 +586,7 @@ function speechSprite(height: number) {
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, opacity: 0 });
   mat.toneMapped = false;
   const sprite = new THREE.Sprite(mat);
-  sprite.position.y = height + 0.62;
+  sprite.position.y = height + 1.05;
   sprite.scale.set(1.85, 0.58, 1);
   sprite.visible = false;
   sprite.renderOrder = 12;
@@ -599,7 +599,7 @@ function micSprite(height: number) {
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
   mat.toneMapped = false;
   const sprite = new THREE.Sprite(mat);
-  sprite.position.y = height + 0.52;
+  sprite.position.set(-0.92, height + 0.36, 0);
   sprite.scale.set(0.64, 0.36, 1);
   sprite.visible = false;
   sprite.renderOrder = 11;
@@ -814,14 +814,37 @@ export function drawMic(canvas: HTMLCanvasElement, tex: THREE.CanvasTexture, fil
   tex.needsUpdate = true;
 }
 
-export function layoutHeadSprites(avatar: {
-  headH: number;
-  micSprite: THREE.Sprite;
-  speechSprite: THREE.Sprite;
-}) {
+const _vCamDir = new THREE.Vector3();
+const _vLocalLeft = new THREE.Vector3();
+
+export function layoutHeadSprites(
+  avatar: {
+    headH: number;
+    root: THREE.Object3D;
+    micSprite: THREE.Sprite;
+    speechSprite: THREE.Sprite;
+  },
+  camera?: THREE.Camera,
+) {
   const h = avatar.headH;
-  avatar.micSprite.position.y = h + 0.5;
-  avatar.speechSprite.position.y = avatar.micSprite.visible ? h + 0.98 : h + 0.62;
+  // Speech bubble sits rock-solid above the username box & role badge stack
+  avatar.speechSprite.position.y = h + 1.05;
+
+  // Voice talking indicator sits to the side of the username box
+  const micY = h + 0.36;
+  if (camera) {
+    camera.getWorldDirection(_vCamDir);
+    _vLocalLeft.set(_vCamDir.z, 0, -_vCamDir.x);
+    if (_vLocalLeft.lengthSq() > 0.0001) {
+      _vLocalLeft.normalize();
+      _vLocalLeft.applyQuaternion(avatar.root.quaternion.clone().invert());
+      avatar.micSprite.position.set(_vLocalLeft.x * 0.92, micY, _vLocalLeft.z * 0.92);
+    } else {
+      avatar.micSprite.position.set(-0.92, micY, 0);
+    }
+  } else {
+    avatar.micSprite.position.set(-0.92, micY, 0);
+  }
 }
 
 export function setLocalFpPresentation(

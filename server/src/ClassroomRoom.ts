@@ -13,7 +13,7 @@ function dist(a: Player, b: Player) {
   return Math.hypot(a.x - b.x, a.z - b.z);
 }
 
-type ChatLine = { from: string; name: string; text: string; kind: string };
+type ChatLine = { from: string; name: string; text: string; kind: string; role?: string };
 
 function formatRoomLabel(key: string) {
   if (key === "klase-1") return "Classroom 1";
@@ -120,6 +120,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
         name: p.name,
         text,
         kind: "chat",
+        role: p.role,
       };
       this.pushChat(line);
       for (const other of this.clients) {

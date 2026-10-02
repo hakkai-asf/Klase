@@ -581,12 +581,22 @@ button, input, select { font-family: inherit; }
 }
 
 .bubble strong {
-  display: block;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
   font-size: 0.74rem;
   color: #e07a3d;
   font-weight: 900;
   letter-spacing: 0.02em;
-  margin-bottom: 0.1rem;
+  margin-bottom: 0.15rem;
+}
+
+.bubble strong .badge {
+  margin-left: 0;
+  font-size: 0.64rem;
+  padding: 0.08rem 0.42rem;
+  line-height: 1.2;
 }
 
 @keyframes bubble-in {
@@ -688,6 +698,7 @@ button, input, select { font-family: inherit; }
   margin-left: 0.4rem;
   border: 1.5px solid #1a1a1a;
   box-shadow: 1px 1px 0 #1a1a1a;
+  text-transform: uppercase;
 }
 
 .player-row.owner {

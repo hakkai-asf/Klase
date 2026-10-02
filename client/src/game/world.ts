@@ -467,7 +467,7 @@ export class World {
     drawSpeech(a.speechCanvas, a.speechTex, text);
     a.speechUntil = performance.now() + SPEECH_HOLD;
     a.speechSprite.visible = true;
-    layoutHeadSprites(a);
+    layoutHeadSprites(a, this.firstPerson ? this.fpCam : this.camera);
     if (id === this.localId) setLocalFpPresentation(a, this.firstPerson, Boolean(this.localSeatId));
   }
 
@@ -483,7 +483,7 @@ export class World {
         drawMic(a.micCanvas, a.micTex, v);
       }
     }
-    layoutHeadSprites(a);
+    layoutHeadSprites(a, this.firstPerson ? this.fpCam : this.camera);
     if (id === this.localId) setLocalFpPresentation(a, this.firstPerson, Boolean(this.localSeatId));
   }
 
@@ -624,7 +624,7 @@ export class World {
         a.micSprite.visible = false;
         a.micFill = -1;
       }
-      layoutHeadSprites(a);
+      layoutHeadSprites(a, this.fpCam);
     }
 
     this.updateSitPrompt(null);
@@ -740,7 +740,7 @@ export class World {
         a.micSprite.visible = false;
         a.micFill = -1;
       }
-      layoutHeadSprites(a);
+      layoutHeadSprites(a, this.firstPerson ? this.fpCam : this.camera);
     }
     if (this.spectator) {
       for (const a of this.avatars.values()) {

@@ -1950,3 +1950,167 @@ button, input, select { font-family: inherit; }
   }
 
 }
+
+/* Admin dashboard (/admin) */
+body.admin-route #app { overflow-y: auto; }
+.admin-card { padding: 1.6rem 1.8rem; max-width: 30rem; color: #1a1a1a; }
+.admin-card h2 { margin: 0 0 0.5rem; }
+.admin-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1rem; }
+.admin-actions a.clay-btn { text-decoration: none; display: inline-block; }
+.admin-page {
+  min-height: 100%;
+  padding: 1.6rem clamp(1rem, 4vw, 3rem) 3rem;
+  background: radial-gradient(circle at 18% 8%, #3a2418 0%, var(--klase-page) 52%);
+  color: var(--klase-cream);
+}
+.admin-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+.admin-head h1 { margin: 0; }
+.admin-who { margin: 0.3rem 0 0; font-weight: 800; }
+.admin-head .admin-actions { margin-top: 0; }
+.admin-status { min-height: 1.4rem; margin: 0.9rem 0; font-weight: 800; color: var(--klase-ink-muted); }
+.admin-status.bad { color: #ff8a8a; }
+.admin-rooms { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 1.2rem; align-items: start; }
+.admin-room { padding: 1rem 1.1rem 0.6rem; color: #1a1a1a; }
+.admin-room-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; margin-bottom: 0.7rem; }
+.admin-room-head h2 { margin: 0; }
+.admin-count { font-weight: 800; font-size: 0.8rem; }
+.admin-room > .clay-btn { margin-bottom: 0.8rem; }
+.admin-empty { font-weight: 700; opacity: 0.7; }
+.admin-enter-as {
+  margin: 1.1rem 0 0.4rem;
+  padding: 1.1rem 1.2rem 1.2rem;
+  color: #1a1a1a;
+}
+.admin-enter-as h2 { margin: 0 0 0.3rem; }
+.admin-enter-as > .lede { margin: 0 0 0.85rem; font-weight: 700; opacity: 0.75; }
+.admin-enter-name { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: flex-end; margin-bottom: 0.9rem; }
+.admin-enter-name label { display: flex; flex-direction: column; gap: 0.3rem; flex: 1; min-width: 14rem; font-weight: 800; font-size: 0.72rem; letter-spacing: 0.05em; }
+.admin-enter-picker.neo-picker-frame { margin: 0; max-width: none; }
+
+/* Google sign-in button on the account screen */
+.google-btn { display: flex; align-items: center; justify-content: center; gap: 0.6rem; }
+.google-btn svg { width: 1.15rem; height: 1.15rem; flex: none; }
+.menu-divider { text-align: center; font-weight: 800; opacity: 0.7; margin: 0.4rem 0; }
+
+/* Owner/admin add-on: left of the scene, below .hud-top. Never covers regular HUD. */
+.owner-layer {
+  position: fixed;
+  top: 4.6rem;
+  left: 0.75rem;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  max-width: min(22rem, calc(100vw - 1.5rem));
+  pointer-events: none;
+}
+.owner-pill,
+.owner-panel {
+  pointer-events: auto;
+}
+.owner-pill {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.35rem 0.28rem 0.45rem;
+  background: #1a1a1a;
+  color: #fff6ee;
+  border: 2.5px solid #ffa500;
+  border-radius: 999px;
+  box-shadow: 0 0 10px rgba(255, 165, 0, 0.35);
+}
+.owner-pill-tag {
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0 0.35rem;
+  background: linear-gradient(90deg, #ff4545, #ffa500, #38ef7d, #00b4db, #9b51e0);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.owner-pill .clay-btn {
+  padding: 0.22rem 0.55rem;
+  font-size: 0.72rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.owner-panel {
+  width: min(22rem, calc(100vw - 1.5rem));
+  max-height: min(28rem, calc(100vh - 10rem));
+  overflow: auto;
+  padding: 0.75rem;
+  color: #1a1a1a;
+}
+@media (max-width: 720px) {
+  .owner-layer {
+    top: 10.8rem;
+    left: 0.5rem;
+  }
+}
+.mod-toolbar { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.mod-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: rgba(0, 0, 0, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+.mod-modal {
+  width: min(32rem, 100%);
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  padding: 1.1rem 1.2rem;
+  color: #1a1a1a;
+}
+.mod-modal h2 { margin: 0 0 0.7rem; }
+.mod-modal label { display: block; font-weight: 800; margin: 0.65rem 0 0.3rem; }
+.mod-targets { max-height: 10rem; overflow: auto; margin: 0.4rem 0; }
+.mod-target { display: flex; align-items: center; gap: 0.35rem; padding: 0.25rem 0; font-weight: 700; }
+.mod-target-tools { margin: 0.35rem 0; }
+.mod-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.mod-custom { display: flex; gap: 0.4rem; margin-top: 0.4rem; }
+.mod-count { font-size: 0.75rem; font-weight: 800; opacity: 0.7; text-align: right; }
+.mod-preview {
+  white-space: pre-wrap;
+  background: #fff6ee;
+  border: 2px solid #1a1a1a;
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  font-weight: 700;
+  margin: 0;
+}
+.mod-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.9rem; }
+.mod-notice { padding: 1.4rem 1.6rem; max-width: 28rem; color: #1a1a1a; }
+.mod-notice h2 { margin: 0 0 0.8rem; }
+.mod-notice-time { font-weight: 900; }
+.admin-mod-tools { margin: 0.6rem 0 0.8rem; }
+
+.god-panel-host {
+  position: fixed;
+  top: 3.6rem;
+  right: 0.8rem;
+  z-index: 280;
+  width: min(26rem, calc(100vw - 1.6rem));
+  max-height: calc(100vh - 4.6rem);
+  overflow: auto;
+}
+.god-panel { padding: 0.9rem 1rem 0.6rem; color: #1a1a1a; }
+.god-announce { display: flex; gap: 0.4rem; margin-bottom: 0.75rem; }
+.god-announce .clay-input { flex: 1; }
+
+.bubble.announce {
+  background: #1a1a1a;
+  color: #fff6ee;
+  border-color: #ffa500;
+  box-shadow: 2.5px 2.5px 0 #c45c28;
+}
+.bubble.whisper {
+  background: #efe4ff;
+  border-color: #9b51e0;
+}

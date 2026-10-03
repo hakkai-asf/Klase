@@ -18,6 +18,16 @@ Open two browser tabs for multiplayer. Guest join works with no cloud accounts.
 
 Copy `.env.example` to `.env` (repo root or `server/`) when you want Supabase accounts. Run `docs/supabase.sql` in the SQL editor. Set `KLASE_OWNER_USER_ID` or `KLASE_OWNER_EMAIL` so owner is not a spoofable display name. Until those keys exist, display name `Hakkai` is owner in guest-dev only.
 
+## Google sign-in and the admin dashboard
+
+1. Run `docs/supabase.sql` in the Supabase SQL editor (profiles table, RLS, new-user trigger).
+2. Supabase → Authentication → URL Configuration: add `http://localhost:5173/auth/callback` and your production `https://<site>/auth/callback` to **Redirect URLs**.
+3. Google Cloud → OAuth client → Authorized redirect URI: `https://<project-ref>.supabase.co/auth/v1/callback` (Google client ID/secret live only in the Supabase Google provider).
+4. Set the Supabase env vars on both hosts (see `.env.example`), then sign in with Google once and set `KLASE_OWNER_USER_ID` or `KLASE_OWNER_EMAIL`.
+5. Open `/admin`. Access is decided by the game server on every request (`/api/admin/*` re-verifies the token and role). The owner also gets **God mode**: join any room from the dashboard, silently and invisibly, ignoring capacity limits.
+
+Owner/admin display names are reserved: guests (and renames in-room) can't use them, case-insensitively.
+
 ## Controls
 
 - WASD / arrows — move (screen-relative on the isometric floor)
@@ -32,7 +42,7 @@ Copy `.env.example` to `.env` (repo root or `server/`) when you want Supabase ac
 
 You do **not** need Supabase for guest join. Skip those keys until you want email accounts.
 
-**Vercel** hosts the website. **Render** hosts the game server (who is in the room). Both are required for [klase-tan.vercel.app](https://klase-tan.vercel.app) to join.
+**Vercel** hosts the website. **Render** hosts the game server (who is in the room). Both are required for [klase-room.vercel.app](https://klase-room.vercel.app) to join.
 
 ### 1. Push this repo to GitHub `main`
 

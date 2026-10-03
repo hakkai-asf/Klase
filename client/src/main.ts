@@ -1,12 +1,13 @@
 import "./styles.css";
-import { hasLink, normalizeLook, randomLook, type Look } from "@klase/shared";
+import { ROOM_CODES, hasLink, normalizeLook, randomLook, type Look } from "@klase/shared";
 import { World } from "./game/world";
 import { preloadAvatars } from "./game/avatar";
 import { preloadClassroom } from "./game/classroom";
 import { joinClassroom, pickRoom, type RemotePlayer } from "./net";
-import { addChat, disposeLandingPreviews, renderGameShell, renderJoining, renderLanding, renderOnboarding, setChatOpen, setFreeCamButton, setGameHudVisible, setMicButton, setMuteAllButton, setViewButton, setZoomHud, showCustomize, showPlayers, type ChatLine } from "./ui";
+import { addChat, disposeLandingPreviews, renderGameShell, renderJoining, renderLanding, renderOnboarding, renderStaffBar, setChatOpen, setFreeCamButton, setGameHudVisible, setMicButton, setMuteAllButton, setViewButton, setZoomHud, showCustomize, showPlayers, type ChatLine } from "./ui";
+import { parseHeld, renderModerationNotice } from "./moderation";
 import { bindJoystick, isTouchUi } from "./joystick";
-import { currentSession, loadSavedLook, signIn, signUp } from "./auth";
+import { AUTH_CALLBACK_PATH, completeOAuthCallback, currentSession, loadSavedLook, loadStaffIdentity, signIn, signInWithGoogle, signUp } from "./auth";
 import { VoiceMesh } from "./voice";
 import type { Room } from "colyseus.js";
 
@@ -44,6 +45,7 @@ function startLanding(err = "", startAt?: "menu" | "play" | "account") {
     () => {
       showOnboarding();
     },
+    () => signInWithGoogle("/"),
   );
 }
 
@@ -51,7 +53,15 @@ async function accountJoin(mode: "in" | "up", email: string, password: string, n
   try {
     if (mode === "up") await signUp(email, password, name);
     else await signIn(email, password);
-    const session = await currentSession();
+    await joinWithSession(name);
+  } catch (e) {
+    startLanding(e instanceof Error ? e.message : "Could not sign in.");
+  }
+}
+
+/** Join the game as the currently signed-in account (email sign-in and Google both end up here). */
+async function joinWithSession(fallbackName: string) {
+  try {
     const saved = await loadSavedLook();
     const stored = (() => {
       try {
@@ -62,7 +72,7 @@ async function accountJoin(mode: "in" | "up", email: string, password: string, n
     })();
     const look = normalizeLook(saved?.look ?? stored);
     look.body = stored.body;
-    await finalizeJoin(saved?.name || name, look);
+    await finalizeJoin(saved?.name || fallbackName, look);
   } catch (e) {
     startLanding(e instanceof Error ? e.message : "Could not sign in.");
   }
@@ -74,7 +84,22 @@ async function finalizeJoin(name: string, look: Look) {
   await bootWorld(name, look, session?.access_token, false);
 }
 
-async function bootWorld(name: string, look: Look, accessToken?: string, isPregame = false) {
+type StaffJoin = { roomKey: string; mode: "owner" | "admin" | "observe" };
+
+function staffRoomUrl(roomKey: string, mode: string) {
+  return `/room/${roomKey}?mode=${mode}`;
+}
+
+function showHeld(notice: import("@klase/shared").ModerationNotice) {
+  joining = false;
+  renderModerationNotice(app, notice, () => startLanding("", "play"));
+}
+
+/**
+ * `staff`: dashboard or /room/... join. Observe is the silent invisible camera.
+ * Enter-room is a normal playable body. The server still checks the token for role.
+ */
+async function bootWorld(name: string, look: Look, accessToken?: string, isPregame = false, staff?: StaffJoin) {
   if (joining) return;
   joining = true;
   disposeLandingPreviews();
@@ -85,15 +110,29 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
   if (!isPregame && !overlayRoot.parentElement) app.append(overlayRoot);
   const fail = (err: string) => {
     loader.dispose();
+    if (staff) {
+      window.alert(err);
+      window.location.replace("/admin");
+      return;
+    }
     startLanding(err);
   };
   loader.setStage("find");
-  const picked = await pickRoom(name, accessToken);
+  const picked = staff ? { roomKey: staff.roomKey } : await pickRoom(name, accessToken);
   if ("error" in picked) {
+    if (picked.error === "HELD" && picked.notice) {
+      loader.dispose();
+      showHeld(picked.notice);
+      return;
+    }
     const err =
       picked.error === "BANNED"
         ? "This account is banned."
-        : picked.error === "ROOM_FULL"
+        : picked.error === "NAME_RESERVED"
+          ? "That name belongs to a Klase admin. Pick a different name."
+          : picked.error === "BAD_NAME"
+          ? "That name isn't allowed."
+          : picked.error === "ROOM_FULL"
           ? "All classrooms are full. Try again in a bit."
           : picked.error === "AUTH"
             ? "Sign-in expired. Try again."
@@ -109,11 +148,23 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
   let room: Room;
   try {
     loader.setStage("join");
-    room = await joinClassroom(picked.roomKey, name, look, accessToken);
+    room = await joinClassroom(picked.roomKey, name, look, accessToken, staff?.mode === "observe", Boolean(staff));
   } catch (e) {
     const msg = String(e);
     if (msg.includes("ROOM_FULL")) fail("All classrooms are full. Try again in a bit.");
     else if (msg.includes("BANNED")) fail("This name or account is banned.");
+    else if (msg.includes("HELD") || msg.includes("\"notice\"")) {
+      const n = parseHeld(msg);
+      if (n) {
+        loader.dispose();
+        showHeld(n);
+        return;
+      }
+      fail("You cannot rejoin yet.");
+    }
+    else if (msg.includes("NAME_RESERVED")) fail("That name belongs to a Klase admin. Pick a different name.");
+    else if (msg.includes("BAD_NAME")) fail("That name isn't allowed.");
+    else if (msg.includes("NO_PERMISSION")) fail("You don't have permission to do that.");
     else fail(
       import.meta.env.PROD
         ? "Could not join the game server. Check VITE_COLYSEUS_URL (wss://…) and that the Colyseus host is running."
@@ -127,6 +178,7 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
   let world: World | undefined;
   let voice: VoiceMesh | undefined;
   let leaveReason = "";
+  let pendingNotice: import("@klase/shared").ModerationNotice | null = null;
   let left = false;
   const CHAT_IDLE_MS = 5000;
   let chatIdle = 0;
@@ -146,10 +198,18 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
     window.removeEventListener("keydown", bumpActivity);
     window.removeEventListener("pointerdown", bumpActivity);
     voice?.dispose();
+    if (pendingNotice) {
+      showHeld(pendingNotice);
+      return;
+    }
+    if (staff) {
+      window.location.replace("/admin");
+      return;
+    }
     if (leaveReason === "idle" || code === 4002) {
-      startLanding("You were disconnected for being idle (3 minutes).");
+      startLanding("You were disconnected for being idle.");
     } else if (code === 4000) {
-      startLanding("You were removed from the classroom.");
+      startLanding(leaveReason || "You were removed from the classroom.");
     } else if (code === 4001) {
       startLanding("This account is banned.");
     } else {
@@ -217,18 +277,27 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
   room.onMessage("dropped", (data: { reason?: string }) => {
     if (data?.reason === "idle") leaveReason = "idle";
   });
+  room.onMessage("moderation-notice", (data: import("@klase/shared").ModerationNotice) => {
+    if (data?.kind) pendingNotice = data;
+  });
   window.addEventListener("mousemove", bumpActivity);
   window.addEventListener("keydown", bumpActivity);
   window.addEventListener("pointerdown", bumpActivity);
   if (left) return;
   let iAmOwner = false;
+  let iAmStaff = false;
+  let observeCamApplied = false;
+  let staffBar: ReturnType<typeof renderStaffBar> | null = null;
+  const showHudFreeCam = () => (iAmOwner || iAmStaff) && staff?.mode !== "observe";
   world = new World(ui.canvas, selfId, name, look, {
     sitBtn: isTouchUi() ? ui.sitBtn : null,
     onFirstPersonChange: (on) => {
       setViewButton(ui.viewBtn, on, isTouchUi());
       setZoomHud(ui.zoomWrap, ui.zoomPanel, ui.zoomBtn, !on);
     },
-    onFreeCamChange: (on) => setFreeCamButton(ui.freeCamBtn, on, iAmOwner),
+    onFreeCamChange: (on) => {
+      setFreeCamButton(ui.freeCamBtn, on, showHudFreeCam());
+    },
   });
   voice = new VoiceMesh(room, selfId);
   voice.localMuted = muted;
@@ -237,6 +306,40 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
   const scene = world;
   const mesh = voice;
   globalWorld = world;
+
+  const leaveToAdmin = () => {
+    try {
+      room.leave();
+    } catch {
+      /* already closed */
+    }
+    window.location.assign("/admin");
+  };
+
+  const mountStaffBar = (role: string) => {
+    if (staffBar) return;
+    const observe = staff?.mode === "observe";
+    if (observe) {
+      world.setGodMode(true);
+      ui.viewBtn.hidden = true;
+    }
+    staffBar = renderStaffBar(app, {
+      roomLabel: String(room.state.roomKey || staff?.roomKey || "").replace("klase-", "Classroom "),
+      role,
+      observe,
+      actorName: name,
+      onBack: leaveToAdmin,
+      listPlayers: () => snapshot(),
+      selfId,
+      onSubmit: (payload) => room.send("moderate", payload),
+      onNoclip: () => {
+        const next = !scene.noclip;
+        scene.setNoclip(next);
+        room.send("noclip", { on: next });
+        staffBar?.setNoclip(next);
+      },
+    });
+  };
   
   if (isPregame) {
     world.setSpectatorMode(true);
@@ -260,6 +363,8 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
   const snapshot = () => {
     const list: RemotePlayer[] = [];
     room.state.players.forEach((p: RemotePlayer, id: string) => {
+      // Observe mode has no body. Noclip stays in state so proximity voice still has a position.
+      if (p.observer && id !== selfId) return;
       list.push({
         sessionId: id,
         name: p.name,
@@ -274,6 +379,8 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
         body: p.body === "y" ? "y" : "x",
         serverMuted: p.serverMuted,
         seatId: p.seatId ?? "",
+        observer: p.observer,
+        noclip: p.noclip,
       });
     });
     return list;
@@ -293,6 +400,7 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
         p.rotY,
         p.seatId ?? "",
         p.role ?? "",
+        Boolean(p.noclip),
       );
       if (p.serverMuted) mutedIds.push(p.sessionId);
     }
@@ -302,10 +410,25 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
     }
     const me = snapshot().find((p) => p.sessionId === selfId);
     const n = snapshot().length;
-    ui.roomChip.textContent = `${room.state.roomKey} · ${n} in room`;
     iAmOwner = me?.role === "owner";
-    scene.setOwnerTools(iAmOwner);
-    setFreeCamButton(ui.freeCamBtn, scene.freeCam, iAmOwner);
+    iAmStaff = me?.role === "owner" || me?.role === "admin";
+    ui.roomChip.textContent = staff?.mode === "observe"
+      ? `${room.state.roomKey} · ${Math.max(0, n - 1)} players · observing`
+      : `${room.state.roomKey} · ${n} in room`;
+    scene.setOwnerTools(iAmStaff);
+    if (iAmStaff) {
+      mountStaffBar(me?.role || "admin");
+      const mode = staff?.mode === "observe" ? "observe" : me?.role === "owner" ? "owner" : "admin";
+      const next = staffRoomUrl(String(room.state.roomKey), mode);
+      if (`${window.location.pathname}${window.location.search}` !== next) {
+        window.history.replaceState({}, "", next);
+      }
+    }
+    if (staff?.mode === "observe" && iAmOwner && !observeCamApplied) {
+      observeCamApplied = true;
+      scene.setFreeCam(true);
+    }
+    setFreeCamButton(ui.freeCamBtn, scene.freeCam, showHudFreeCam());
     if (panelOpen === "players" && me) {
       showPlayers(
         ui.layer,
@@ -517,4 +640,64 @@ async function startApp() {
   showOnboarding();
 }
 
-startApp();
+/**
+ * Tiny path router (Vercel rewrites every path to index.html).
+ *   /auth/callback  Google OAuth return: finish the session, then continue to `next`
+ *   /admin          admin dashboard (the server decides who may use it)
+ *   /room/klase-N?mode=owner|admin|observe  staff join
+ *   anything else   the game
+ */
+async function route() {
+  let callbackError = "";
+  let cameFromOAuth = false;
+  if (window.location.pathname.replace(/\/+$/, "") === AUTH_CALLBACK_PATH) {
+    const result = await completeOAuthCallback();
+    callbackError = result.error;
+    cameFromOAuth = !result.error;
+  }
+
+  const path = window.location.pathname.replace(/\/+$/, "") || "/";
+
+  if (path === "/admin") {
+    document.body.classList.add("admin-route");
+    const { renderAdmin } = await import("./admin");
+    await renderAdmin(app);
+    return;
+  }
+
+  const roomMatch = path.match(/^\/room\/(klase-[123])$/);
+  const params = new URLSearchParams(window.location.search);
+  const legacyGod = params.get("god") ?? "";
+  const staffKey = roomMatch?.[1] ?? ((ROOM_CODES as readonly string[]).includes(legacyGod) ? legacyGod : "");
+  const staffMode = (params.get("mode") === "observe" || legacyGod
+    ? "observe"
+    : params.get("mode") === "admin"
+      ? "admin"
+      : "owner") as StaffJoin["mode"];
+  if (staffKey) {
+    const session = await currentSession();
+    if (!session) {
+      window.location.replace("/admin");
+      return;
+    }
+    const identity = await loadStaffIdentity();
+    await bootWorld(identity.name, identity.look, session.access_token, false, { roomKey: staffKey, mode: staffMode });
+    return;
+  }
+
+  if (callbackError) {
+    await startApp();
+    startLanding(callbackError, "account");
+    return;
+  }
+
+  // Came back from Google with a session: go straight into the game like email sign-in does.
+  if (cameFromOAuth && path === "/") {
+    await joinWithSession("Student");
+    return;
+  }
+
+  await startApp();
+}
+
+void route();

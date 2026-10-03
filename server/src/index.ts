@@ -7,6 +7,7 @@ import { WebSocketTransport } from "@colyseus/ws-transport";
 import { REGULAR_CAP, ROOM_CODES } from "@klase/shared";
 import { ClassroomRoom } from "./ClassroomRoom.js";
 import { resolveIdentity } from "./roles.js";
+import { registerAdminRoutes } from "./admin.js";
 
 const port = Number(process.env.PORT ?? 2567);
 const app = express();
@@ -14,6 +15,7 @@ app.use(cors());
 app.use(express.json());
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
+registerAdminRoutes(app);
 
 app.post("/api/find-room", async (req, res) => {
   try {
@@ -43,7 +45,24 @@ app.post("/api/find-room", async (req, res) => {
     res.status(409).json({ error: "ROOM_FULL" });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "AUTH";
-    res.status(msg === "BANNED" ? 403 : 401).json({ error: msg });
+    if (msg.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(msg) as { error?: string; notice?: unknown };
+        if (parsed.error === "HELD") {
+          res.status(403).json(parsed);
+          return;
+        }
+      } catch {
+        /* not json */
+      }
+    }
+    const status =
+      msg === "BANNED" || msg.startsWith("KICKED:")
+        ? 403
+        : msg === "NAME_RESERVED" || msg === "BAD_NAME"
+          ? 422
+          : 401;
+    res.status(status).json({ error: msg });
   }
 });
 

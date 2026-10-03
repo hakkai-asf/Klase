@@ -1,4 +1,4 @@
-import { redactLinks } from "@klase/shared";
+import { MOD_NAME_MAX, redactLinks } from "@klase/shared";
 
 const RAW = [
   "fuck",
@@ -34,6 +34,15 @@ const patterns = RAW.map((w) => {
 
 export function filterChat(text: string): string {
   return filterProfanity(redactLinks(text));
+}
+
+export function sanitizeDisplayName(raw: string): string {
+  return String(raw ?? "").replace(/\s+/g, " ").trim().slice(0, MOD_NAME_MAX);
+}
+
+export function isCleanDisplayName(name: string): boolean {
+  const n = sanitizeDisplayName(name);
+  return Boolean(n) && filterProfanity(n) === n;
 }
 
 export function filterProfanity(text: string): string {

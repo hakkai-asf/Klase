@@ -1,7 +1,8 @@
-import { BODY_LABELS, BODIES, CHAT_LOG_MAX, WEARABLE_LABELS, WEARABLES, normalizeLook, type BodyId, type Look, type WearableSlot } from "@klase/shared";
+import { CHAT_LOG_MAX, WEARABLE_LABELS, WEARABLES, normalizeLook, type Look, type WearableSlot } from "@klase/shared";
 import type { RemotePlayer } from "./net";
 import { authEnabled } from "./auth";
-import { createLiveAvatarPreview, paintBodyPortrait, preloadAvatars } from "./game/avatar";
+import { bindPanelHotkeys, renderModerationToolbar, type ModSubmit } from "./moderation";
+import { mountLookPicker } from "./lookPicker";
 import { isTouchUi } from "./joystick";
 import gameMenuUrl from "../../assets/menu-screen/game-menu.png";
 import howKlaseWorksTextUrl from "../../assets/menu-screen/how-klase-works-text.png";
@@ -452,6 +453,8 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") 
   return n;
 }
 
+const GOOGLE_G = `<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.6 5.9c4.4-4.1 7-10.1 7-17.6z"/><path fill="#FBBC05" d="M10.5 28.7a14.5 14.5 0 0 1 0-9.4l-7.9-6.1a24 24 0 0 0 0 21.6l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.6-5.9c-2.1 1.4-4.9 2.3-8.3 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.1C6.5 42.6 14.6 48 24 48z"/></svg>`;
+
 const MIC_ON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>`;
 const MIC_OFF = `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M4 4l16 16"/></svg>`;
 
@@ -486,6 +489,103 @@ export function setViewButton(btn: HTMLElement, firstPerson: boolean, compact = 
   btn.classList.toggle("primary", firstPerson);
 }
 
+type StaffHudHandlers = {
+  roomLabel: string;
+  role: string;
+  observe: boolean;
+  actorName: string;
+  onBack: () => void;
+  listPlayers: () => RemotePlayer[];
+  selfId: string;
+  onSubmit: (payload: ModSubmit) => void;
+  onNoclip: () => void;
+};
+
+/**
+ * Compact add-on layer. Does not replace or hide the regular game HUD.
+ * Wrapper is pointer-events: none so scene clicks still walk the character.
+ */
+export function renderStaffBar(root: HTMLElement, h: StaffHudHandlers) {
+  const layer = el("div", "owner-layer");
+  layer.setAttribute("aria-label", h.observe ? "Observe tools" : `${h.role} tools`);
+  const pill = el("div", "owner-pill");
+  const tag = el("span", "owner-pill-tag", h.observe ? "Observe" : h.role === "admin" ? "Admin" : "Owner");
+  const panel = el("div", "owner-panel clay");
+  panel.hidden = true;
+  renderModerationToolbar(panel, {
+    role: h.role,
+    actorName: h.actorName,
+    getPlayers: () =>
+      h.listPlayers()
+        .filter((p) => p.sessionId !== h.selfId)
+        .map((p) => ({ id: p.sessionId, name: p.name, role: p.role, serverMuted: p.serverMuted, observer: p.observer })),
+    onSubmit: h.onSubmit,
+  });
+
+  let open = false;
+  const setOpen = (next: boolean) => {
+    open = next;
+    panel.hidden = !open;
+    controlsBtn.classList.toggle("primary", open);
+    controlsBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    controlsBtn.textContent = open ? "Hide" : "Controls";
+    if (open) document.exitPointerLock();
+  };
+  const controlsBtn = el("button", "clay-btn", "Controls") as HTMLButtonElement;
+  controlsBtn.type = "button";
+  controlsBtn.title = "Moderation (G)";
+  controlsBtn.addEventListener("click", () => setOpen(!open));
+  pill.append(tag, controlsBtn);
+  let clipBtn: HTMLButtonElement | null = null;
+  if (!h.observe) {
+    clipBtn = el("button", "clay-btn", "Noclip") as HTMLButtonElement;
+    clipBtn.type = "button";
+    clipBtn.addEventListener("click", () => h.onNoclip());
+    pill.append(clipBtn);
+  }
+  const back = el("button", "clay-btn warn", "Admin") as HTMLButtonElement;
+  back.type = "button";
+  back.title = "Back to Admin";
+  back.addEventListener("click", () => {
+    back.disabled = true;
+    h.onBack();
+  });
+  pill.append(back);
+  layer.append(pill, panel);
+  root.append(layer);
+  const place = () => {
+    const hud = document.querySelector(".hud-top") as HTMLElement | null;
+    if (!hud || hud.style.display === "none" || getComputedStyle(hud).display === "none") {
+      layer.style.top = "";
+      return;
+    }
+    layer.style.top = `${Math.round(hud.getBoundingClientRect().bottom + 8)}px`;
+  };
+  place();
+  window.addEventListener("resize", place);
+  const hudEl = document.querySelector(".hud-top");
+  const ro = typeof ResizeObserver !== "undefined" && hudEl ? new ResizeObserver(place) : null;
+  if (hudEl && ro) ro.observe(hudEl);
+  const unbind = bindPanelHotkeys(
+    () => open,
+    () => setOpen(false),
+    () => setOpen(!open),
+  );
+  return {
+    remove: () => {
+      unbind();
+      window.removeEventListener("resize", place);
+      ro?.disconnect();
+      layer.remove();
+    },
+    setNoclip: (on: boolean) => {
+      if (!clipBtn) return;
+      clipBtn.textContent = on ? "Noclip on" : "Noclip";
+      clipBtn.classList.toggle("primary", on);
+    },
+  };
+}
+
 export function setFreeCamButton(btn: HTMLElement, on: boolean, visible: boolean) {
   btn.hidden = !visible;
   btn.textContent = on ? "Exit cam" : "Free cam";
@@ -515,6 +615,7 @@ export function renderLanding(
   initialError = "",
   startAt?: "menu" | "play" | "account",
   onBackToMenu?: () => void,
+  onGoogle?: () => Promise<void>,
 ) {
   disposeLandingPreviews();
   root.innerHTML = "";
@@ -534,18 +635,6 @@ export function renderLanding(
     if (btn.disabled) return false;
     btn.disabled = true;
     return true;
-  };
-
-  const paintPortraits = (host: HTMLElement, portraits: Map<BodyId, HTMLImageElement>) => {
-    void preloadAvatars()
-      .then(() => {
-        if (!host.isConnected) return;
-        const stops = BODIES.map((id) => paintBodyPortrait(portraits.get(id)!, id));
-        chooserDispose = () => {
-          for (const stop of stops) stop();
-        };
-      })
-      .catch((e) => console.warn("Character preview failed", e));
   };
 
   const show = (screen: MenuScreen) => {
@@ -574,212 +663,30 @@ export function renderLanding(
         el("div", "neo-card-tag", "CHARACTER SELECTION"),
         el("h2", "neo-picker-title-text", "Choose Your Avatar"),
       );
-      const headAccountBtn = el("button", "neo-btn neo-btn-ghost-sm neo-btn-disabled-soon") as HTMLButtonElement;
+      const accountsOn = authEnabled();
+      const headAccountBtn = el(
+        "button",
+        accountsOn ? "neo-btn neo-btn-ghost-sm" : "neo-btn neo-btn-ghost-sm neo-btn-disabled-soon",
+      ) as HTMLButtonElement;
       headAccountBtn.type = "button";
-      headAccountBtn.disabled = true;
-      headAccountBtn.append(
-        document.createTextNode("Account "),
-        el("span", "neo-badge-soon", "Coming Soon"),
-      );
+      if (accountsOn) {
+        headAccountBtn.textContent = "Account";
+        headAccountBtn.addEventListener("click", () => show("account"));
+      } else {
+        headAccountBtn.disabled = true;
+        headAccountBtn.append(
+          document.createTextNode("Account "),
+          el("span", "neo-badge-soon", "Coming Soon"),
+        );
+      }
       pickerHead.append(headTitleWrap, headAccountBtn);
 
-      // ── Main 3-Column Body ─────────────────────────────────────────────────
-      const pickerBody = el("div", "neo-picker-body");
-
-      // 1. LEFT COLUMN: Scrollable Grid of Character Cards
-      const leftCol = el("div", "neo-picker-left");
-
-      // Category filter tabs
-      const tabsBar = el("div", "neo-picker-tabs");
-      type CategoryTab = "body" | "hat" | "top" | "accessory";
-      let activeTab: CategoryTab = "body";
-
-      const tabItems: Array<{ id: CategoryTab; label: string; disabled?: boolean }> = [
-        { id: "body", label: "Characters" },
-        { id: "hat", label: "Hats", disabled: true },
-        { id: "top", label: "Tops", disabled: true },
-        { id: "accessory", label: "Accs", disabled: true },
-      ];
-
-      const tabBtnsMap = new Map<CategoryTab, HTMLButtonElement>();
-      tabItems.forEach((tab) => {
-        const classes = `neo-tab-btn${activeTab === tab.id ? " active" : ""}${tab.disabled ? " disabled" : ""}`;
-        const tBtn = el("button", classes) as HTMLButtonElement;
-        tBtn.type = "button";
-        tBtn.append(document.createTextNode(tab.label));
-        if (tab.disabled) {
-          tBtn.disabled = true;
-          tBtn.append(el("span", "neo-tab-soon", "Soon"));
-        } else {
-          tBtn.addEventListener("click", () => {
-            activeTab = tab.id;
-            tabBtnsMap.forEach((b, k) => b.classList.toggle("active", k === activeTab));
-            renderCardGrid();
-          });
-        }
-        tabBtnsMap.set(tab.id, tBtn);
-        tabsBar.append(tBtn);
+      const picker = mountLookPicker(pickerFrame, {
+        look: storedLook(),
+        enableWearables: false,
+        persistLook: true,
       });
-      leftCol.append(tabsBar);
-
-      const cardsGridContainer = el("div", "neo-picker-grid-container");
-      leftCol.append(cardsGridContainer);
-
-      let currentLook: Look = storedLook();
-      const portraits = new Map<BodyId, HTMLImageElement>();
-
-      let updateRightPanelSummary: () => void = () => {};
-      let livePreviewHandle: ReturnType<typeof createLiveAvatarPreview> | null = null;
-
-      const renderCardGrid = () => {
-        const prevScrollLeft = cardsGridContainer.scrollLeft;
-        const prevScrollTop = cardsGridContainer.scrollTop;
-        cardsGridContainer.innerHTML = "";
-        const grid = el("div", "neo-picker-grid");
-
-        const addSectionHeading = (title: string) => {
-          const h = el("div", "neo-grid-heading", title);
-          grid.append(h);
-        };
-
-        // ── Character Cards (Selectable)
-        if (activeTab === "body") {
-          addSectionHeading("Characters");
-          for (const id of BODIES) {
-            const card = el("button", `neo-char-card${currentLook.body === id ? " active" : ""}`) as HTMLButtonElement;
-            card.type = "button";
-            const thumb = el("div", "neo-char-card-thumb");
-            const img = el("img") as HTMLImageElement;
-            img.alt = BODY_LABELS[id];
-            thumb.append(img);
-            portraits.set(id, img);
-
-            const info = el("div", "neo-char-card-info");
-            info.append(
-              el("span", "neo-char-card-name", BODY_LABELS[id]),
-              el("span", "neo-char-card-tag", "Character"),
-            );
-            const check = el("div", "neo-char-card-check", "✓");
-
-            card.append(thumb, info, check);
-            card.addEventListener("click", () => {
-              currentLook.body = id;
-              localStorage.setItem("klase-look", JSON.stringify(currentLook));
-              renderCardGrid();
-              livePreviewHandle?.updateLook(currentLook);
-              updateRightPanelSummary();
-            });
-            grid.append(card);
-          }
-        }
-
-        // ── Wearable Cards (Hats) - Disabled / Coming Soon
-        if (activeTab === "hat") {
-          addSectionHeading("Hats (Coming Soon)");
-          for (const hatId of WEARABLES.hat) {
-            const card = el("button", "neo-char-card disabled") as HTMLButtonElement;
-            card.type = "button";
-            card.disabled = true;
-            const info = el("div", "neo-char-card-info");
-            info.append(
-              el("span", "neo-char-card-name", WEARABLE_LABELS[hatId] || "None"),
-              el("span", "neo-char-card-soon-tag", "Coming Soon"),
-            );
-            card.append(info);
-            grid.append(card);
-          }
-        }
-
-        // ── Wearable Cards (Tops) - Disabled / Coming Soon
-        if (activeTab === "top") {
-          addSectionHeading("Tops (Coming Soon)");
-          for (const topId of WEARABLES.top) {
-            const card = el("button", "neo-char-card disabled") as HTMLButtonElement;
-            card.type = "button";
-            card.disabled = true;
-            const info = el("div", "neo-char-card-info");
-            info.append(
-              el("span", "neo-char-card-name", WEARABLE_LABELS[topId] || "None"),
-              el("span", "neo-char-card-soon-tag", "Coming Soon"),
-            );
-            card.append(info);
-            grid.append(card);
-          }
-        }
-
-        // ── Wearable Cards (Accessories) - Disabled / Coming Soon
-        if (activeTab === "accessory") {
-          addSectionHeading("Accessories (Coming Soon)");
-          for (const accId of WEARABLES.accessory) {
-            const card = el("button", "neo-char-card disabled") as HTMLButtonElement;
-            card.type = "button";
-            card.disabled = true;
-            const info = el("div", "neo-char-card-info");
-            info.append(
-              el("span", "neo-char-card-name", WEARABLE_LABELS[accId] || "None"),
-              el("span", "neo-char-card-soon-tag", "Coming Soon"),
-            );
-            card.append(info);
-            grid.append(card);
-          }
-        }
-
-        cardsGridContainer.append(grid);
-        cardsGridContainer.scrollLeft = prevScrollLeft;
-        cardsGridContainer.scrollTop = prevScrollTop;
-        paintPortraits(cardsGridContainer, portraits);
-      };
-
-      renderCardGrid();
-
-      // 2. CENTER COLUMN: Live 3D Avatar Render Viewport
-      const centerCol = el("div", "neo-picker-center");
-      const centerView = el("div", "neo-char-center-view");
-      const centerHint = el("div", "neo-center-hint", "Drag to rotate avatar");
-      centerView.append(centerHint);
-      centerCol.append(centerView);
-
-      void preloadAvatars().then(() => {
-        if (centerView.isConnected) {
-          livePreviewHandle = createLiveAvatarPreview(centerView, currentLook);
-          chooserDispose = () => {
-            livePreviewHandle?.dispose();
-            livePreviewHandle = null;
-          };
-        }
-      });
-
-      // 3. RIGHT COLUMN: Details & Action Panel
-      const rightCol = el("div", "neo-picker-right");
-
-      const summaryCard = el("div", "neo-summary-card");
-      const avatarTitle = el("h3", "neo-summary-title", BODY_LABELS[currentLook.body]);
-      const avatarTags = el("div", "neo-summary-tags");
-
-      updateRightPanelSummary = () => {
-        avatarTitle.textContent = BODY_LABELS[currentLook.body];
-        avatarTags.innerHTML = "";
-
-        const items = [
-          WEARABLE_LABELS[currentLook.top],
-          WEARABLE_LABELS[currentLook.hat],
-          WEARABLE_LABELS[currentLook.accessory],
-        ].filter((x) => x && x !== "None");
-
-        if (items.length === 0) {
-          avatarTags.append(el("span", "neo-pill-tag", "Default Outfit"));
-        } else {
-          items.forEach((item) => avatarTags.append(el("span", "neo-pill-tag", item)));
-        }
-      };
-
-      updateRightPanelSummary();
-      summaryCard.append(
-        el("div", "neo-summary-badge", "SELECTED AVATAR"),
-        avatarTitle,
-        avatarTags,
-        el("p", "neo-summary-desc", "Customizable student avatar for proximity voice chat and classroom exploration."),
-      );
+      chooserDispose = () => picker.dispose();
 
       // Display Name Form
       const nameForm = el("div", "neo-name-form");
@@ -796,10 +703,9 @@ export function renderLanding(
       nameForm.append(nameInput);
 
       if (initialError) {
-        rightCol.append(el("div", "error-banner", initialError));
+        picker.rightPanel.append(el("div", "error-banner", initialError));
       }
 
-      // Action Buttons
       const actionsWrap = el("div", "neo-picker-actions");
 
       const playBtn = el("button", "neo-btn neo-btn-play", "▶  Play") as HTMLButtonElement;
@@ -809,9 +715,10 @@ export function renderLanding(
         playBtn.disabled = true;
         playBtn.textContent = "Joining…";
         const n = nameInput.value.trim() || "Guest";
+        const look = picker.getLook();
         localStorage.setItem("klase-name", n);
-        localStorage.setItem("klase-look", JSON.stringify(currentLook));
-        onJoin({ name: n, look: currentLook });
+        localStorage.setItem("klase-look", JSON.stringify(look));
+        onJoin({ name: n, look });
       });
 
       const backBtn = el("button", "neo-btn neo-btn-back", "← Menu") as HTMLButtonElement;
@@ -826,17 +733,30 @@ export function renderLanding(
       });
 
       actionsWrap.append(playBtn, backBtn);
-
-      rightCol.append(summaryCard, nameForm, actionsWrap);
-
-      // Assemble
-      pickerBody.append(leftCol, centerCol, rightCol);
-      pickerFrame.append(pickerHead, pickerBody);
+      picker.rightPanel.append(nameForm, actionsWrap);
       wrap.append(pickerFrame);
       return;
     }
 
     shell.append(menuBrand("Sign in to keep your look and name."));
+    if (onGoogle) {
+      const google = el("button", "clay-btn primary google-btn") as HTMLButtonElement;
+      google.type = "button";
+      google.innerHTML = GOOGLE_G;
+      google.append(document.createTextNode("Sign in with Google"));
+      google.addEventListener("click", () => {
+        if (!lockJoin(google)) return;
+        google.lastChild!.textContent = "Redirecting…";
+        onGoogle().catch((e) => {
+          google.disabled = false;
+          google.lastChild!.textContent = "Sign in with Google";
+          const msg = e instanceof Error ? e.message : "Could not start Google sign-in.";
+          nav.querySelector(".error-banner")?.remove();
+          nav.append(el("div", "error-banner", msg));
+        });
+      });
+      nav.append(google, el("div", "menu-divider", "or use email"));
+    }
     const name = el("input", "clay-input") as HTMLInputElement;
     name.maxLength = 24;
     name.placeholder = "Display name";
@@ -1018,8 +938,10 @@ export function addChat(
   if (line.kind === "chat" && muted.has(line.from)) return false;
   const b = el("div", "bubble");
   if (line.from === selfId) b.classList.add("mine");
-  if (line.kind === "join-owner" || line.kind === "join" || line.kind === "leave" || line.kind === "leave-owner" || line.kind === "system") b.classList.add("system");
+  if (line.kind === "join-owner" || line.kind === "join" || line.kind === "leave" || line.kind === "leave-owner" || line.kind === "system" || line.kind === "announce" || line.kind === "whisper") b.classList.add("system");
   if (line.kind === "join-admin" || line.kind === "leave-admin") b.classList.add("admin");
+  if (line.kind === "announce") b.classList.add("announce");
+  if (line.kind === "whisper") b.classList.add("whisper");
   if (line.kind === "chat") {
     // Security: Using `textContent` (via el) instead of `innerHTML` prevents XSS injection from player names
     const who = el("strong");

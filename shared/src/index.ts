@@ -9,6 +9,49 @@ export const PLAYER_RADIUS = 0.2;
 export const PLAYER_SKIN = 0.02;
 export const CHAT_LOG_MAX = 40;
 export const IDLE_MS = 180_000;
+/** Owner/admin idle disconnect. Regulars still use IDLE_MS. */
+export const STAFF_IDLE_MS = 30 * 60_000;
+export const MOD_REASONS = ["Spamming", "Harassment", "Inappropriate name", "Disrupting class", "Other"] as const;
+export type ModReason = (typeof MOD_REASONS)[number];
+export const MOD_MESSAGE_MAX = 200;
+export const MOD_NAME_MAX = 24;
+/** Default in-world name for a verified owner/admin. Not a privilege — the token is. */
+export const DEFAULT_STAFF_NAME = "Hakkai";
+export const MOD_DURATION_MAX_SEC = 30 * 24 * 3600;
+export const MOD_DURATIONS = [
+  { label: "5 min", sec: 5 * 60 },
+  { label: "15 min", sec: 15 * 60 },
+  { label: "1 hour", sec: 60 * 60 },
+  { label: "1 day", sec: 24 * 60 * 60 },
+  { label: "7 days", sec: 7 * 24 * 60 * 60 },
+] as const;
+
+export type ModerationNotice = {
+  kind: "kick" | "ban";
+  actorRole: "owner" | "admin";
+  actorName: string;
+  reason: string;
+  message: string;
+  until: number | null;
+};
+
+export function clockRemain(ms: number) {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  return `${m}:${String(sec).padStart(2, "0")}`;
+}
+
+export function humanRemain(ms: number) {
+  const min = Math.max(1, Math.ceil(ms / 60_000));
+  if (min < 60) return `${min} minute${min === 1 ? "" : "s"}`;
+  const hr = Math.round(min / 60);
+  if (hr < 48) return `${hr} hour${hr === 1 ? "" : "s"}`;
+  const d = Math.round(hr / 24);
+  return `${d} day${d === 1 ? "" : "s"}`;
+}
 
 export type Role = "owner" | "admin" | "user";
 
@@ -231,7 +274,17 @@ export function classroomSeats(): Seat[] {
   return seats;
 }
 
-export type ChatKind = "chat" | "system" | "join-owner" | "join-admin" | "join" | "leave" | "leave-owner" | "leave-admin";
+export type ChatKind =
+  | "chat"
+  | "system"
+  | "announce"
+  | "whisper"
+  | "join-owner"
+  | "join-admin"
+  | "join"
+  | "leave"
+  | "leave-owner"
+  | "leave-admin";
 
 const LINK_RE =
   /(?:https?:\/\/|www\.)\S+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|gg|co|app|dev|xyz|me|tv|info|edu|gov)(?:\/\S*)?/gi;

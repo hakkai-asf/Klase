@@ -21,6 +21,9 @@ export class Player extends Schema {
   serverMuted = false;
   userId = "";
   seatId = "";
+  /** God-mode owner: hidden from other players and ignored by collision. */
+  observer = false;
+  noclip = false;
 }
 defineTypes(Player, {
   sessionId: "string",
@@ -37,6 +40,8 @@ defineTypes(Player, {
   serverMuted: "boolean",
   userId: "string",
   seatId: "string",
+  observer: "boolean",
+  noclip: "boolean",
 });
 
 export class ClassroomState extends Schema {

@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { CLASSROOM, MOVE_SPEED, SEAT_REACH, SPAWN, type Look, type Seat } from "@klase/shared";
+import { CLASSROOM, MOVE_SPEED, SEAT_REACH, SPAWN, clampClassroom, type Look, type Seat } from "@klase/shared";
 import { applyLook, createAvatar, drawMic, drawName, drawSpeech, layoutHeadSprites, poseWalk, setGlobalAnisotropy, setLocalFpPresentation } from "./avatar";
 import { buildClassroom, findClearStand, resolveMove, type AABB } from "./classroom";
 
@@ -244,8 +244,32 @@ export class World {
     if (!on && this.freeCam) this.setFreeCam(false);
   }
 
+  /** Observe mode from the dashboard: no body, silent, locked free camera. */
+  private godMode = false;
+  /** Staff noclip: invisible, ignore walls; position follows movement / free cam. */
+  noclip = false;
+
+  setGodMode(on: boolean) {
+    this.godMode = on;
+    const local = this.avatars.get(this.localId);
+    if (on && local) local.root.visible = false;
+  }
+
+  setNoclip(on: boolean) {
+    this.noclip = on;
+    if (on) this.localSeatId = "";
+    else {
+      const c = clampClassroom(this.localX, this.localZ);
+      this.localX = c.x;
+      this.localZ = c.z;
+    }
+    const local = this.avatars.get(this.localId);
+    if (local) local.root.visible = !on && !this.godMode;
+  }
+
   setFreeCam(on: boolean) {
     if (on && !this.ownerTools) return;
+    if (!on && this.godMode) return; // observe mode stays in free cam
     if (on === this.freeCam) return;
     if (on) this.startFreeCam();
     else {
@@ -333,7 +357,7 @@ export class World {
     this.fpCam.updateMatrixWorld();
   }
 
-  upsert(id: string, name: string, look: Look, x: number, z: number, rotY: number, seatId = "", role = "") {
+  upsert(id: string, name: string, look: Look, x: number, z: number, rotY: number, seatId = "", role = "", hidden = false) {
     let a = this.avatars.get(id);
     if (a && a.look.body !== look.body) {
       this.scene.remove(a.root);
@@ -354,6 +378,7 @@ export class World {
         a.root.visible = false;
       } else if (id === this.localId) {
         setLocalFpPresentation(a, this.firstPerson, Boolean(this.localSeatId));
+        if (this.godMode || this.noclip) a.root.visible = false;
       }
     } else {
       if (
@@ -373,6 +398,7 @@ export class World {
     if (id !== this.localId) {
       a.target.set(x, 0, z);
       a.targetRot = rotY;
+      a.root.visible = !hidden;
     }
   }
 
@@ -571,8 +597,16 @@ export class World {
     this.sitPrompt.style.top = `${y}px`;
   }
 
-  private stepFreeCam(dt: number): null {
+  private stepFreeCam(dt: number): WorldEvent | null {
     this.justPressed.clear();
+    if (this.godMode || this.noclip) {
+      const self = this.avatars.get(this.localId);
+      if (self) self.root.visible = false;
+      if (this.noclip && !this.godMode) {
+        this.localX = this.fpCam.position.x;
+        this.localZ = this.fpCam.position.z;
+      }
+    }
     this.fpCam.getWorldDirection(this.freeLook);
     this.freeRight.crossVectors(this.freeLook, this.worldUp);
     if (this.freeRight.lengthSq() < 1e-8) this.freeRight.set(1, 0, 0);
@@ -630,6 +664,9 @@ export class World {
     this.updateSitPrompt(null);
     this.lookDirty = false;
     this.renderer.render(this.scene, this.fpCam);
+    if (this.noclip && !this.godMode) {
+      return { type: "move", x: this.localX, z: this.localZ, rotY: this.localRot };
+    }
     return null;
   }
 
@@ -693,9 +730,14 @@ export class World {
         sy /= len;
         const dx = (this.camForward.x * sy + this.camRight.x * sx) * MOVE_SPEED * dt;
         const dz = (this.camForward.z * sy + this.camRight.z * sx) * MOVE_SPEED * dt;
-        const n = resolveMove(this.localX, this.localZ, dx, dz, this.colliders, others);
-        this.localX = n.x;
-        this.localZ = n.z;
+        if (this.noclip) {
+          this.localX += dx;
+          this.localZ += dz;
+        } else {
+          const n = resolveMove(this.localX, this.localZ, dx, dz, this.colliders, others);
+          this.localX = n.x;
+          this.localZ = n.z;
+        }
         if (!this.firstPerson) this.localRot = Math.atan2(dx, dz);
         moved = true;
       } else {

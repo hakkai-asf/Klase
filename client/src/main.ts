@@ -30,7 +30,7 @@ function showOnboarding() {
   });
 }
 
-function startLanding(err = "", startAt?: "menu" | "play" | "account") {
+function startLanding(err = "", startAt?: "menu" | "play" | "account", retry?: () => void) {
   joining = false;
   // If there's an active game world, show the landing over it; otherwise replace the full app
   const landingRoot = globalWorld ? overlayRoot : app;
@@ -46,6 +46,7 @@ function startLanding(err = "", startAt?: "menu" | "play" | "account") {
       showOnboarding();
     },
     () => signInWithGoogle("/"),
+    retry,
   );
 }
 
@@ -108,17 +109,19 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
   // Use overlayRoot for joining UI if it's not pregame
   const loader = renderJoining(isPregame ? app : overlayRoot);
   if (!isPregame && !overlayRoot.parentElement) app.append(overlayRoot);
-  const fail = (err: string) => {
+  const fail = (err: string, retryable = false) => {
     loader.dispose();
     if (staff) {
       window.alert(err);
       window.location.replace("/admin");
       return;
     }
-    startLanding(err);
+    startLanding(err, "play", retryable ? () => void bootWorld(name, look, accessToken, false) : undefined);
   };
   loader.setStage("find");
-  const picked = staff ? { roomKey: staff.roomKey } : await pickRoom(name, accessToken);
+  const picked = staff
+    ? { roomKey: staff.roomKey }
+    : await pickRoom(name, accessToken, () => loader.setStage("wake"));
   if ("error" in picked) {
     if (picked.error === "HELD" && picked.notice) {
       loader.dispose();
@@ -136,12 +139,14 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
           ? "All classrooms are full. Try again in a bit."
           : picked.error === "AUTH"
             ? "Sign-in expired. Try again."
-            : picked.error === "SERVER"
-              ? import.meta.env.PROD
-                ? "Game server is not configured. Host Colyseus (Railway, Render, or Fly), set VITE_COLYSEUS_URL on Vercel, then redeploy."
-                : "Could not reach the Klase server. Keep npm run dev running, then try again."
+            : picked.error === "NOT_CONFIGURED"
+              ? "Game server is not configured. Host Colyseus (Railway, Render, or Fly), set VITE_COLYSEUS_URL on Vercel, then redeploy."
+              : picked.error === "UNREACHABLE"
+                ? "The classroom server could not be reached. It may be waking up — try again in a moment."
+                : picked.error === "SERVER_ERROR"
+                  ? `The classroom server returned an error${picked.status ? ` (${picked.status})` : ""}. Try again in a moment.`
             : "Could not join right now. Try again.";
-    fail(err);
+    fail(err, picked.error === "UNREACHABLE" || picked.error === "SERVER_ERROR");
     return;
   }
 
@@ -165,11 +170,16 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
     else if (msg.includes("NAME_RESERVED")) fail("That name belongs to a Klase admin. Pick a different name.");
     else if (msg.includes("BAD_NAME")) fail("That name isn't allowed.");
     else if (msg.includes("NO_PERMISSION")) fail("You don't have permission to do that.");
-    else fail(
-      import.meta.env.PROD
-        ? "Could not join the game server. Check VITE_COLYSEUS_URL (wss://…) and that the Colyseus host is running."
-        : "Could not join. Is the Klase server running?",
-    );
+    else if (msg.includes("NOT_CONFIGURED")) {
+      fail("Game server is not configured. Host Colyseus (Railway, Render, or Fly), set VITE_COLYSEUS_URL on Vercel, then redeploy.");
+    } else {
+      fail(
+        import.meta.env.PROD
+          ? "Could not join the game server. It may be waking up — try again in a moment."
+          : "Could not join. Is the Klase server running?",
+        true,
+      );
+    }
     return;
   }
 

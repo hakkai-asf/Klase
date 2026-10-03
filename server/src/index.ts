@@ -2,7 +2,7 @@ import "./loadEnv.js";
 import http from "http";
 import express from "express";
 import cors from "cors";
-import { Server, matchMaker } from "@colyseus/core";
+import { Server, ServerError, matchMaker } from "@colyseus/core";
 import { WebSocketTransport } from "@colyseus/ws-transport";
 import { REGULAR_CAP, ROOM_CODES } from "@klase/shared";
 import { ClassroomRoom } from "./ClassroomRoom.js";
@@ -44,7 +44,7 @@ app.post("/api/find-room", async (req, res) => {
     }
     res.status(409).json({ error: "ROOM_FULL" });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "AUTH";
+    const msg = e instanceof Error ? e.message : "SERVER";
     if (msg.startsWith("{")) {
       try {
         const parsed = JSON.parse(msg) as { error?: string; notice?: unknown };
@@ -56,13 +56,22 @@ app.post("/api/find-room", async (req, res) => {
         /* not json */
       }
     }
-    const status =
-      msg === "BANNED" || msg.startsWith("KICKED:")
-        ? 403
-        : msg === "NAME_RESERVED" || msg === "BAD_NAME"
-          ? 422
-          : 401;
-    res.status(status).json({ error: msg });
+    if (e instanceof ServerError) {
+      const status =
+        typeof e.code === "number"
+          ? e.code
+          : msg === "BANNED" || msg.startsWith("KICKED:")
+            ? 403
+            : msg === "NAME_RESERVED" || msg === "BAD_NAME"
+              ? 422
+              : msg === "AUTH"
+                ? 401
+                : 400;
+      res.status(status).json({ error: msg });
+      return;
+    }
+    console.error("[find-room]", e);
+    res.status(500).json({ error: "SERVER" });
   }
 });
 

@@ -20,7 +20,7 @@ export type ChatLine = {
 };
 
 export type JoinPayload = { name: string; look: Look; accessToken?: string };
-export type JoinStage = "find" | "join" | "load" | "ready";
+export type JoinStage = "find" | "wake" | "join" | "load" | "ready";
 
 const JOIN_STAGE: Record<JoinStage, { cap: number; tau: number; copy: string[] }> = {
   find: {
@@ -28,9 +28,13 @@ const JOIN_STAGE: Record<JoinStage, { cap: number; tau: number; copy: string[] }
     tau: 14,
     copy: [
       "Connecting you to a classroom…",
-      "Waking the server — first join can take a minute.",
       "Finding you a room…",
     ],
+  },
+  wake: {
+    cap: 0.35,
+    tau: 22,
+    copy: ["Waking up the classroom server, this can take a minute."],
   },
   join: {
     cap: 0.65,
@@ -616,6 +620,7 @@ export function renderLanding(
   startAt?: "menu" | "play" | "account",
   onBackToMenu?: () => void,
   onGoogle?: () => Promise<void>,
+  onRetry?: () => void,
 ) {
   disposeLandingPreviews();
   root.innerHTML = "";
@@ -703,7 +708,15 @@ export function renderLanding(
       nameForm.append(nameInput);
 
       if (initialError) {
-        picker.rightPanel.append(el("div", "error-banner", initialError));
+        const banner = el("div", "error-banner", initialError);
+        if (onRetry) {
+          const retry = el("button", "clay-btn primary", "Try again") as HTMLButtonElement;
+          retry.type = "button";
+          retry.style.marginTop = "0.6rem";
+          retry.addEventListener("click", () => onRetry());
+          banner.append(document.createElement("br"), retry);
+        }
+        picker.rightPanel.append(banner);
       }
 
       const actionsWrap = el("div", "neo-picker-actions");

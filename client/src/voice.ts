@@ -15,12 +15,12 @@ function buildIceServers(): RTCIceServer[] {
   const servers: RTCIceServer[] = [
     { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302", "stun:global.stun.twilio.com:3478"] },
   ];
-  const turn = import.meta.env.VITE_TURN_URL;
+  const turn = String(import.meta.env.VITE_TURN_URL ?? "").trim();
   if (turn) {
     servers.push({
-      urls: String(turn).split(",").map((s) => s.trim()).filter(Boolean),
-      username: import.meta.env.VITE_TURN_USERNAME ?? "",
-      credential: import.meta.env.VITE_TURN_CREDENTIAL ?? "",
+      urls: turn.split(",").map((s) => s.trim()).filter(Boolean),
+      username: String(import.meta.env.VITE_TURN_USERNAME ?? "").trim(),
+      credential: String(import.meta.env.VITE_TURN_CREDENTIAL ?? "").trim(),
     });
   }
   return servers;

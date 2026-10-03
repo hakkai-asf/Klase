@@ -1,14 +1,61 @@
 import { Client, Room } from "colyseus.js";
 import type { Look, ModerationNotice } from "@klase/shared";
 
-const WS = import.meta.env.VITE_COLYSEUS_URL ?? "ws://localhost:2567";
-const API = (
-  import.meta.env.VITE_API_URL ??
-  (import.meta.env.VITE_COLYSEUS_URL ? String(import.meta.env.VITE_COLYSEUS_URL).replace(/^ws/i, "http") : "")
-).replace(/\/$/, "");
+function envText(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function stripSlash(url: string): string {
+  return url.replace(/\/+$/, "");
+}
+
+/** Mixed content: an https page cannot talk to ws:// or http://. */
+function upgradeForHttps(url: string): string {
+  if (typeof window !== "undefined" && window.location.protocol === "https:") {
+    if (url.startsWith("ws://")) return `wss://${url.slice("ws://".length)}`;
+    if (url.startsWith("http://")) return `https://${url.slice("http://".length)}`;
+  }
+  return url;
+}
+
+function resolveWs(): string {
+  const raw = envText(import.meta.env.VITE_COLYSEUS_URL);
+  if (raw) return stripSlash(upgradeForHttps(raw));
+  if (import.meta.env.DEV) return "ws://localhost:2567";
+  return "";
+}
+
+function resolveApi(): string {
+  const explicit = envText(import.meta.env.VITE_API_URL);
+  if (explicit) return stripSlash(upgradeForHttps(explicit));
+  const ws = envText(import.meta.env.VITE_COLYSEUS_URL);
+  if (ws) return stripSlash(upgradeForHttps(ws.replace(/^ws/i, "http")));
+  return "";
+}
+
+const WS = resolveWs();
+const API = resolveApi();
 
 export function apiBase() {
   return API;
+}
+
+function apiHost(): string {
+  try {
+    return new URL(API || window.location.origin, window.location.origin).hostname;
+  } catch {
+    return "(unknown)";
+  }
+}
+
+function logJoinFail(kind: string, extra: { status?: number; err?: unknown }) {
+  const status = extra.status != null ? extra.status : "";
+  const msg = extra.err instanceof Error ? extra.err.message : extra.err != null ? String(extra.err) : "";
+  console.error(`[klase] ${kind} api=${apiHost()}${status !== "" ? ` status=${status}` : ""}${msg ? ` ${msg}` : ""}`);
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => window.setTimeout(r, ms));
 }
 
 export type RemotePlayer = {
@@ -30,36 +77,109 @@ export type RemotePlayer = {
   noclip?: boolean;
 };
 
+export type PickRoomError = {
+  error: string;
+  notice?: ModerationNotice;
+  status?: number;
+};
+
+function findRoomUrl() {
+  return `${API}/api/find-room`.replace(/^(?!https?:)\/\//, "/");
+}
+
+function healthUrl() {
+  return `${API}/health`.replace(/^(?!https?:)\/\//, "/");
+}
+
+async function wakeServer(onWake: (() => void) | undefined): Promise<boolean> {
+  onWake?.();
+  const deadline = Date.now() + 60_000;
+  let delay = 2000;
+  while (Date.now() < deadline) {
+    await sleep(delay);
+    try {
+      const res = await fetch(healthUrl(), { method: "GET" });
+      if (res.ok) return true;
+      if (res.status >= 400 && res.status < 500) return false;
+    } catch {
+      /* still sleeping or unreachable */
+    }
+    delay = Math.min(Math.round(delay * 1.5), 8000);
+  }
+  return false;
+}
+
+async function postFindRoom(name: string, accessToken?: string): Promise<Response> {
+  return fetch(findRoomUrl(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, accessToken }),
+  });
+}
+
+function parseFindBody(data: { error?: string; roomKey?: string; notice?: ModerationNotice } | null, status: number): PickRoomError {
+  if (!data) return { error: "SERVER_ERROR", status };
+  if (data.error === "HELD" && data.notice) return { error: "HELD", notice: data.notice };
+  const code = data.error;
+  if (code?.startsWith("KICKED:") || code === "BANNED" || code === "AUTH" || code === "NAME_RESERVED" || code === "BAD_NAME") {
+    return { error: code };
+  }
+  if (status === 409 || code === "ROOM_FULL") return { error: "ROOM_FULL" };
+  return { error: "SERVER_ERROR", status };
+}
+
 export async function pickRoom(
   name: string,
   accessToken?: string,
-): Promise<{ roomKey: string } | { error: string; notice?: ModerationNotice }> {
-  if (import.meta.env.PROD && !API) return { error: "SERVER" };
-  try {
-    const res = await fetch(`${API}/api/find-room`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, accessToken }),
-    });
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-      roomKey?: string;
-      notice?: ModerationNotice;
-    } | null;
-    if (!res.ok) {
-      const code = data?.error;
-      if (code === "HELD" && data?.notice) return { error: "HELD", notice: data.notice };
-      if (code?.startsWith("KICKED:") || code === "BANNED" || code === "AUTH" || code === "NAME_RESERVED" || code === "BAD_NAME") {
-        return { error: code ?? "AUTH" };
-      }
-      if (res.status === 409 || code === "ROOM_FULL") return { error: "ROOM_FULL" };
-      return { error: "SERVER" };
-    }
-    if (!data?.roomKey) return { error: "SERVER" };
-    return { roomKey: data.roomKey };
-  } catch {
-    return { error: "SERVER" };
+  onWake?: () => void,
+): Promise<{ roomKey: string } | PickRoomError> {
+  if (import.meta.env.PROD && !API) {
+    logJoinFail("NOT_CONFIGURED", {});
+    return { error: "NOT_CONFIGURED" };
   }
+  if (!WS && import.meta.env.PROD) {
+    logJoinFail("NOT_CONFIGURED", {});
+    return { error: "NOT_CONFIGURED" };
+  }
+
+  let res: Response;
+  try {
+    res = await postFindRoom(name, accessToken);
+  } catch (err) {
+    logJoinFail("UNREACHABLE", { err });
+    const woke = await wakeServer(onWake);
+    if (!woke) {
+      logJoinFail("UNREACHABLE", { err: "wake timeout" });
+      return { error: "UNREACHABLE" };
+    }
+    try {
+      res = await postFindRoom(name, accessToken);
+    } catch (err2) {
+      logJoinFail("UNREACHABLE", { err: err2 });
+      return { error: "UNREACHABLE" };
+    }
+  }
+
+  const data = (await res.json().catch(() => null)) as {
+    error?: string;
+    roomKey?: string;
+    notice?: ModerationNotice;
+  } | null;
+
+  if (!res.ok) {
+    if (res.status >= 400 && res.status < 500) {
+      const parsed = parseFindBody(data, res.status);
+      if (parsed.error === "SERVER_ERROR") logJoinFail("SERVER_ERROR", { status: res.status });
+      return parsed;
+    }
+    logJoinFail("SERVER_ERROR", { status: res.status });
+    return { error: "SERVER_ERROR", status: res.status };
+  }
+  if (!data?.roomKey) {
+    logJoinFail("SERVER_ERROR", { status: res.status, err: "missing roomKey" });
+    return { error: "SERVER_ERROR", status: res.status };
+  }
+  return { roomKey: data.roomKey };
 }
 
 /**
@@ -74,6 +194,7 @@ export async function joinClassroom(
   god = false,
   staffJoin = false,
 ) {
+  if (!WS) throw new Error("NOT_CONFIGURED");
   const client = new Client(WS);
   const room = await client.joinOrCreate("classroom", {
     roomKey,

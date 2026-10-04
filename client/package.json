@@ -12,6 +12,7 @@
     "@klase/shared": "*",
     "@supabase/supabase-js": "^2.49.1",
     "colyseus.js": "^0.15.28",
+    "lottie-web": "^5.13.0",
     "three": "^0.170.0"
   },
   "devDependencies": {

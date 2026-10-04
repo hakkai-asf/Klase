@@ -3,13 +3,15 @@ import { ROOM_CODES, hasLink, normalizeLook, randomLook, type Look } from "@klas
 import { World } from "./game/world";
 import { preloadAvatars } from "./game/avatar";
 import { preloadClassroom } from "./game/classroom";
-import { joinClassroom, pickRoom, type RemotePlayer } from "./net";
-import { addChat, disposeLandingPreviews, renderGameShell, renderJoining, renderLanding, renderOnboarding, renderStaffBar, setChatOpen, setFreeCamButton, setGameHudVisible, setMicButton, setMuteAllButton, setViewButton, setZoomHud, showCustomize, showPlayers, type ChatLine } from "./ui";
+import { joinClassroom, listRooms, pickRoom, type RemotePlayer, type RoomListItem } from "./net";
+import { addChat, disposeLandingPreviews, renderGameShell, renderJoining, renderLanding, renderLeaveConfirm, renderOnboarding, renderRoomSelect, renderStaffBar, setChatOpen, setFreeCamButton, setGameHudVisible, setMicButton, setMuteAllButton, setViewButton, setZoomHud, showCustomize, showPlayers, type ChatLine } from "./ui";
 import { parseHeld, renderModerationNotice } from "./moderation";
 import { bindJoystick, isTouchUi } from "./joystick";
 import { AUTH_CALLBACK_PATH, completeOAuthCallback, currentSession, loadSavedLook, loadStaffIdentity, signIn, signInWithGoogle, signUp } from "./auth";
 import { VoiceMesh } from "./voice";
 import type { Room } from "colyseus.js";
+
+type StaffJoin = { roomKey: string; mode: "owner" | "admin" | "observe" };
 
 const app = document.getElementById("app")!;
 // Create a dedicated overlay container so we can layer UI over the live game canvas
@@ -18,36 +20,193 @@ overlayRoot.style.position = "absolute";
 overlayRoot.style.inset = "0";
 overlayRoot.style.zIndex = "100";
 let joining = false;
+let leavingOnPurpose = false;
 let globalRoom: Room | null = null;
 let globalWorld: World | null = null;
 let globalVoice: VoiceMesh | null = null;
 let globalUi: ReturnType<typeof renderGameShell> | null = null;
+let roomPoll = 0;
+let sessionCleanups: Array<() => void> = [];
+let leaveModal: { close: () => void } | null = null;
+let activeStaff: StaffJoin | null = null;
+
+function onSession(fn: () => void) {
+  sessionCleanups.push(fn);
+}
+
+function runSessionCleanup() {
+  for (const fn of sessionCleanups.splice(0)) {
+    try {
+      fn();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function storedName() {
+  return localStorage.getItem("klase-name") || "Guest";
+}
+
+function storedLook(): Look {
+  try {
+    return normalizeLook(JSON.parse(localStorage.getItem("klase-look") ?? "null"));
+  } catch {
+    return normalizeLook(null);
+  }
+}
+
+function menuLayer() {
+  overlayRoot.style.display = "block";
+  overlayRoot.style.cursor = "default";
+  overlayRoot.style.pointerEvents = "auto";
+  if (!overlayRoot.parentElement) app.append(overlayRoot);
+  return overlayRoot;
+}
+
+async function ensurePregame() {
+  if (globalRoom) return;
+  if (globalWorld) return;
+  if (!localStorage.getItem("klase-look")) {
+    localStorage.setItem("klase-look", JSON.stringify(randomLook()));
+  }
+  const look = storedLook();
+  const ui = renderGameShell(app);
+  setGameHudVisible(ui, false);
+  app.append(overlayRoot);
+  const world = new World(ui.canvas, "", storedName(), look);
+  world.setSpectatorMode(true);
+  globalWorld = world;
+  globalUi = ui;
+  let last = performance.now();
+  const spectatorLoop = (now: number) => {
+    if (globalRoom || globalWorld !== world) return;
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    world.step(dt);
+    requestAnimationFrame(spectatorLoop);
+  };
+  requestAnimationFrame(spectatorLoop);
+}
+
+function setPath(path: string, replace = false) {
+  const cur = `${window.location.pathname}${window.location.search}`;
+  if (cur === path) return;
+  if (replace) window.history.replaceState({ path }, "", path);
+  else window.history.pushState({ path }, "", path);
+}
+
+function stopRoomPoll() {
+  window.clearInterval(roomPoll);
+  roomPoll = 0;
+}
 
 function showOnboarding() {
+  void goMenu();
+}
+
+async function goMenu() {
   joining = false;
-  renderOnboarding(overlayRoot, () => {
+  stopRoomPoll();
+  setPath("/");
+  await ensurePregame();
+  const root = menuLayer();
+  root.replaceChildren();
+  renderOnboarding(root, () => {
     startLanding("", "play");
   });
 }
 
 function startLanding(err = "", startAt?: "menu" | "play" | "account", retry?: () => void) {
   joining = false;
-  // If there's an active game world, show the landing over it; otherwise replace the full app
-  const landingRoot = globalWorld ? overlayRoot : app;
-  overlayRoot.style.display = globalWorld ? "block" : "none";
-  if (globalWorld && !overlayRoot.parentElement) app.append(overlayRoot);
+  stopRoomPoll();
+  if (startAt === "menu") {
+    void goMenu();
+    return;
+  }
+  if (startAt !== "account") setPath("/play");
+  void ensurePregame().then(() => {
   renderLanding(
-    landingRoot,
-    (payload) => void finalizeJoin(payload.name, payload.look),
+    menuLayer(),
+    (payload) => {
+      localStorage.setItem("klase-name", payload.name);
+      localStorage.setItem("klase-look", JSON.stringify(payload.look));
+      showRoomSelect();
+    },
     (mode, email, password, name) => void accountJoin(mode, email, password, name),
     err,
     startAt ?? "play",
     () => {
-      showOnboarding();
+      void goMenu();
     },
-    () => signInWithGoogle("/"),
+    () => signInWithGoogle("/rooms"),
     retry,
   );
+  });
+}
+
+async function showRoomSelect(message = "", retryable = false) {
+  joining = false;
+  stopRoomPoll();
+  setPath("/rooms");
+  await ensurePregame();
+  const name = storedName();
+  const paint = (rooms: RoomListItem[] | null, error = message, canRetry = retryable) => {
+    renderRoomSelect(menuLayer(), {
+      name,
+      rooms,
+      error,
+      retryable: canRetry,
+      onJoin: (roomKey) => void finalizeJoin(name, storedLook(), roomKey),
+      onChangeCharacter: () => startLanding("", "play"),
+      onBackMenu: () => void goMenu(),
+      onRetry: () => void showRoomSelect(),
+    });
+  };
+  paint(null, message, retryable);
+  const applyList = (listed: RoomListItem[]) => {
+    const host = overlayRoot;
+    const cards = host.querySelectorAll(".room-card");
+    if (host.querySelector(".room-select") && cards.length === listed.length && !host.querySelector(".error-banner")) {
+      listed.forEach((room, i) => {
+        const card = cards[i] as HTMLButtonElement | undefined;
+        if (!card) return;
+        card.classList.toggle("is-full", room.full);
+        card.disabled = room.full;
+        const count = card.querySelector(".room-card-count");
+        if (count) count.textContent = `${room.regulars} / ${room.cap}`;
+        const state = card.querySelector(".room-card-state");
+        if (state) {
+          state.textContent = room.full ? "Full" : "Available";
+          state.className = `room-card-state${room.full ? " full" : " open"}`;
+        }
+      });
+      return;
+    }
+    paint(listed);
+  };
+  const refresh = async () => {
+    const listed = await listRooms(() => {
+      const status = overlayRoot.querySelector(".room-select-status");
+      if (status) status.textContent = "Waking up the classroom server, this can take a minute.";
+    });
+    if (Array.isArray(listed)) {
+      applyList(listed);
+      return;
+    }
+    const err =
+      listed.error === "NOT_CONFIGURED"
+        ? "Game server is not configured. Set VITE_API_URL on Vercel and redeploy."
+        : listed.error === "TIMEOUT"
+          ? "The classroom list timed out. The server may be waking up — try again."
+          : listed.error === "UNREACHABLE"
+            ? "The classroom server could not be reached. It may be waking up — try again in a moment."
+            : `Could not load classrooms${listed.detail ? ` (${listed.detail})` : ""}.`;
+    paint(null, err, true);
+  };
+  await refresh();
+  stopRoomPoll();
+  roomPoll = window.setInterval(() => void refresh(), 3000);
 }
 
 async function accountJoin(mode: "in" | "up", email: string, password: string, name: string) {
@@ -56,36 +215,31 @@ async function accountJoin(mode: "in" | "up", email: string, password: string, n
     else await signIn(email, password);
     await joinWithSession(name);
   } catch (e) {
-    startLanding(e instanceof Error ? e.message : "Could not sign in.");
+    startLanding(e instanceof Error ? e.message : "Could not sign in.", "account");
   }
 }
 
-/** Join the game as the currently signed-in account (email sign-in and Google both end up here). */
+/** After a signed-in account is ready, keep the look and go to room pick. */
 async function joinWithSession(fallbackName: string) {
   try {
     const saved = await loadSavedLook();
-    const stored = (() => {
-      try {
-        return normalizeLook(JSON.parse(localStorage.getItem("klase-look") ?? "null"));
-      } catch {
-        return normalizeLook(null);
-      }
-    })();
+    const stored = storedLook();
     const look = normalizeLook(saved?.look ?? stored);
     look.body = stored.body;
-    await finalizeJoin(saved?.name || fallbackName, look);
+    const name = saved?.name || fallbackName;
+    localStorage.setItem("klase-name", name);
+    localStorage.setItem("klase-look", JSON.stringify(look));
+    await showRoomSelect();
   } catch (e) {
-    startLanding(e instanceof Error ? e.message : "Could not sign in.");
+    startLanding(e instanceof Error ? e.message : "Could not sign in.", "account");
   }
 }
 
-async function finalizeJoin(name: string, look: Look) {
+async function finalizeJoin(name: string, look: Look, roomKey: string) {
   if (joining) return;
   const session = await currentSession();
-  await bootWorld(name, look, session?.access_token, false);
+  await bootWorld(name, look, session?.access_token, false, undefined, roomKey);
 }
-
-type StaffJoin = { roomKey: string; mode: "owner" | "admin" | "observe" };
 
 function staffRoomUrl(roomKey: string, mode: string) {
   return `/room/${roomKey}?mode=${mode}`;
@@ -93,35 +247,111 @@ function staffRoomUrl(roomKey: string, mode: string) {
 
 function showHeld(notice: import("@klase/shared").ModerationNotice) {
   joining = false;
-  renderModerationNotice(app, notice, () => startLanding("", "play"));
+  stopRoomPoll();
+  renderModerationNotice(app, notice, () => {
+    if (notice.kind === "ban") startLanding("", "play");
+    else void showRoomSelect();
+  });
+}
+
+async function teardownPlay() {
+  leavingOnPurpose = true;
+  stopRoomPoll();
+  leaveModal = null;
+  runSessionCleanup();
+  const voice = globalVoice;
+  const room = globalRoom;
+  const world = globalWorld;
+  globalVoice = null;
+  globalRoom = null;
+  globalWorld = null;
+  globalUi = null;
+  activeStaff = null;
+  try {
+    voice?.dispose();
+  } catch {
+    /* */
+  }
+  try {
+    world?.dispose();
+  } catch {
+    /* */
+  }
+  try {
+    await room?.leave(true);
+  } catch {
+    /* already closed */
+  }
+  overlayRoot.replaceChildren();
+  overlayRoot.style.display = "none";
+  overlayRoot.remove();
+  joining = false;
+}
+
+function askToLeave(staff?: StaffJoin) {
+  if (leaveModal || !globalUi) return;
+  globalWorld?.setInputLocked(true);
+  leaveModal = renderLeaveConfirm(
+    globalUi.canvas.parentElement ?? app,
+    () => {
+      leaveModal = null;
+      if (staff) {
+        void teardownPlay().then(() => window.location.assign("/admin"));
+        return;
+      }
+      void teardownPlay().then(() => showRoomSelect());
+    },
+    () => {
+      leaveModal = null;
+      globalWorld?.setInputLocked(false);
+    },
+  );
 }
 
 /**
  * `staff`: dashboard or /room/... join. Observe is the silent invisible camera.
  * Enter-room is a normal playable body. The server still checks the token for role.
  */
-async function bootWorld(name: string, look: Look, accessToken?: string, isPregame = false, staff?: StaffJoin) {
+async function bootWorld(
+  name: string,
+  look: Look,
+  accessToken?: string,
+  isPregame = false,
+  staff?: StaffJoin,
+  wantedRoom?: string,
+) {
   if (joining) return;
   joining = true;
+  stopRoomPoll();
   disposeLandingPreviews();
   look = normalizeLook(look);
+  activeStaff = staff ?? null;
+  if (globalWorld && !globalRoom) {
+    try {
+      globalWorld.dispose();
+    } catch {
+      /* */
+    }
+    globalWorld = null;
+    globalUi = null;
+  }
   
-  // Use overlayRoot for joining UI if it's not pregame
-  const loader = renderJoining(isPregame ? app : overlayRoot);
-  if (!isPregame && !overlayRoot.parentElement) app.append(overlayRoot);
+  const loader = renderJoining(app);
+  overlayRoot.style.display = "none";
   const fail = (err: string, retryable = false) => {
     loader.dispose();
+    joining = false;
     if (staff) {
       window.alert(err);
       window.location.replace("/admin");
       return;
     }
-    startLanding(err, "play", retryable ? () => void bootWorld(name, look, accessToken, false) : undefined);
+    void showRoomSelect(err, retryable);
   };
   loader.setStage("find");
   const picked = staff
     ? { roomKey: staff.roomKey }
-    : await pickRoom(name, accessToken, () => loader.setStage("wake"));
+    : await pickRoom(name, accessToken, () => loader.setStage("wake"), wantedRoom);
   if ("error" in picked) {
     if (picked.error === "HELD" && picked.notice) {
       loader.dispose();
@@ -136,7 +366,9 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
           : picked.error === "BAD_NAME"
           ? "That name isn't allowed."
           : picked.error === "ROOM_FULL"
-          ? "All classrooms are full. Try again in a bit."
+          ? wantedRoom
+            ? "That classroom just filled up. Pick another one."
+            : "All classrooms are full. Try again in a bit."
           : picked.error === "AUTH"
             ? "Sign-in expired. Try again."
             : picked.error === "NOT_CONFIGURED"
@@ -156,7 +388,7 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
     room = await joinClassroom(picked.roomKey, name, look, accessToken, staff?.mode === "observe", Boolean(staff));
   } catch (e) {
     const msg = String(e);
-    if (msg.includes("ROOM_FULL")) fail("All classrooms are full. Try again in a bit.");
+    if (msg.includes("ROOM_FULL")) fail(wantedRoom ? "That classroom just filled up. Pick another one." : "All classrooms are full. Try again in a bit.");
     else if (msg.includes("BANNED")) fail("This name or account is banned.");
     else if (msg.includes("HELD") || msg.includes("\"notice\"")) {
       const n = parseHeld(msg);
@@ -203,28 +435,27 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
   room.onLeave((code) => {
     left = true;
     loader.dispose();
-    window.clearTimeout(chatIdle);
-    window.removeEventListener("mousemove", bumpActivity);
-    window.removeEventListener("keydown", bumpActivity);
-    window.removeEventListener("pointerdown", bumpActivity);
-    voice?.dispose();
-    if (pendingNotice) {
-      showHeld(pendingNotice);
+    if (leavingOnPurpose) {
+      leavingOnPurpose = false;
       return;
     }
-    if (staff) {
-      window.location.replace("/admin");
-      return;
-    }
-    if (leaveReason === "idle" || code === 4002) {
-      startLanding("You were disconnected for being idle.");
-    } else if (code === 4000) {
-      startLanding(leaveReason || "You were removed from the classroom.");
-    } else if (code === 4001) {
-      startLanding("This account is banned.");
-    } else {
-      startLanding("You left the classroom.");
-    }
+    const notice = pendingNotice;
+    const wasStaff = Boolean(staff);
+    const reason = leaveReason;
+    void teardownPlay().then(() => {
+      if (notice) {
+        showHeld(notice);
+        return;
+      }
+      if (wasStaff) {
+        window.location.replace("/admin");
+        return;
+      }
+      if (reason === "idle" || code === 4002) void showRoomSelect("You were disconnected for being idle.", true);
+      else if (code === 4000) void showRoomSelect(reason || "You were removed from the classroom.");
+      else if (code === 4001) startLanding("This account is banned.", "play");
+      else void showRoomSelect("You were disconnected.", true);
+    });
   });
 
   loader.setStage("load");
@@ -248,6 +479,7 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
   
   globalUi = ui;
   globalRoom = room;
+  if (!staff) setPath(`/room/${picked.roomKey}`, true);
   const typing = (t: EventTarget | null) => {
     const el = t as HTMLElement | null;
     return Boolean(el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA"));
@@ -293,6 +525,12 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
   window.addEventListener("mousemove", bumpActivity);
   window.addEventListener("keydown", bumpActivity);
   window.addEventListener("pointerdown", bumpActivity);
+  onSession(() => {
+    window.clearTimeout(chatIdle);
+    window.removeEventListener("mousemove", bumpActivity);
+    window.removeEventListener("keydown", bumpActivity);
+    window.removeEventListener("pointerdown", bumpActivity);
+  });
   if (left) return;
   let iAmOwner = false;
   let iAmStaff = false;
@@ -318,12 +556,7 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
   globalWorld = world;
 
   const leaveToAdmin = () => {
-    try {
-      room.leave();
-    } catch {
-      /* already closed */
-    }
-    window.location.assign("/admin");
+    void teardownPlay().then(() => window.location.assign("/admin"));
   };
 
   const mountStaffBar = (role: string) => {
@@ -501,7 +734,8 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
     if (chatOpen()) setChatOpen(ui.chat, ui.chatBtn, ui.input, false);
     else revealChat(true);
   });
-  window.addEventListener("keydown", (e) => {
+  const onChatHotkey = (e: KeyboardEvent) => {
+    if (leaveModal) return;
     const t = e.target as HTMLElement | null;
     if (typing(t)) return;
     if (e.key === "Enter") {
@@ -514,7 +748,9 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
       if (chatOpen()) setChatOpen(ui.chat, ui.chatBtn, ui.input, false);
       else revealChat(true);
     }
-  });
+  };
+  window.addEventListener("keydown", onChatHotkey);
+  onSession(() => window.removeEventListener("keydown", onChatHotkey));
 
   ui.canvas.addEventListener("pointerdown", () => void mesh.unlock());
   ui.micBtn.addEventListener("click", async () => {
@@ -587,6 +823,7 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
       room.send("stand");
       room.send("move", { x: scene.localX, z: scene.localZ, rotY: scene.localRot });
     }
+    if (ev?.type === "exit") askToLeave(staff);
     const me = snapshot().find((p) => p.sessionId === selfId);
     mesh.tick(scene.positions(), Boolean(me?.serverMuted));
     scene.setVoiceLevel(selfId, mesh.localLevel);
@@ -596,7 +833,7 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
   
   if (isPregame) {
     joining = false;
-    showOnboarding();
+    void goMenu();
   }
 }
 
@@ -615,39 +852,12 @@ async function startApp() {
   }
 
   const loader = renderJoining(app);
-  loader.setStage("find");
-  
-  const saved = await loadSavedLook();
-  const stored = normalizeLook(JSON.parse(localStorage.getItem("klase-look") ?? "null"));
-  const look = normalizeLook(saved?.look ?? stored);
-  
   loader.setStage("load");
   await preloadClassroom();
-  
-  const ui = renderGameShell(app);
-  setGameHudVisible(ui, false);
-  app.append(overlayRoot);
-  
-  const world = new World(ui.canvas, "", saved?.name || localStorage.getItem("klase-name") || "Guest", look);
-  world.setSpectatorMode(true);
-  globalWorld = world;
-  globalUi = ui;
-  
-  let last = performance.now();
-  const spectatorLoop = (now: number) => {
-    if (globalRoom) return;
-    const dt = Math.min(0.05, (now - last) / 1000);
-    last = now;
-    world.step(dt);
-    requestAnimationFrame(spectatorLoop);
-  };
-  requestAnimationFrame(spectatorLoop);
-  
   loader.setStage("ready");
-  await new Promise((r) => window.setTimeout(r, 280));
+  await new Promise((r) => window.setTimeout(r, 200));
   loader.dispose();
-  
-  showOnboarding();
+  await ensurePregame();
 }
 
 /**
@@ -678,13 +888,15 @@ async function route() {
   const roomMatch = path.match(/^\/room\/(klase-[123])$/);
   const params = new URLSearchParams(window.location.search);
   const legacyGod = params.get("god") ?? "";
+  const staffModeRaw = params.get("mode") ?? "";
   const staffKey = roomMatch?.[1] ?? ((ROOM_CODES as readonly string[]).includes(legacyGod) ? legacyGod : "");
-  const staffMode = (params.get("mode") === "observe" || legacyGod
+  const isStaffUrl = Boolean(staffKey && (staffModeRaw || legacyGod));
+  const staffMode = (staffModeRaw === "observe" || legacyGod
     ? "observe"
-    : params.get("mode") === "admin"
+    : staffModeRaw === "admin"
       ? "admin"
       : "owner") as StaffJoin["mode"];
-  if (staffKey) {
+  if (isStaffUrl && staffKey) {
     const session = await currentSession();
     if (!session) {
       window.location.replace("/admin");
@@ -695,6 +907,12 @@ async function route() {
     return;
   }
 
+  if (roomMatch && !isStaffUrl) {
+    await startApp();
+    await showRoomSelect();
+    return;
+  }
+
   if (callbackError) {
     await startApp();
     startLanding(callbackError, "account");
@@ -702,12 +920,32 @@ async function route() {
   }
 
   // Came back from Google with a session: go straight into the game like email sign-in does.
-  if (cameFromOAuth && path === "/") {
+  if (cameFromOAuth && (path === "/" || path === "/rooms")) {
+    await startApp();
     await joinWithSession("Student");
     return;
   }
 
   await startApp();
+  if (path === "/rooms") await showRoomSelect();
+  else if (path === "/play") startLanding("", "play");
+  else await goMenu();
 }
+
+window.addEventListener("popstate", () => {
+  const path = window.location.pathname.replace(/\/+$/, "") || "/";
+  if (path === "/admin") return;
+  if (globalRoom) {
+    const staff = activeStaff;
+    void teardownPlay().then(() => {
+      if (staff) window.location.assign("/admin");
+      else void showRoomSelect();
+    });
+    return;
+  }
+  if (path === "/rooms") void showRoomSelect();
+  else if (path === "/play") startLanding("", "play");
+  else void goMenu();
+});
 
 void route();

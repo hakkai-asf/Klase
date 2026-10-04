@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { CLASSROOM, MOVE_SPEED, SEAT_REACH, SPAWN, clampClassroom, type Look, type Seat } from "@klase/shared";
 import { applyLook, createAvatar, drawMic, drawName, drawSpeech, layoutHeadSprites, poseWalk, setGlobalAnisotropy, setLocalFpPresentation } from "./avatar";
-import { buildClassroom, findClearStand, resolveMove, type AABB } from "./classroom";
+import { buildClassroom, findClearStand, nearExitDoor, nearestExitDoor, resolveMove, type AABB } from "./classroom";
 
 type AvatarHandle = ReturnType<typeof createAvatar> & {
   target: THREE.Vector3;
@@ -12,7 +12,8 @@ type AvatarHandle = ReturnType<typeof createAvatar> & {
 export type WorldEvent =
   | { type: "move"; x: number; z: number; rotY: number }
   | { type: "sit"; seatId: string }
-  | { type: "stand" };
+  | { type: "stand" }
+  | { type: "exit" };
 
 const ISO = new THREE.Vector3(12, 15, 12);
 const ISO_FRUSTUM = 3.85;
@@ -43,6 +44,8 @@ export class World {
   aerialCamMode = false;
   private spectator = false;
   private spectatorAvatarsVisible = false;
+  private inputLocked = false;
+  private disposed = false;
   readonly localId: string;
   localX = SPAWN.x;
   localZ = SPAWN.z;
@@ -149,39 +152,76 @@ export class World {
     }
     this.bindLook(canvas);
 
-    window.addEventListener("keydown", (e) => {
-      // All gameplay input is blocked until the user officially joins via Play button
-      if (this.spectator) return;
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
-      const key = e.key.toLowerCase();
-      if (!e.repeat) this.justPressed.add(key);
-      this.keys.add(key);
-      if (key === "e" || key === " ") e.preventDefault();
-      if (this.touchUi) return;
-      if (key === "v") {
-        e.preventDefault();
-        if (this.freeCam) this.setFreeCam(false);
-        else this.setFirstPerson(!this.firstPerson);
-        return;
-      }
-      if (key === "c" && this.ownerTools) {
-        e.preventDefault();
-        this.setFreeCam(!this.freeCam);
-        return;
-      }
-      if (!this.firstPerson && !this.freeCam) return;
-      if (key === "escape" && document.pointerLockElement !== this.renderer.domElement) {
-        e.preventDefault();
-        void this.renderer.domElement.requestPointerLock();
-      }
-    });
-    window.addEventListener("keyup", (e) => {
-      // Always remove from keys set (cleanup), but spectator check is redundant since spectator never adds
-      this.keys.delete(e.key.toLowerCase());
-    });
-    window.addEventListener("resize", () => this.resize());
+    window.addEventListener("keydown", this.onKeyDown);
+    window.addEventListener("keyup", this.onKeyUp);
+    window.addEventListener("resize", this.onResize);
     this.resize();
+  }
+
+  private onKeyDown = (e: KeyboardEvent) => {
+    if (this.disposed || this.spectator || this.inputLocked) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) return;
+    const key = e.key.toLowerCase();
+    if (!e.repeat) this.justPressed.add(key);
+    this.keys.add(key);
+    if (key === "e" || key === " ") e.preventDefault();
+    if (this.touchUi) return;
+    if (key === "v") {
+      e.preventDefault();
+      if (this.freeCam) this.setFreeCam(false);
+      else this.setFirstPerson(!this.firstPerson);
+      return;
+    }
+    if (key === "c" && this.ownerTools) {
+      e.preventDefault();
+      this.setFreeCam(!this.freeCam);
+      return;
+    }
+    if (!this.firstPerson && !this.freeCam) return;
+    if (key === "escape" && document.pointerLockElement !== this.renderer.domElement) {
+      e.preventDefault();
+      void this.renderer.domElement.requestPointerLock();
+    }
+  };
+
+  private onKeyUp = (e: KeyboardEvent) => {
+    this.keys.delete(e.key.toLowerCase());
+  };
+
+  private onResize = () => {
+    if (!this.disposed) this.resize();
+  };
+
+  setInputLocked(on: boolean) {
+    this.inputLocked = on;
+    this.keys.clear();
+    this.justPressed.clear();
+    this.stickX = 0;
+    this.stickY = 0;
+    if (on && document.pointerLockElement === this.renderer.domElement) document.exitPointerLock();
+  }
+
+  atExitDoor() {
+    return !this.localSeatId && !this.freeCam && !this.aerialCamMode && nearExitDoor(this.localX, this.localZ);
+  }
+
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.inputLocked = true;
+    this.keys.clear();
+    window.removeEventListener("keydown", this.onKeyDown);
+    window.removeEventListener("keyup", this.onKeyUp);
+    window.removeEventListener("resize", this.onResize);
+    this.sitPrompt.remove();
+    this.hintWrap.remove();
+    try {
+      this.renderer.dispose();
+    } catch {
+      /* already torn down */
+    }
+    this.scene.clear();
   }
 
   resize() {
@@ -556,17 +596,18 @@ export class World {
   }
 
   private updateSitPrompt(seat: Seat | null) {
-    if (this.freeCam || this.aerialCamMode) {
+    if (this.freeCam || this.aerialCamMode || this.inputLocked || this.spectator) {
       this.sitPrompt.hidden = true;
       if (this.sitBtn) this.sitBtn.hidden = true;
       return;
     }
-    const canSit = Boolean(seat) && !this.localSeatId;
+    const atDoor = this.atExitDoor();
+    const canSit = Boolean(seat) && !this.localSeatId && !atDoor;
     const seated = Boolean(this.localSeatId);
     if (this.sitBtn) {
       this.sitPrompt.hidden = true;
-      this.sitBtn.hidden = this.freeCam || !(canSit || seated);
-      this.sitBtn.textContent = seated ? "Stand" : "Sit";
+      this.sitBtn.hidden = !(canSit || seated || atDoor);
+      this.sitBtn.textContent = seated ? "Stand" : atDoor ? "Exit" : "Sit";
       return;
     }
     if (seated) {
@@ -579,12 +620,13 @@ export class World {
       return;
     }
     this.sitPrompt.classList.remove("stand-hud", "above-fp-hint");
-    this.sitPrompt.textContent = "E";
-    if (!canSit) {
+    const worldTarget = atDoor ? nearestExitDoor(this.localX, this.localZ) : seat;
+    this.sitPrompt.textContent = atDoor ? "E to Exit" : "E";
+    if (!worldTarget || (!canSit && !atDoor)) {
       this.sitPrompt.hidden = true;
       return;
     }
-    this.promptPos.set(seat!.x, 1.05, seat!.z).project(this.camera);
+    this.promptPos.set(worldTarget.x, 1.05, worldTarget.z).project(this.camera);
     if (this.promptPos.z > 1) {
       this.sitPrompt.hidden = true;
       return;
@@ -671,6 +713,14 @@ export class World {
   }
 
   step(dt: number): WorldEvent | null {
+    if (this.disposed) return null;
+    if (this.inputLocked) {
+      this.justPressed.clear();
+      this.keys.clear();
+      this.updateSitPrompt(null);
+      this.renderer.render(this.scene, this.camera);
+      return null;
+    }
     if (this.freeCam) return this.stepFreeCam(dt);
     if (this.firstPerson) this.poseFp();
     this.camera.getWorldDirection(this.camForward);
@@ -697,6 +747,8 @@ export class World {
         if (local) local.seatId = "";
         event = { type: "stand" };
       }
+    } else if (pressedE && this.atExitDoor()) {
+      event = { type: "exit" };
     } else {
       const near = this.nearestSeat();
       if (pressedE && near && !this.aerialCamMode) {

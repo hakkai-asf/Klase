@@ -548,6 +548,36 @@ function leftWallLayout() {
   return { minZ, maxZ, frontDoorZ, backDoorZ, frontAcZ, backAcZ };
 }
 
+/** Just inside the existing left-wall doors (same layout the room is built from). */
+export function exitDoorAnchors() {
+  const { frontDoorZ, backDoorZ } = leftWallLayout();
+  const x = -CLASSROOM.width / 2 + CLASSROOM.wallThickness + 0.55;
+  return [
+    { x, z: frontDoorZ },
+    { x, z: backDoorZ },
+  ];
+}
+
+export function nearestExitDoor(x: number, z: number) {
+  let best = exitDoorAnchors()[0]!;
+  let bestD = Infinity;
+  for (const door of exitDoorAnchors()) {
+    const dist = Math.hypot(x - door.x, z - door.z);
+    if (dist < bestD) {
+      bestD = dist;
+      best = door;
+    }
+  }
+  return best;
+}
+
+export function nearExitDoor(x: number, z: number) {
+  const wallX = -CLASSROOM.width / 2 + CLASSROOM.wallThickness;
+  if (x > wallX + 1.55) return false;
+  const reach = LEFT_WALL.doorW / 2 + 0.45;
+  return exitDoorAnchors().some((door) => Math.hypot(x - door.x, z - door.z) <= reach);
+}
+
 function addLeftWallFurniture(scene: THREE.Scene, pack: Kit, colliders: AABB[]) {
   const { doorW, doorH, acAlong, acH, acDeep } = LEFT_WALL;
   const { frontDoorZ, backDoorZ, frontAcZ, backAcZ } = leftWallLayout();

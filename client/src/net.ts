@@ -1,5 +1,5 @@
 import { Client, Room } from "colyseus.js";
-import type { Look, ModerationNotice } from "@klase/shared";
+import { REGULAR_CAP, ROOM_CODES, type Look, type ModerationNotice } from "@klase/shared";
 
 function envText(value: unknown): string {
   return String(value ?? "").trim();
@@ -128,13 +128,86 @@ function usableToken(raw?: string): string | undefined {
   return token;
 }
 
-async function postFindRoom(name: string, accessToken?: string): Promise<Response> {
+async function postFindRoom(name: string, accessToken?: string, roomKey?: string): Promise<Response> {
   const token = usableToken(accessToken);
   return fetch(findRoomUrl(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(token ? { name, accessToken: token } : { name }),
+    body: JSON.stringify({
+      name,
+      ...(token ? { accessToken: token } : {}),
+      ...(roomKey ? { roomKey } : {}),
+    }),
   });
+}
+
+export type RoomListItem = {
+  roomKey: string;
+  label: string;
+  regulars: number;
+  present: number;
+  cap: number;
+  full: boolean;
+};
+
+export type RoomListError = {
+  error: "UNREACHABLE" | "NOT_CONFIGURED" | "SERVER_ERROR" | "TIMEOUT";
+  detail?: string;
+};
+
+function emptyRoomList(): RoomListItem[] {
+  return ROOM_CODES.map((roomKey) => ({
+    roomKey,
+    label: roomKey.replace("klase-", "Classroom "),
+    regulars: 0,
+    present: 0,
+    cap: REGULAR_CAP,
+    full: false,
+  }));
+}
+
+async function fetchRoomsOnce(url: string, ms: number): Promise<RoomListItem[] | RoomListError> {
+  const ac = new AbortController();
+  const timer = window.setTimeout(() => ac.abort(), ms);
+  try {
+    const res = await fetch(url, { signal: ac.signal });
+    const data = (await res.json().catch(() => null)) as { rooms?: RoomListItem[]; error?: string } | null;
+    if (res.status === 404) {
+      console.warn("[rooms] GET /api/rooms is missing on this server; showing empty classrooms so join still works. Deploy the game server that serves /api/rooms.");
+      return emptyRoomList();
+    }
+    if (!res.ok) {
+      console.error(`[rooms] list failed api=${apiHost()} status=${res.status} ${data?.error ?? res.statusText}`);
+      if (Array.isArray(data?.rooms) && data.rooms.length) return data.rooms;
+      return { error: "SERVER_ERROR", detail: `HTTP ${res.status}` };
+    }
+    if (!Array.isArray(data?.rooms)) {
+      console.error(`[rooms] list failed api=${apiHost()} bad-json`);
+      return { error: "SERVER_ERROR", detail: "bad-json" };
+    }
+    return data.rooms;
+  } catch (e) {
+    const aborted = e instanceof DOMException && e.name === "AbortError";
+    console.error(`[rooms] list failed api=${apiHost()} ${aborted ? "timeout" : e instanceof Error ? e.message : e}`);
+    return { error: aborted ? "TIMEOUT" : "UNREACHABLE", detail: aborted ? `timeout ${ms}ms` : "network" };
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+export async function listRooms(onWake?: () => void): Promise<RoomListItem[] | RoomListError> {
+  if (import.meta.env.PROD && !API) {
+    console.error("[rooms] list failed NOT_CONFIGURED (empty VITE_API_URL / VITE_COLYSEUS_URL)");
+    return { error: "NOT_CONFIGURED" };
+  }
+  const url = `${API}/api/rooms`.replace(/^(?!https?:)\/\//, "/");
+  const first = await fetchRoomsOnce(url, 10_000);
+  if (Array.isArray(first)) return first;
+  if (first.error === "NOT_CONFIGURED" || first.error === "SERVER_ERROR") return first;
+  const woke = await wakeServer(onWake);
+  if (!woke) return first;
+  const second = await fetchRoomsOnce(url, 12_000);
+  return Array.isArray(second) ? second : first;
 }
 
 function parseFindBody(data: { error?: string; roomKey?: string; notice?: ModerationNotice } | null, status: number): PickRoomError {
@@ -152,6 +225,7 @@ export async function pickRoom(
   name: string,
   accessToken?: string,
   onWake?: () => void,
+  roomKey?: string,
 ): Promise<{ roomKey: string } | PickRoomError> {
   if (import.meta.env.PROD && !API) {
     logJoinFail("NOT_CONFIGURED", {});
@@ -164,7 +238,7 @@ export async function pickRoom(
 
   let res: Response;
   try {
-    res = await postFindRoom(name, accessToken);
+    res = await postFindRoom(name, accessToken, roomKey);
   } catch (err) {
     logJoinFail("UNREACHABLE", { err });
     const woke = await wakeServer(onWake);
@@ -173,7 +247,7 @@ export async function pickRoom(
       return { error: "UNREACHABLE" };
     }
     try {
-      res = await postFindRoom(name, accessToken);
+      res = await postFindRoom(name, accessToken, roomKey);
     } catch (err2) {
       logJoinFail("UNREACHABLE", { err: err2 });
       return { error: "UNREACHABLE" };

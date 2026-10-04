@@ -1,5 +1,6 @@
+import lottie from "lottie-web";
 import { CHAT_LOG_MAX, WEARABLE_LABELS, WEARABLES, normalizeLook, type Look, type WearableSlot } from "@klase/shared";
-import type { RemotePlayer } from "./net";
+import type { RemotePlayer, RoomListItem } from "./net";
 import { authEnabled } from "./auth";
 import { bindPanelHotkeys, renderModerationToolbar, type ModSubmit } from "./moderation";
 import { mountLookPicker } from "./lookPicker";
@@ -98,24 +99,18 @@ export function renderJoining(root: HTMLElement) {
   lottieContainer.style.height = "125px";
   lottieContainer.style.marginBottom = "0.1rem";
 
-  let lottieAnim: any = null;
-  const loadLottie = () => {
-    const lottie = (window as any).lottie;
-    if (lottie) {
-      try {
-        lottieAnim = lottie.loadAnimation({
-          container: lottieContainer,
-          renderer: "svg",
-          loop: true,
-          autoplay: true,
-          animationData: blueLoadingData,
-        });
-      } catch (e) {
-        console.warn("Lottie animation error", e);
-      }
-    }
-  };
-  loadLottie();
+  let lottieAnim: ReturnType<typeof lottie.loadAnimation> | null = null;
+  try {
+    lottieAnim = lottie.loadAnimation({
+      container: lottieContainer,
+      renderer: "svg",
+      loop: true,
+      autoplay: true,
+      animationData: blueLoadingData,
+    });
+  } catch (e) {
+    console.warn("Lottie animation error", e);
+  }
 
   const status = el("p", "lede joining-status", JOIN_STAGE.find.copy[0]!);
   status.style.margin = "0.1rem 0 0.5rem";
@@ -188,43 +183,49 @@ export function renderJoining(root: HTMLElement) {
 
 export function renderOnboarding(root: HTMLElement, onComplete: () => void) {
   disposeLandingPreviews();
+  root.replaceChildren();
 
   const wrap = el("div", "onboarding-wrap");
-  wrap.style.position = "absolute";
-  wrap.style.inset = "0";
-  wrap.style.zIndex = "999";
-  wrap.style.backdropFilter = "blur(6px)";
-  (wrap.style as any).webkitBackdropFilter = "blur(6px)";
-  wrap.style.display = "flex";
-  wrap.style.alignItems = "center";
-  wrap.style.justifyContent = "center";
-  wrap.style.background = "rgba(255, 248, 240, 0.55)";
 
   let step = 0;
+  let menuStarted = false;
+
+  const startFromMenu = () => {
+    if (menuStarted || step !== 0) return;
+    menuStarted = true;
+    const startBtn = wrap.querySelector<HTMLButtonElement>(".menu-home-start");
+    if (startBtn) startBtn.disabled = true;
+    try {
+      if (sessionStorage.getItem("klase_consent_accepted") === "true") {
+        wrap.remove();
+        onComplete();
+        return;
+      }
+    } catch { /* ignore */ }
+    wrap.classList.remove("onboarding-wrap--menu");
+    step = 1;
+    renderStep();
+  };
 
   const renderStep = () => {
     wrap.innerHTML = "";
 
-    // Step 0: Game menu overlay
+    // Step 0: Game menu — only the real Start button is interactive
     if (step === 0) {
-      const img = el("img") as HTMLImageElement;
+      menuStarted = false;
+      wrap.classList.add("onboarding-wrap--menu");
+      const home = el("div", "menu-home");
+      const cluster = el("div", "menu-home-cluster");
+      const img = el("img", "menu-home-art") as HTMLImageElement;
       img.src = gameMenuUrl;
-      img.style.maxWidth = "100%";
-      img.style.maxHeight = "100%";
-      img.style.objectFit = "contain";
-      img.style.cursor = "pointer";
-      img.addEventListener("click", () => {
-        try {
-          if (sessionStorage.getItem("klase_consent_accepted") === "true") {
-            wrap.remove();
-            onComplete();
-            return;
-          }
-        } catch { /* ignore */ }
-        step++;
-        renderStep();
-      });
-      wrap.append(img);
+      img.alt = "Klase";
+      img.draggable = false;
+      const startBtn = el("button", "neo-btn neo-btn-play menu-home-start", "Start") as HTMLButtonElement;
+      startBtn.type = "button";
+      startBtn.addEventListener("click", startFromMenu);
+      cluster.append(img, startBtn);
+      home.append(cluster);
+      wrap.append(home);
       return;
     }
 
@@ -271,7 +272,7 @@ export function renderOnboarding(root: HTMLElement, onComplete: () => void) {
       const items = [
         "Move around freely using WASD or arrow keys, walk right up to classmates to chat.",
         "Voice chat is proximity-based, you'll only hear people near you.",
-        "Each classroom holds up to 12 people. If a room is full, you'll automatically join the next one.",
+        "Each classroom holds up to 12 people. Pick an open room from the classroom list.",
         "Play as a guest, or sign in to keep the same identity across sessions.",
         "Sit at desks, hang out, or just walk around, the room is yours to explore.",
         "Mute anyone from the player list anytime, it only affects what you see and hear.",
@@ -1074,4 +1075,112 @@ export function showPlayers(
     panel.append(row);
   }
   layer.append(panel);
+}
+
+export function renderRoomSelect(
+  root: HTMLElement,
+  opts: {
+    name: string;
+    rooms: RoomListItem[] | null;
+    error?: string;
+    retryable?: boolean;
+    onJoin: (roomKey: string) => void;
+    onChangeCharacter: () => void;
+    onBackMenu: () => void;
+    onRetry?: () => void;
+  },
+) {
+  disposeLandingPreviews();
+  root.innerHTML = "";
+  const wrap = el("div", "landing");
+  const frame = el("div", "neo-picker-frame room-select");
+  const head = el("div", "neo-picker-head");
+  const titleWrap = el("div", "neo-picker-head-title");
+  titleWrap.append(el("div", "neo-card-tag", "CLASSROOMS"), el("h2", "neo-picker-title-text", "Pick a room"));
+  const who = el("p", "room-select-who", `Playing as ${opts.name || "Guest"}`);
+  head.append(titleWrap, who);
+
+  const body = el("div", "room-select-list");
+  if (opts.error) body.append(el("div", "error-banner", opts.error));
+  if (!opts.rooms) {
+    if (!opts.error) body.append(el("p", "lede room-select-status", "Checking classrooms…"));
+  } else {
+    for (const room of opts.rooms) {
+      const card = el("button", `clay room-card${room.full ? " is-full" : ""}`) as HTMLButtonElement;
+      card.type = "button";
+      card.disabled = room.full;
+      const title = el("div", "room-card-title", room.label);
+      const count = el("div", "room-card-count", `${room.regulars} / ${room.cap}`);
+      const state = el("div", `room-card-state${room.full ? " full" : " open"}`, room.full ? "Full" : "Available");
+      card.append(title, count, state);
+      card.addEventListener("click", () => {
+        if (room.full) return;
+        opts.onJoin(room.roomKey);
+      });
+      body.append(card);
+    }
+  }
+
+  const actions = el("div", "room-select-actions");
+  const change = el("button", "neo-btn", "Change character");
+  change.type = "button";
+  change.addEventListener("click", opts.onChangeCharacter);
+  const back = el("button", "neo-btn neo-btn-back", "← Menu");
+  back.type = "button";
+  back.addEventListener("click", opts.onBackMenu);
+  actions.append(change, back);
+  if (opts.retryable && opts.onRetry) {
+    const retry = el("button", "neo-btn neo-btn-play", "Retry");
+    retry.type = "button";
+    retry.addEventListener("click", opts.onRetry);
+    actions.prepend(retry);
+  }
+
+  frame.append(head, body, actions);
+  wrap.append(frame);
+  root.append(wrap);
+}
+
+export function renderLeaveConfirm(host: HTMLElement, onLeave: () => void, onStay: () => void) {
+  const wrap = el("div", "leave-modal-back");
+  wrap.setAttribute("role", "dialog");
+  wrap.setAttribute("aria-modal", "true");
+  wrap.setAttribute("aria-labelledby", "leave-title");
+  const card = el("div", "clay leave-modal");
+  card.append(el("h2", "", "Leave classroom?"));
+  const title = card.firstElementChild as HTMLElement;
+  title.id = "leave-title";
+  card.append(el("p", "lede", "Are you sure you want to leave?"));
+  const actions = el("div", "leave-modal-actions");
+  const stay = el("button", "clay-btn", "Stay") as HTMLButtonElement;
+  const leave = el("button", "clay-btn primary", "Leave") as HTMLButtonElement;
+  stay.type = "button";
+  leave.type = "button";
+  const close = () => {
+    window.removeEventListener("keydown", onKey, true);
+    wrap.remove();
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+      onStay();
+    }
+  };
+  stay.addEventListener("click", () => {
+    close();
+    onStay();
+  });
+  leave.addEventListener("click", () => {
+    close();
+    onLeave();
+  });
+  window.addEventListener("keydown", onKey, true);
+  actions.append(stay, leave);
+  card.append(actions);
+  wrap.append(card);
+  host.append(wrap);
+  stay.focus();
+  return { close: () => { close(); onStay(); } };
 }

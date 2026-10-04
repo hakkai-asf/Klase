@@ -1,6 +1,9 @@
 {
   "name": "klase",
   "private": true,
+  "engines": {
+    "node": "20.x"
+  },
   "workspaces": ["client", "server", "shared"],
   "scripts": {
     "build": "npm run build -w client",

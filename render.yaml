@@ -1,0 +1,13 @@
+# Pin the Node major version Render uses. The dashboard env NODE_VERSION
+# should match this so deploys do not silently pick a different runtime.
+services:
+  - type: web
+    name: klase-server
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run start -w server
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"

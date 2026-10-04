@@ -42,18 +42,29 @@ function memoryStrike(userId: string): DenyState {
 }
 
 async function readRow(userId: string): Promise<Row | null | "unavailable"> {
-  const sb = getAdmin();
-  if (!sb) return "unavailable";
-  const { data, error } = await sb
-    .from("admin_attempts")
-    .select("failed_count, locked_until")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (error) {
-    warnFallback(error.message);
+  let sb;
+  try {
+    sb = getAdmin();
+  } catch (e) {
+    warnFallback(e instanceof Error ? e.message : "supabase client");
     return "unavailable";
   }
-  return (data as Row | null) ?? null;
+  if (!sb) return "unavailable";
+  try {
+    const { data, error } = await sb
+      .from("admin_attempts")
+      .select("failed_count, locked_until")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) {
+      warnFallback(error.message);
+      return "unavailable";
+    }
+    return (data as Row | null) ?? null;
+  } catch (e) {
+    warnFallback(e instanceof Error ? e.message : "admin_attempts read");
+    return "unavailable";
+  }
 }
 
 /** A non-staff account hit /api/admin/*. Counts a strike unless it is already locked. */

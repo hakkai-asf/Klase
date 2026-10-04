@@ -98,7 +98,7 @@ function screen(root: HTMLElement) {
 
 function renderSignIn(root: HTMLElement, message = "") {
   const card = screen(root);
-  card.append(el("h2", "", "Klase admin"), el("p", "", "Sign in with the Google account that has owner or admin access."));
+  card.append(el("h2", "", "Klase admin"), el("p", "", "THIS IS A RESTRICTED ACCESS AREA. ONLY FOR ADMINS AND OWNER."));
   if (message) card.append(el("div", "error-banner", message));
   const btn = el("button", "clay-btn primary", "Sign in with Google") as HTMLButtonElement;
   btn.addEventListener("click", () => {

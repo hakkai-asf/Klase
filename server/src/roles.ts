@@ -2,11 +2,12 @@ import { ServerError } from "@colyseus/core";
 import { DEFAULT_STAFF_NAME, type Look, type Role } from "@klase/shared";
 import { isCleanDisplayName, sanitizeDisplayName } from "./chatFilter.js";
 import { recordDeniedAttempt, recordStaffSuccess } from "./adminLockout.js";
-import { findHold, holdToNotice } from "./moderationHold.js";
+import { findHold, findHoldMemory, holdToNotice } from "./moderationHold.js";
 import {
   loadPrivilegedProfiles,
   loadProfile,
   roleForAccount,
+  supabaseConfigured,
   supabaseEnabled,
   syncOwnerRole,
   userFromToken,
@@ -83,15 +84,24 @@ export function invalidateReservedNames() {
   reservedCache = null;
 }
 
-async function reservedNames() {
-  if (reservedCache && Date.now() - reservedCache.at < RESERVED_TTL_MS) return reservedCache.map;
+function reservedNamesLocal() {
   const map = new Map<string, ReservedEntry[]>();
   addReserved(map, ownerName(), "");
   for (const a of admins) addReserved(map, a, "");
   for (const [key, list] of seenPrivileged) map.set(key, [...(map.get(key) ?? []), ...list]);
+  return map;
+}
+
+async function reservedNames() {
+  if (reservedCache && Date.now() - reservedCache.at < RESERVED_TTL_MS) return reservedCache.map;
+  const map = reservedNamesLocal();
   for (const row of await loadPrivilegedProfiles()) addReserved(map, row.display_name, row.id);
   reservedCache = { at: Date.now(), map };
   return map;
+}
+
+function isReservedNameLocal(name: string) {
+  return Boolean(reservedNamesLocal().get(canonicalName(name))?.length);
 }
 
 /** True if `name` belongs to an owner/admin other than `exceptUserId`. */
@@ -139,14 +149,13 @@ export async function resolveIdentity(options: {
   const wantsGod = options?.god === true;
   const staffJoin = options?.staffJoin === true;
   const token = readToken(options?.accessToken);
-  const authReady = supabaseEnabled();
 
-  if (token && !authReady) {
+  if (token && !supabaseConfigured()) {
     if (staffJoin || wantsGod) throw new ServerError(401, "AUTH");
-    console.warn("[identity] access token present but Supabase client is not ready; joining as guest");
+    console.warn("[identity] access token present but Supabase is not configured; joining as guest");
   }
 
-  if (token && authReady) {
+  if (token && supabaseConfigured()) {
     let user: Awaited<ReturnType<typeof userFromToken>> = null;
     try {
       user = await userFromToken(token);
@@ -209,21 +218,9 @@ export async function resolveIdentity(options: {
 
   if (wantsGod) throw new ServerError(403, "NO_PERMISSION");
   if (isBannedGuest(guestName, "")) throw new ServerError(403, "BANNED");
-  let guestHold: Awaited<ReturnType<typeof findHold>> = null;
-  try {
-    guestHold = await findHold("", guestName);
-  } catch (e) {
-    console.error("[identity] findHold threw:", e instanceof Error ? e.message : e);
-  }
+  const guestHold = findHoldMemory("", guestName);
   if (guestHold) throw new ServerError(403, JSON.stringify({ error: "HELD", notice: holdToNotice(guestHold) }));
-  try {
-    if (authReady && (await isReservedName(guestName))) {
-      throw new ServerError(409, "NAME_RESERVED");
-    }
-  } catch (e) {
-    if (e instanceof ServerError) throw e;
-    console.error("[identity] reserved-name check threw:", e instanceof Error ? e.message : e);
-  }
+  if (isReservedNameLocal(guestName)) throw new ServerError(409, "NAME_RESERVED");
   // Fast-path for guests, no await required
   return {
     name: guestName,

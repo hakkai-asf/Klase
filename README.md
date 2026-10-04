@@ -4,7 +4,7 @@ Real-time 3D multiplayer classroom in the browser. Walk around an isometric clas
 
 ## Run locally
 
-Needs Node 20+.
+Needs Node 20 (pinned in `.nvmrc` / `package.json` `engines` so it matches Render).
 
 ```bash
 npm install
@@ -64,7 +64,7 @@ Render and Vercel both deploy from GitHub.
 | Start Command | `npm run start -w server` |
 | Instance | Free |
 
-4. Environment: add `NODE_VERSION` = `20`. Do **not** set `SUPABASE_*`. Render sets `PORT` for you.
+4. Environment: `NODE_VERSION` = `20` (also in `render.yaml` / `.nvmrc`). Guest join does not use `SUPABASE_*`; those keys are only for signed-in accounts. Render sets `PORT` for you.
 5. Deploy. In **Settings**, Health Check Path = `/health`.
 6. When logs show `Klase server on :…`, copy the URL, e.g. `https://klase-server.onrender.com`. Open `https://YOUR-SERVICE.onrender.com/health` — you should see `{"ok":true}`.
 

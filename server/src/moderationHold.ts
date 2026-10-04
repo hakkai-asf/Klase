@@ -66,17 +66,29 @@ export async function putHold(userId: string, name: string, hold: Hold) {
     actor_name: hold.actorName,
     actor_role: hold.actorRole,
   }));
-  const { error } = await sb.from("moderation_holds").upsert(rows);
-  if (error) console.warn("[moderation-holds]", error.message);
+  try {
+    const { error } = await sb.from("moderation_holds").upsert(rows);
+    if (error) console.warn("[moderation-holds]", error.message);
+  } catch (e) {
+    console.warn("[moderation-holds]", e instanceof Error ? e.message : e);
+  }
 }
 
-export async function findHold(userId: string, name: string): Promise<Hold | null> {
+/** In-process holds only. Guest join uses this so we never construct a Supabase client. */
+export function findHoldMemory(userId: string, name: string): Hold | null {
   const keys = keysFor(userId, name);
   for (const k of keys) {
     const h = memory.get(k);
     if (h && alive(h)) return h;
     if (h) memory.delete(k);
   }
+  return null;
+}
+
+export async function findHold(userId: string, name: string): Promise<Hold | null> {
+  const local = findHoldMemory(userId, name);
+  if (local) return local;
+  const keys = keysFor(userId, name);
   const sb = getAdmin();
   if (!sb || !keys.length) return null;
   let data: unknown[] | null = null;

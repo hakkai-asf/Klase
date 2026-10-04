@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
+import WebSocket from "ws";
 import type { Look, Role } from "@klase/shared";
 
 export type Profile = {
@@ -13,21 +14,49 @@ export type Profile = {
 
 let admin: SupabaseClient | null | undefined;
 
-export function supabaseEnabled() {
-  return Boolean(getAdmin());
+/** Env vars are set. Does not construct a client (guest join must not touch Supabase). */
+export function supabaseConfigured() {
+  return Boolean(process.env.SUPABASE_URL?.trim() && process.env.SUPABASE_SERVICE_ROLE_KEY?.trim());
 }
 
+/** True when accounts are configured. Safe for guest paths — no client is created. */
+export function supabaseEnabled() {
+  return supabaseConfigured();
+}
+
+/**
+ * Lazy service-role client. Node 20 has no global WebSocket; supabase-js realtime
+ * requires one at construct time (@supabase/realtime-js WebSocketFactory).
+ * Guests never call this.
+ */
 export function getAdmin(): SupabaseClient | null {
   if (admin !== undefined) return admin;
+  if (!supabaseConfigured()) {
+    admin = null;
+    return null;
+  }
   let url = process.env.SUPABASE_URL?.trim();
   try {
-    // Accept a pasted ".../rest/v1/" by reducing to the project root.
     if (url) url = new URL(url).origin;
   } catch {
     url = undefined;
   }
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-  admin = url && key ? createClient(url, key, { auth: { persistSession: false } }) : null;
+  if (!url || !key) {
+    admin = null;
+    return null;
+  }
+  try {
+    const g = globalThis as typeof globalThis & { WebSocket?: typeof WebSocket };
+    if (typeof g.WebSocket === "undefined") g.WebSocket = WebSocket as unknown as typeof g.WebSocket;
+    admin = createClient(url, key, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      realtime: { transport: WebSocket as unknown as typeof globalThis.WebSocket },
+    });
+  } catch (e) {
+    console.error("[supabase] createClient failed:", e instanceof Error ? e.message : e);
+    admin = null;
+  }
   return admin;
 }
 
@@ -47,18 +76,14 @@ export async function userFromToken(accessToken: string): Promise<User | null> {
 export async function loadProfile(userId: string): Promise<Profile | null> {
   const sb = getAdmin();
   if (!sb || !userId) return null;
-  let data: Profile | null = null;
-  let error: { message?: string } | null = null;
   try {
     const res = await sb.from("profiles").select("*").eq("id", userId).maybeSingle();
-    data = (res.data as Profile | null) ?? null;
-    error = res.error;
+    if (res.error || !res.data) return null;
+    return res.data as Profile;
   } catch (e) {
     console.error("[profiles] load threw:", e instanceof Error ? e.message : e);
     return null;
   }
-  if (error || !data) return null;
-  return data as Profile;
 }
 
 export async function saveLook(userId: string, look: Look, displayName?: string) {
@@ -126,7 +151,6 @@ export function ownerEmail() {
 
 export function roleForAccount(user: User, profile: Profile | null): Role {
   if (ownerUserId() && user.id === ownerUserId()) return "owner";
-  // Only trust the email when the provider verified it (Google always does).
   if (ownerEmail() && user.email_confirmed_at && (user.email ?? "").toLowerCase() === ownerEmail()) {
     return "owner";
   }

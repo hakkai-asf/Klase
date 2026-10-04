@@ -679,10 +679,8 @@ export function renderLanding(
         headAccountBtn.addEventListener("click", () => show("account"));
       } else {
         headAccountBtn.disabled = true;
-        headAccountBtn.append(
-          document.createTextNode("Account "),
-          el("span", "neo-badge-soon", "Coming Soon"),
-        );
+        headAccountBtn.title = "Sign-in is not configured on this site.";
+        headAccountBtn.textContent = "Account";
       }
       pickerHead.append(headTitleWrap, headAccountBtn);
 

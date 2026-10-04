@@ -27,8 +27,10 @@ const rawAnon = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.
 const anon = rawAnon && !isSecretKey(rawAnon) ? rawAnon : undefined;
 if (rawAnon && !anon) {
   console.error(
-    "VITE_SUPABASE_ANON_KEY is a service_role/secret key. Refusing to use it in the browser; paste the anon/publishable key instead.",
+    "[auth] VITE_SUPABASE_ANON_KEY is a service_role/secret key. Refusing to use it in the browser; set the anon/publishable key on Vercel and redeploy.",
   );
+} else if (!url || !anon) {
+  console.warn("[auth] sign-in disabled: missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY in this build.");
 }
 
 /** Where Supabase sends the browser back to after Google. Must be in the Supabase redirect allow-list. */

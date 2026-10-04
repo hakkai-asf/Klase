@@ -34,7 +34,10 @@ async function requireStaff(req: Request, res: Response, next: NextFunction) {
   try {
     const header = req.headers.authorization ?? "";
     const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
-    if (!token) throw new ServerError(401, "AUTH");
+    if (!token) {
+      console.warn("[admin] rejected: missing bearer token");
+      throw new ServerError(401, "AUTH");
+    }
     res.locals.staff = await resolveStaff(token);
     next();
   } catch (e) {

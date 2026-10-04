@@ -6,6 +6,8 @@ import { findHold, findHoldMemory, holdToNotice } from "./moderationHold.js";
 import {
   loadPrivilegedProfiles,
   loadProfile,
+  ownerEmail,
+  ownerUserId,
   roleForAccount,
   supabaseConfigured,
   supabaseEnabled,
@@ -58,6 +60,22 @@ export function canonicalName(name: string) {
 
 function readToken(raw: unknown): string {
   return typeof raw === "string" ? raw.trim() : "";
+}
+
+/** Reasons only — never email, token, or user id. */
+function describeStaffDecision(
+  tag: "identity" | "admin",
+  detail: string,
+  user: { email?: string | null; email_confirmed_at?: string | null; id?: string } | null,
+  profileRole: string | undefined,
+  role: Role | "none",
+) {
+  const emailSet = Boolean(ownerEmail());
+  const idSet = Boolean(ownerUserId());
+  const emailConfirmed = Boolean(user?.email_confirmed_at);
+  const emailMatch = Boolean(user) && emailSet && emailConfirmed && (user?.email ?? "").toLowerCase() === ownerEmail();
+  const idMatch = Boolean(user?.id) && idSet && user?.id === ownerUserId();
+  return `[${tag}] ${detail} role=${role} profile=${profileRole ?? "none"} ownerIdEnv=${idSet} ownerEmailEnv=${emailSet} emailConfirmed=${emailConfirmed} emailMatch=${emailMatch} idMatch=${idMatch}`;
 }
 
 type ReservedEntry = { userId: string };
@@ -151,7 +169,10 @@ export async function resolveIdentity(options: {
   const token = readToken(options?.accessToken);
 
   if (token && !supabaseConfigured()) {
-    if (staffJoin || wantsGod) throw new ServerError(401, "AUTH");
+    if (staffJoin || wantsGod) {
+      console.warn("[identity] staff/god rejected: supabase not configured on server");
+      throw new ServerError(401, "AUTH");
+    }
     console.warn("[identity] access token present but Supabase is not configured; joining as guest");
   }
 
@@ -163,7 +184,10 @@ export async function resolveIdentity(options: {
       console.error("[identity] userFromToken threw:", e instanceof Error ? e.message : e);
     }
     if (!user) {
-      if (staffJoin || wantsGod) throw new ServerError(401, "AUTH");
+      if (staffJoin || wantsGod) {
+        console.warn("[identity] staff/god rejected: token not verified");
+        throw new ServerError(401, "AUTH");
+      }
       console.warn("[identity] token not verified; joining as guest");
     } else {
     // Suspends execution while fetching the user's profile
@@ -171,8 +195,13 @@ export async function resolveIdentity(options: {
     if (profile?.banned) throw new ServerError(403, "BANNED");
     const role = roleForAccount(user, profile);
     syncOwnerRole(user.id, role, profile);
-    // God mode is decided here, from the verified token — never from a client claim.
-    if (wantsGod && role !== "owner") throw new ServerError(403, "NO_PERMISSION");
+    if (wantsGod && role !== "owner") {
+      console.warn(describeStaffDecision("identity", "god rejected", user, profile?.role, role));
+      throw new ServerError(403, "NO_PERMISSION");
+    }
+    if (staffJoin && role !== "owner" && role !== "admin") {
+      console.warn(describeStaffDecision("identity", "staffJoin as non-staff", user, profile?.role, role));
+    }
     let name: string;
     let look: Look;
     if ((role === "owner" || role === "admin") && staffJoin) {
@@ -236,15 +265,24 @@ export async function resolveIdentity(options: {
  * Looks the role up server-side on every call; the client's claim is never trusted.
  */
 export async function resolveStaff(accessToken: string): Promise<{ userId: string; name: string; role: Role }> {
-  if (!supabaseEnabled()) throw new ServerError(503, "AUTH_DISABLED");
+  if (!supabaseEnabled()) {
+    console.warn("[admin] rejected: AUTH_DISABLED supabaseConfigured=false");
+    throw new ServerError(503, "AUTH_DISABLED");
+  }
   const user = await userFromToken(accessToken);
-  if (!user) throw new ServerError(401, "AUTH");
+  if (!user) {
+    console.warn("[admin] rejected: token not verified");
+    throw new ServerError(401, "AUTH");
+  }
   const profile = await loadProfile(user.id);
-  if (profile?.banned) throw new ServerError(403, "BANNED");
+  if (profile?.banned) {
+    console.warn("[admin] rejected: banned");
+    throw new ServerError(403, "BANNED");
+  }
   const role = roleForAccount(user, profile);
   syncOwnerRole(user.id, role, profile);
   if (role !== "owner" && role !== "admin") {
-    // Signed in, but not staff: count a strike (3 strikes = 30 min lock, stored server-side by user id).
+    console.warn(describeStaffDecision("admin", "denied", user, profile?.role, role));
     const state = await recordDeniedAttempt(user.id);
     if (state.locked) throw new AdminLockedError(state.retryAfterSec);
     throw new AdminDeniedError(state.attemptsLeft);

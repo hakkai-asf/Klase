@@ -80,11 +80,26 @@ Vite bakes env vars at **build** time. You must redeploy after adding them.
 |---|---|
 | `VITE_COLYSEUS_URL` | `wss://YOUR-SERVICE.onrender.com` (must be **wss**, not `ws`) |
 | `VITE_API_URL` | `https://YOUR-SERVICE.onrender.com` |
+| `VITE_SUPABASE_URL` | `https://YOUR-PROJECT.supabase.co` (origin only, no `/rest/v1/`) |
+| `VITE_SUPABASE_ANON_KEY` | Supabase **anon / publishable** key — never the service_role key |
 
-No trailing slash. Use your real Render hostname.
+No trailing slash on the URLs. Use your real Render hostname. After changing any `VITE_*` var, **Redeploy** (Vite bakes them at build time).
+
+If **Root Directory** is `client`, keep `client/vercel.json`. If it is the repo root, keep root `vercel.json` (`outputDirectory` = `client/dist`). `/admin` and `/auth/callback` must serve the app, not a Vercel 404.
 
 2. **Deployments** → **Redeploy** (or push a new commit). Wait until it succeeds.
 3. Hard-refresh the Vercel site and **Join as guest**.
+
+**Supabase** → Authentication → URL Configuration:
+
+| Setting | Value |
+|---|---|
+| Site URL | `https://klase-room.vercel.app` |
+| Redirect URLs | `https://klase-room.vercel.app/auth/callback` and `http://localhost:5173/auth/callback` |
+
+Google provider stays in the Supabase dashboard (not Vercel).
+
+**Render** env (server only): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and at least one of `KLASE_OWNER_EMAIL` or `KLASE_OWNER_USER_ID`. Rejected owner checks log `[identity]` / `[admin]` reasons (no secrets).
 
 Vercel: Root Directory empty (repo root), Output Directory `dist`.
 

@@ -14,7 +14,7 @@ export type Profile = {
 let admin: SupabaseClient | null | undefined;
 
 export function supabaseEnabled() {
-  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+  return Boolean(getAdmin());
 }
 
 export function getAdmin(): SupabaseClient | null {
@@ -34,15 +34,29 @@ export function getAdmin(): SupabaseClient | null {
 export async function userFromToken(accessToken: string): Promise<User | null> {
   const sb = getAdmin();
   if (!sb || !accessToken) return null;
-  const { data, error } = await sb.auth.getUser(accessToken);
-  if (error || !data.user) return null;
-  return data.user;
+  try {
+    const { data, error } = await sb.auth.getUser(accessToken);
+    if (error || !data.user) return null;
+    return data.user;
+  } catch (e) {
+    console.error("[auth] getUser threw:", e instanceof Error ? e.message : e);
+    return null;
+  }
 }
 
 export async function loadProfile(userId: string): Promise<Profile | null> {
   const sb = getAdmin();
-  if (!sb) return null;
-  const { data, error } = await sb.from("profiles").select("*").eq("id", userId).maybeSingle();
+  if (!sb || !userId) return null;
+  let data: Profile | null = null;
+  let error: { message?: string } | null = null;
+  try {
+    const res = await sb.from("profiles").select("*").eq("id", userId).maybeSingle();
+    data = (res.data as Profile | null) ?? null;
+    error = res.error;
+  } catch (e) {
+    console.error("[profiles] load threw:", e instanceof Error ? e.message : e);
+    return null;
+  }
   if (error || !data) return null;
   return data as Profile;
 }
@@ -78,18 +92,28 @@ export async function setRole(userId: string, role: Role) {
 export async function loadPrivilegedProfiles(): Promise<{ id: string; display_name: string }[]> {
   const sb = getAdmin();
   if (!sb) return [];
-  const { data, error } = await sb
-    .from("profiles")
-    .select("id, display_name, role")
-    .in("role", ["owner", "admin"]);
-  if (error || !data) return [];
-  const rows = data as { id: string; display_name: string }[];
-  const envOwner = ownerUserId();
-  if (envOwner && !rows.some((r) => r.id === envOwner)) {
-    const p = await loadProfile(envOwner);
-    if (p) rows.push({ id: p.id, display_name: p.display_name });
+  try {
+    const { data, error } = await sb
+      .from("profiles")
+      .select("id, display_name, role")
+      .in("role", ["owner", "admin"]);
+    if (error || !data) {
+      if (error) console.error("[profiles] privileged list failed:", error.message);
+      return [];
+    }
+    const rows = (data as { id: string; display_name?: string }[])
+      .filter((r) => r?.id)
+      .map((r) => ({ id: r.id, display_name: String(r.display_name ?? "") }));
+    const envOwner = ownerUserId();
+    if (envOwner && !rows.some((r) => r.id === envOwner)) {
+      const p = await loadProfile(envOwner);
+      if (p) rows.push({ id: p.id, display_name: String(p.display_name ?? "") });
+    }
+    return rows;
+  } catch (e) {
+    console.error("[profiles] privileged list threw:", e instanceof Error ? e.message : e);
+    return [];
   }
-  return rows;
 }
 
 export function ownerUserId() {

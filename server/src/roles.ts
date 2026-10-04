@@ -49,10 +49,14 @@ export function banName(name: string) {
 // whoever types KLASE_OWNER_NAME.
 // ---------------------------------------------------------------------------
 export function canonicalName(name: string) {
-  return name
+  return String(name ?? "")
     .normalize("NFKC")
     .replace(/[\p{Cc}\p{Cf}\s]+/gu, "")
     .toLowerCase();
+}
+
+function readToken(raw: unknown): string {
+  return typeof raw === "string" ? raw.trim() : "";
 }
 
 type ReservedEntry = { userId: string };
@@ -133,11 +137,26 @@ export async function resolveIdentity(options: {
   const guestName = sanitizeDisplayName(String(options?.name ?? "")) || "Guest";
   if (!isCleanDisplayName(guestName)) throw new ServerError(400, "BAD_NAME");
   const wantsGod = options?.god === true;
+  const staffJoin = options?.staffJoin === true;
+  const token = readToken(options?.accessToken);
+  const authReady = supabaseEnabled();
 
-  if (options?.accessToken && supabaseEnabled()) {
-    // Suspends execution while fetching user from token
-    const user = await userFromToken(options.accessToken);
-    if (!user) throw new ServerError(401, "AUTH");
+  if (token && !authReady) {
+    if (staffJoin || wantsGod) throw new ServerError(401, "AUTH");
+    console.warn("[identity] access token present but Supabase client is not ready; joining as guest");
+  }
+
+  if (token && authReady) {
+    let user: Awaited<ReturnType<typeof userFromToken>> = null;
+    try {
+      user = await userFromToken(token);
+    } catch (e) {
+      console.error("[identity] userFromToken threw:", e instanceof Error ? e.message : e);
+    }
+    if (!user) {
+      if (staffJoin || wantsGod) throw new ServerError(401, "AUTH");
+      console.warn("[identity] token not verified; joining as guest");
+    } else {
     // Suspends execution while fetching the user's profile
     const profile = await loadProfile(user.id);
     if (profile?.banned) throw new ServerError(403, "BANNED");
@@ -147,7 +166,7 @@ export async function resolveIdentity(options: {
     if (wantsGod && role !== "owner") throw new ServerError(403, "NO_PERMISSION");
     let name: string;
     let look: Look;
-    if ((role === "owner" || role === "admin") && options?.staffJoin === true) {
+    if ((role === "owner" || role === "admin") && staffJoin) {
       // Dashboard "Enter as" name/look. Role still comes from the verified account, never the name.
       const requested = sanitizeDisplayName(String(options?.name ?? ""));
       if (requested && !isCleanDisplayName(requested)) throw new ServerError(400, "BAD_NAME");
@@ -165,8 +184,12 @@ export async function resolveIdentity(options: {
       // Signed-in regulars keep the saved profile name so a second tab cannot become the Google full name.
       name = sanitizeDisplayName(profile?.display_name || guestName) || guestName;
       if (!isCleanDisplayName(name)) name = `Student ${user.id.replace(/-/g, "").slice(0, 4)}`;
-      if (await isReservedName(name, user.id)) {
-        name = `Student ${user.id.replace(/-/g, "").slice(0, 4)}`;
+      try {
+        if (await isReservedName(name, user.id)) {
+          name = `Student ${user.id.replace(/-/g, "").slice(0, 4)}`;
+        }
+      } catch (e) {
+        console.error("[identity] reserved-name check threw:", e instanceof Error ? e.message : e);
       }
       look = profile
         ? { hat: profile.hat, top: profile.top, accessory: profile.accessory, body: guestLook.body }
@@ -181,14 +204,25 @@ export async function resolveIdentity(options: {
       userId: user.id,
       god: wantsGod,
     };
+    }
   }
 
   if (wantsGod) throw new ServerError(403, "NO_PERMISSION");
   if (isBannedGuest(guestName, "")) throw new ServerError(403, "BANNED");
-  const guestHold = await findHold("", guestName);
+  let guestHold: Awaited<ReturnType<typeof findHold>> = null;
+  try {
+    guestHold = await findHold("", guestName);
+  } catch (e) {
+    console.error("[identity] findHold threw:", e instanceof Error ? e.message : e);
+  }
   if (guestHold) throw new ServerError(403, JSON.stringify({ error: "HELD", notice: holdToNotice(guestHold) }));
-  if (supabaseEnabled() && (await isReservedName(guestName))) {
-    throw new ServerError(409, "NAME_RESERVED");
+  try {
+    if (authReady && (await isReservedName(guestName))) {
+      throw new ServerError(409, "NAME_RESERVED");
+    }
+  } catch (e) {
+    if (e instanceof ServerError) throw e;
+    console.error("[identity] reserved-name check threw:", e instanceof Error ? e.message : e);
   }
   // Fast-path for guests, no await required
   return {

@@ -17,22 +17,87 @@ app.use(express.json());
 app.get("/health", (_req, res) => res.json({ ok: true }));
 registerAdminRoutes(app);
 
+const KNOWN = new Set([
+  "AUTH",
+  "BANNED",
+  "BAD_NAME",
+  "NAME_RESERVED",
+  "NO_PERMISSION",
+  "ROOM_FULL",
+  "AUTH_DISABLED",
+]);
+
+function httpStatusFor(code: string, fallback: number) {
+  if (code === "AUTH") return 401;
+  if (code === "BANNED" || code.startsWith("KICKED:") || code === "NO_PERMISSION") return 403;
+  if (code === "NAME_RESERVED" || code === "BAD_NAME") return 422;
+  if (code === "ROOM_FULL") return 409;
+  if (code === "AUTH_DISABLED") return 503;
+  return fallback;
+}
+
+function describeError(e: unknown): { status: number; error: string; detail?: string } {
+  const msg = e instanceof Error ? e.message : "SERVER";
+  if (msg.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(msg) as { error?: string };
+      if (parsed.error === "HELD") return { status: 403, error: msg };
+    } catch {
+      /* not json */
+    }
+  }
+  if (e instanceof ServerError) {
+    const code = typeof e.code === "number" ? e.code : httpStatusFor(msg, 400);
+    return { status: code, error: msg };
+  }
+  if (KNOWN.has(msg) || msg.startsWith("KICKED:")) {
+    return { status: httpStatusFor(msg, 400), error: msg };
+  }
+  const detail = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+  return { status: 500, error: "SERVER", detail };
+}
+
 app.post("/api/find-room", async (req, res) => {
   try {
-    const ident = await resolveIdentity({
-      name: req.body?.name,
-      accessToken: req.body?.accessToken,
-    });
-    const role = ident.role;
+    const token = typeof req.body?.accessToken === "string" ? req.body.accessToken.trim() : "";
+    let ident;
+    try {
+      ident = await resolveIdentity({
+        name: req.body?.name,
+        accessToken: token || undefined,
+      });
+    } catch (e) {
+      const mapped = describeError(e);
+      if (mapped.status >= 500) console.error("[find-room] identity failed:", mapped.detail ?? mapped.error);
+      else console.warn("[find-room] identity rejected:", mapped.error);
+      if (mapped.error.startsWith("{")) {
+        try {
+          res.status(mapped.status).json(JSON.parse(mapped.error));
+          return;
+        } catch {
+          /* fall through */
+        }
+      }
+      res.status(mapped.status).json({ error: mapped.error });
+      return;
+    }
 
-    const listed = await matchMaker.query({ name: "classroom" });
+    let listed: { metadata?: { roomKey?: string; regulars?: number }; clients?: number }[] = [];
+    try {
+      listed = (await matchMaker.query({ name: "classroom" })) as typeof listed;
+    } catch (e) {
+      console.error("[find-room] matchMaker.query threw:", e instanceof Error ? e.message : e);
+      listed = [];
+    }
+
+    const role = ident.role;
     for (const roomKey of ROOM_CODES) {
       const room = listed.find((r) => r.metadata?.roomKey === roomKey);
       if (!room) {
         res.json({ roomKey });
         return;
       }
-      const regulars = (room.metadata?.regulars as number | undefined) ?? room.clients;
+      const regulars = (room.metadata?.regulars as number | undefined) ?? room.clients ?? 0;
       if (role === "user" && regulars >= REGULAR_CAP) continue;
       res.json({ roomKey });
       return;
@@ -44,34 +109,9 @@ app.post("/api/find-room", async (req, res) => {
     }
     res.status(409).json({ error: "ROOM_FULL" });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "SERVER";
-    if (msg.startsWith("{")) {
-      try {
-        const parsed = JSON.parse(msg) as { error?: string; notice?: unknown };
-        if (parsed.error === "HELD") {
-          res.status(403).json(parsed);
-          return;
-        }
-      } catch {
-        /* not json */
-      }
-    }
-    if (e instanceof ServerError) {
-      const status =
-        typeof e.code === "number"
-          ? e.code
-          : msg === "BANNED" || msg.startsWith("KICKED:")
-            ? 403
-            : msg === "NAME_RESERVED" || msg === "BAD_NAME"
-              ? 422
-              : msg === "AUTH"
-                ? 401
-                : 400;
-      res.status(status).json({ error: msg });
-      return;
-    }
-    console.error("[find-room]", e);
-    res.status(500).json({ error: "SERVER" });
+    const mapped = describeError(e);
+    console.error("[find-room]", mapped.detail ?? mapped.error, e);
+    res.status(mapped.status).json({ error: mapped.error });
   }
 });
 

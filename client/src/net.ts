@@ -18,18 +18,31 @@ function upgradeForHttps(url: string): string {
   return url;
 }
 
+/** Colyseus client wants ws/wss. Vercel is often given https://host by mistake. */
+function toWebsocketUrl(url: string): string {
+  if (url.startsWith("https://")) return `wss://${url.slice("https://".length)}`;
+  if (url.startsWith("http://")) return `ws://${url.slice("http://".length)}`;
+  return url;
+}
+
+function toHttpUrl(url: string): string {
+  if (url.startsWith("wss://")) return `https://${url.slice("wss://".length)}`;
+  if (url.startsWith("ws://")) return `http://${url.slice("ws://".length)}`;
+  return url;
+}
+
 function resolveWs(): string {
   const raw = envText(import.meta.env.VITE_COLYSEUS_URL);
-  if (raw) return stripSlash(upgradeForHttps(raw));
+  if (raw) return stripSlash(upgradeForHttps(toWebsocketUrl(raw)));
   if (import.meta.env.DEV) return "ws://localhost:2567";
   return "";
 }
 
 function resolveApi(): string {
   const explicit = envText(import.meta.env.VITE_API_URL);
-  if (explicit) return stripSlash(upgradeForHttps(explicit));
+  if (explicit) return stripSlash(upgradeForHttps(toHttpUrl(explicit)));
   const ws = envText(import.meta.env.VITE_COLYSEUS_URL);
-  if (ws) return stripSlash(upgradeForHttps(ws.replace(/^ws/i, "http")));
+  if (ws) return stripSlash(upgradeForHttps(toHttpUrl(ws)));
   return "";
 }
 
@@ -109,11 +122,18 @@ async function wakeServer(onWake: (() => void) | undefined): Promise<boolean> {
   return false;
 }
 
+function usableToken(raw?: string): string | undefined {
+  const token = String(raw ?? "").trim();
+  if (!token || token.split(".").length < 3) return undefined;
+  return token;
+}
+
 async function postFindRoom(name: string, accessToken?: string): Promise<Response> {
+  const token = usableToken(accessToken);
   return fetch(findRoomUrl(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, accessToken }),
+    body: JSON.stringify(token ? { name, accessToken: token } : { name }),
   });
 }
 
@@ -167,13 +187,10 @@ export async function pickRoom(
   } | null;
 
   if (!res.ok) {
-    if (res.status >= 400 && res.status < 500) {
-      const parsed = parseFindBody(data, res.status);
-      if (parsed.error === "SERVER_ERROR") logJoinFail("SERVER_ERROR", { status: res.status });
-      return parsed;
-    }
-    logJoinFail("SERVER_ERROR", { status: res.status });
-    return { error: "SERVER_ERROR", status: res.status };
+    const parsed = parseFindBody(data, res.status);
+    logJoinFail(parsed.error, { status: res.status, err: data?.error ?? res.statusText });
+    if (res.status === 401 && parsed.error === "SERVER_ERROR") return { error: "AUTH", status: 401 };
+    return parsed;
   }
   if (!data?.roomKey) {
     logJoinFail("SERVER_ERROR", { status: res.status, err: "missing roomKey" });
@@ -195,6 +212,7 @@ export async function joinClassroom(
   staffJoin = false,
 ) {
   if (!WS) throw new Error("NOT_CONFIGURED");
+  const token = usableToken(accessToken);
   const client = new Client(WS);
   const room = await client.joinOrCreate("classroom", {
     roomKey,
@@ -203,7 +221,7 @@ export async function joinClassroom(
     top: look.top,
     accessory: look.accessory,
     body: look.body,
-    accessToken,
+    ...(token ? { accessToken: token } : {}),
     god,
     staffJoin,
   });

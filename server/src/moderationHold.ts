@@ -79,9 +79,29 @@ export async function findHold(userId: string, name: string): Promise<Hold | nul
   }
   const sb = getAdmin();
   if (!sb || !keys.length) return null;
-  const { data, error } = await sb.from("moderation_holds").select("*").in("hold_key", keys);
-  if (error || !data?.length) return null;
-  for (const row of data) {
+  let data: unknown[] | null = null;
+  try {
+    const res = await sb.from("moderation_holds").select("*").in("hold_key", keys);
+    if (res.error) {
+      console.error("[moderation-holds] lookup failed:", res.error.message);
+      return null;
+    }
+    data = res.data;
+  } catch (e) {
+    console.error("[moderation-holds] lookup threw:", e instanceof Error ? e.message : e);
+    return null;
+  }
+  if (!data?.length) return null;
+  for (const raw of data) {
+    const row = raw as {
+      hold_key?: string;
+      kind?: string;
+      until?: string | null;
+      reason?: string;
+      message?: string;
+      actor_name?: string;
+      actor_role?: string;
+    };
     const hold: Hold = {
       kind: row.kind === "ban" ? "ban" : "kick",
       until: row.until == null ? null : Date.parse(String(row.until)),

@@ -144,7 +144,7 @@ async function bootWorld(name: string, look: Look, accessToken?: string, isPrega
               : picked.error === "UNREACHABLE"
                 ? "The classroom server could not be reached. It may be waking up — try again in a moment."
                 : picked.error === "SERVER_ERROR"
-                  ? `The classroom server returned an error${picked.status ? ` (${picked.status})` : ""}. Try again in a moment.`
+                  ? `The classroom server hit an unexpected error${picked.status ? ` (${picked.status})` : ""}. Check the server logs for [find-room].`
             : "Could not join right now. Try again.";
     fail(err, picked.error === "UNREACHABLE" || picked.error === "SERVER_ERROR");
     return;

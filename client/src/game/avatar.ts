@@ -1,7 +1,8 @@
 import * as THREE from "three";
+import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
-import type { BodyId, Look } from "@klase/shared";
+import { BODY_LABELS, DEFAULT_CHARACTER, characterAllowsWearables, characterById, normalizeCharacterId, type BodyId, type Look } from "@klase/shared";
 
 // ── Hi-DPI sprite textures ────────────────────────────────────────────────
 // All canvases are rendered at SPRITE_DPR × their logical size, then the
@@ -36,9 +37,6 @@ function makeSpriteTex(logicalW: number, logicalH: number) {
 const SKIN = 0xe8d5c4;
 const BODY = 0xf2ebe3;
 
-const xBotUrl = new URL("../../../assets/characters/X Bot.glb", import.meta.url).href;
-const yBotUrl = new URL("../../../assets/characters/Y Bot.glb", import.meta.url).href;
-const xBotSkinnedUrl = new URL("../../../assets/characters/Xbot.skinned.glb", import.meta.url).href;
 const walkUrl = new URL("../../../assets/animations/walking/Walking.glb", import.meta.url).href;
 const walkStartUrl = new URL("../../../assets/animations/walking/Start Walking.glb", import.meta.url).href;
 const walkStopUrl = new URL("../../../assets/animations/walking/Stop Walking.glb", import.meta.url).href;
@@ -49,15 +47,36 @@ type LocoPhase = "idle" | "start" | "walk" | "stop";
 
 type Rig = {
   template: THREE.Object3D;
-  walk: THREE.AnimationClip;
+  skinned: boolean;
+  walk: THREE.AnimationClip | null;
   idle: THREE.AnimationClip | null;
   start: THREE.AnimationClip | null;
   stop: THREE.AnimationClip | null;
   sit: THREE.AnimationClip | null;
 };
 
-let rigs: { x: Rig; y: Rig } | null = null;
-let previews: { x: THREE.Object3D; y: THREE.Object3D } | null = null;
+const characterUrls: Record<string, string> = {
+  "Xbot.skinned.glb": new URL("../../../assets/characters/Xbot.skinned.glb", import.meta.url).href,
+};
+
+function urlByFile(file: string) {
+  return characterUrls[file] ?? "";
+}
+
+let sharedClips: {
+  walk: THREE.AnimationClip;
+  idle: THREE.AnimationClip | null;
+  start: THREE.AnimationClip | null;
+  stop: THREE.AnimationClip | null;
+  sit: THREE.AnimationClip;
+  sitNodes: GltfNode[];
+} | null = null;
+
+const rigById = new Map<string, Rig>();
+const rigByFile = new Map<string, Rig>();
+const rigInflight = new Map<string, Promise<Rig | null>>();
+
+let gltfLoader: GLTFLoader | null = null;
 
 function mat(color: number) {
   return new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.02 });
@@ -328,8 +347,23 @@ function nodeNames(root: THREE.Object3D) {
   return names;
 }
 
+function boneKey(name: string) {
+  return name
+    .replace(/^mixamorig:?/i, "")
+    .replace(/[_.]\d+$/g, "")
+    .replace(/:/g, "")
+    .toLowerCase();
+}
+
 function resolveBoneName(raw: string, names: Set<string>) {
   if (names.has(raw)) return raw;
+  const want = boneKey(raw);
+  const byKey = new Map<string, string>();
+  for (const n of names) {
+    const k = boneKey(n);
+    if (!byKey.has(k)) byKey.set(k, n);
+  }
+  if (byKey.has(want)) return byKey.get(want)!;
   const noColon = raw.replace(/:/g, "");
   if (names.has(noColon)) return noColon;
   const withColon = raw.includes(":") ? raw : raw.replace(/^mixamorig/, "mixamorig:");
@@ -420,7 +454,7 @@ async function rigFromGltf(
   }
   const start = adaptClip(startFallback, scene, "WalkStart");
   const stop = adaptClip(stopFallback, scene, "WalkStop");
-  return { template: scene, walk, idle, start, stop, sit: null as THREE.AnimationClip | null };
+  return { template: scene, skinned: true, walk, idle, start, stop, sit: null as THREE.AnimationClip | null };
 }
 
 function cloneModel(template: THREE.Object3D) {
@@ -472,93 +506,160 @@ function enableShadows(model: THREE.Object3D) {
   });
 }
 
-async function loadGltf(url: string) {
+function getLoader() {
+  if (gltfLoader) return gltfLoader;
   const loader = new GLTFLoader();
-  return loader.loadAsync(url);
+  const draco = new DRACOLoader();
+  draco.setDecoderPath("/draco/");
+  loader.setDRACOLoader(draco);
+  gltfLoader = loader;
+  return loader;
 }
 
-export async function preloadAvatars() {
-  if (rigs) return;
-  const [xGltf, yGltf, walkGltf, idleGltf, startGltf, stopGltf, skinnedGltf, sitGltf] = await Promise.all([
-    loadGltf(xBotUrl),
-    loadGltf(yBotUrl),
+async function loadGltf(url: string) {
+  return getLoader().loadAsync(url);
+}
+
+async function loadSharedClips() {
+  if (sharedClips) return sharedClips;
+  const [walkGltf, idleGltf, startGltf, stopGltf, sitGltf] = await Promise.all([
     loadGltf(walkUrl),
     loadGltf(idleUrl),
     loadGltf(walkStartUrl),
     loadGltf(walkStopUrl),
-    loadGltf(xBotSkinnedUrl),
     loadGltf(sitUrl),
   ]);
-  const walkFallback = firstClip(walkGltf.animations, "Walking.glb");
-  const idleFallback = firstClip(idleGltf.animations, "Breathing Idle.glb");
-  const startFallback = firstClip(startGltf.animations, "Start Walking.glb");
-  const stopFallback = firstClip(stopGltf.animations, "Stop Walking.glb");
-  const sitFallback = firstClip(sitGltf.animations, "Sitting Idle.glb");
-  const sitNodes = ((sitGltf as { parser?: { json?: { nodes?: GltfNode[] } } }).parser?.json?.nodes ?? []) as GltfNode[];
-  previews = { x: xGltf.scene, y: yGltf.scene };
-  const skinnedScene = cloneSkinned(skinnedGltf.scene);
-  const skinnedFallback = await rigFromGltf(
-    skinnedScene,
-    skinnedGltf.animations,
-    walkFallback,
-    idleFallback,
-    startFallback,
-    stopFallback,
-  );
+  sharedClips = {
+    walk: firstClip(walkGltf.animations, "Walking.glb"),
+    idle: firstClip(idleGltf.animations, "Breathing Idle.glb"),
+    start: firstClip(startGltf.animations, "Start Walking.glb"),
+    stop: firstClip(stopGltf.animations, "Stop Walking.glb"),
+    sit: firstClip(sitGltf.animations, "Sitting Idle.glb"),
+    sitNodes: ((sitGltf as { parser?: { json?: { nodes?: GltfNode[] } } }).parser?.json?.nodes ?? []) as GltfNode[],
+  };
+  return sharedClips;
+}
 
-  const xSkinned = isSkinned(xGltf.scene);
-  const ySkinned = isSkinned(yGltf.scene);
-  if (!xSkinned || !ySkinned) {
-    console.warn(
-      "[Klase] X/Y Bot.glb have no skin weights (frozen T-pose). Using skinned Mixamo Xbot. Re-export with Armature, do not Apply the modifier.",
-    );
+function attachSit(rig: Rig, clips: NonNullable<typeof sharedClips>) {
+  rig.sit = clips.sitNodes.length
+    ? retargetMixamoSit(clips.sit, clips.sitNodes, rig.template)
+    : adaptClip(clips.sit, rig.template, "Sit");
+}
+
+async function buildRig(file: string): Promise<Rig | null> {
+  const cached = rigByFile.get(file);
+  if (cached) return cached;
+  const url = urlByFile(file);
+  if (!url) return null;
+  const gltf = await loadGltf(url);
+  if (!isSkinned(gltf.scene)) {
+    console.warn(`[Klase] ${file} has no skin; showing a still pose (idle/walk/sit will not play).`);
+    const rig: Rig = {
+      template: gltf.scene,
+      skinned: false,
+      walk: null,
+      idle: null,
+      start: null,
+      stop: null,
+      sit: null,
+    };
+    rigByFile.set(file, rig);
+    return rig;
   }
+  const clips = await loadSharedClips();
+  const scene = gltf.scene;
+  const rig = await rigFromGltf(scene, gltf.animations, clips.walk, clips.idle, clips.start, clips.stop);
+  attachSit(rig, clips);
+  rigByFile.set(file, rig);
+  return rig;
+}
 
-  const x = xSkinned
-    ? await rigFromGltf(xGltf.scene, xGltf.animations, walkFallback, idleFallback, startFallback, stopFallback)
-    : skinnedFallback;
-  const y = ySkinned
-    ? await rigFromGltf(yGltf.scene, yGltf.animations, walkFallback, idleFallback, startFallback, stopFallback)
-    : skinnedFallback;
-  x.sit = sitNodes.length ? retargetMixamoSit(sitFallback, sitNodes, x.template) : adaptClip(sitFallback, x.template, "Sit");
-  y.sit =
-    y === x
-      ? x.sit
-      : sitNodes.length
-        ? retargetMixamoSit(sitFallback, sitNodes, y.template)
-        : adaptClip(sitFallback, y.template, "Sit");
-  rigs = { x, y };
+export function hasCharacterRig(id?: string) {
+  return rigById.has(normalizeCharacterId(id));
+}
+
+export async function ensureCharacter(id?: string): Promise<Rig | null> {
+  const body = normalizeCharacterId(id);
+  const hit = rigById.get(body);
+  if (hit) return hit;
+  const pending = rigInflight.get(body);
+  if (pending) return pending;
+
+  const work = (async () => {
+    try {
+      const def = characterById(body);
+      let rig = await buildRig(def.file);
+      if (!rig && body !== DEFAULT_CHARACTER) {
+        rig = await buildRig(characterById(DEFAULT_CHARACTER).file);
+      }
+      if (rig) rigById.set(body, rig);
+      return rig;
+    } catch (e) {
+      console.warn(`[Klase] failed to load character ${body}`, e);
+      if (body !== DEFAULT_CHARACTER) {
+        try {
+          const fallback = await buildRig(characterById(DEFAULT_CHARACTER).file);
+          if (fallback) {
+            rigById.set(body, fallback);
+            return fallback;
+          }
+        } catch {
+          /* keep going */
+        }
+      }
+      return null;
+    } finally {
+      rigInflight.delete(body);
+    }
+  })();
+
+  rigInflight.set(body, work);
+  return work;
+}
+
+export async function preloadAvatars() {
+  await loadSharedClips();
+  await ensureCharacter(DEFAULT_CHARACTER);
 }
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
-    rigs = null;
-    previews = null;
+    sharedClips = null;
+    rigById.clear();
+    rigByFile.clear();
+    rigInflight.clear();
+    gltfLoader = null;
   });
 }
 
 function pickRig(body?: string): Rig | null {
-  if (!rigs) return null;
-  return body === "y" ? rigs.y : rigs.x;
+  return rigById.get(normalizeCharacterId(body)) ?? null;
 }
 
-function findBone(root: THREE.Object3D, re: RegExp): THREE.Object3D | null {
-  const hit: THREE.Object3D[] = [];
+function findBone(root: THREE.Object3D, keys: string[]): THREE.Object3D | null {
+  const byKey = new Map<string, THREE.Object3D>();
   root.traverse((o) => {
-    if (hit.length === 0 && re.test(o.name)) hit.push(o);
+    if (!o.name) return;
+    const k = boneKey(o.name);
+    if (!byKey.has(k)) byKey.set(k, o);
   });
-  return hit[0] ?? null;
+  for (const key of keys) {
+    const hit = byKey.get(key.toLowerCase());
+    if (hit) return hit;
+  }
+  return null;
 }
 
-function attachSockets(model: THREE.Object3D) {
+function attachSockets(model: THREE.Object3D, allowWearables = true) {
   const sockets = {
     hat: new THREE.Group(),
     top: new THREE.Group(),
     accessory: new THREE.Group(),
   };
-  const head = findBone(model, /head$/i);
-  const chest = findBone(model, /spine2|chest|spine1$/i);
-  const hips = findBone(model, /hips|pelvis$/i);
+  if (!allowWearables) return sockets;
+  const head = findBone(model, ["head"]);
+  const chest = findBone(model, ["spine2", "chest", "spine1"]);
+  const hips = findBone(model, ["hips", "pelvis"]);
   (head ?? model).add(sockets.hat);
   sockets.hat.position.set(0, 0.12, 0);
   (chest ?? model).add(sockets.top);
@@ -869,7 +970,7 @@ export function setLocalFpPresentation(
   const tag = avatar.root.getObjectByName("nametag");
   if (tag) tag.visible = !firstPerson;
 
-  const headBone = findBone(avatar.body, /head$/i);
+  const headBone = findBone(avatar.body, ["head"]);
   if (headBone) headBone.scale.setScalar(hideHead ? 0.001 : 1);
   avatar.body.traverse((o) => {
     if (o.name === "Head" && !(o as THREE.Bone).isBone) o.visible = !hideHead;
@@ -940,65 +1041,79 @@ function primitiveAvatar(look: Look, nametag: string, role = "") {
     phase: "idle" as LocoPhase,
     wantMove: false,
     phaseTime: 0,
+    pending: true,
   };
 }
 
-export function createAvatar(look: Look, nametag: string, role = "") {
-  const rig = pickRig(look.body);
-  if (!rig) return primitiveAvatar(look, nametag, role);
+function applyCharacterFit(model: THREE.Object3D, body: string) {
+  const def = characterById(body);
+  if (def.rotX) model.rotation.x += def.rotX;
+  if (def.rotY) model.rotation.y += def.rotY;
+  fitToHeight(model, def.heightM ?? 1.7);
+  if (def.yOffset) model.position.y += def.yOffset;
+}
 
+export function createAvatar(look: Look, nametag: string, role = "") {
+  const body = normalizeCharacterId(look.body);
+  const rig = pickRig(body);
+  if (!rig) {
+    void ensureCharacter(body);
+    return primitiveAvatar(look, nametag, role);
+  }
+
+  const def = characterById(body);
   const root = new THREE.Group();
   const model = cloneModel(rig.template);
-  fitToHeight(model, 1.7);
+  applyCharacterFit(model, body);
   enableShadows(model);
   model.traverse((o) => {
     const sk = o as THREE.SkinnedMesh;
     if (sk.isSkinnedMesh) sk.frustumCulled = false;
   });
-  const body = model;
   root.add(model);
 
-  const sockets = attachSockets(model);
-  const headH = measureBox(model).max.y;
+  const sockets = attachSockets(model, def.wearables !== false);
+  const headH = measureBox(model).max.y + (def.tagLift ?? 0);
   const tag = nametagSprite(nametag, headH, role);
   const speech = speechSprite(headH);
   const mic = micSprite(headH);
   root.add(tag.sprite, speech.sprite, mic.sprite);
   applyLook(sockets, look);
 
-  const mixer = new THREE.AnimationMixer(model);
-  const walkAction = mixer.clipAction(rig.walk);
-  walkAction.setLoop(THREE.LoopRepeat, Infinity);
-  walkAction.enabled = true;
-  walkAction.setEffectiveTimeScale(1);
-  walkAction.setEffectiveWeight(0);
-  walkAction.play();
-
+  let mixer: THREE.AnimationMixer | null = null;
+  let walkAction: THREE.AnimationAction | null = null;
   let idleAction: THREE.AnimationAction | null = null;
-  if (rig.idle) {
-    idleAction = mixer.clipAction(rig.idle);
-    idleAction.setLoop(THREE.LoopRepeat, Infinity);
-    idleAction.enabled = true;
-    idleAction.setEffectiveTimeScale(1);
-    idleAction.setEffectiveWeight(1);
-    idleAction.play();
-  }
-
   let sitAction: THREE.AnimationAction | null = null;
-  if (rig.sit) {
-    sitAction = mixer.clipAction(rig.sit);
-    sitAction.setLoop(THREE.LoopRepeat, Infinity);
-    sitAction.enabled = true;
-    sitAction.setEffectiveTimeScale(1);
-    sitAction.setEffectiveWeight(0);
-    sitAction.play();
+  if (rig.skinned && rig.walk) {
+    mixer = new THREE.AnimationMixer(model);
+    walkAction = mixer.clipAction(rig.walk);
+    walkAction.setLoop(THREE.LoopRepeat, Infinity);
+    walkAction.enabled = true;
+    walkAction.setEffectiveTimeScale(1);
+    walkAction.setEffectiveWeight(0);
+    walkAction.play();
+    if (rig.idle) {
+      idleAction = mixer.clipAction(rig.idle);
+      idleAction.setLoop(THREE.LoopRepeat, Infinity);
+      idleAction.enabled = true;
+      idleAction.setEffectiveTimeScale(1);
+      idleAction.setEffectiveWeight(1);
+      idleAction.play();
+    }
+    if (rig.sit) {
+      sitAction = mixer.clipAction(rig.sit);
+      sitAction.setLoop(THREE.LoopRepeat, Infinity);
+      sitAction.enabled = true;
+      sitAction.setEffectiveTimeScale(1);
+      sitAction.setEffectiveWeight(0);
+      sitAction.play();
+    }
+    mixer.update(1 / 30);
   }
-
-  mixer.update(1 / 30);
 
   return {
     root,
-    body,
+    body: model,
     sockets,
     canvas: tag.canvas,
     tex: tag.tex,
@@ -1033,7 +1148,25 @@ export function createAvatar(look: Look, nametag: string, role = "") {
     phase: "idle" as LocoPhase,
     wantMove: false,
     phaseTime: 0,
+    pending: false,
   };
+}
+
+export function disposeAvatar(avatar: { root: THREE.Object3D; mixer?: THREE.AnimationMixer | null; tex?: THREE.Texture; speechTex?: THREE.Texture; micTex?: THREE.Texture; pending?: boolean }) {
+  avatar.mixer?.stopAllAction();
+  avatar.root.removeFromParent();
+  avatar.root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    if (avatar.pending) {
+      mesh.geometry?.dispose();
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const m of mats) m?.dispose?.();
+    }
+  });
+  avatar.tex?.dispose();
+  avatar.speechTex?.dispose();
+  avatar.micTex?.dispose();
 }
 
 function actionFinished(action: THREE.AnimationAction | null, elapsed: number) {
@@ -1265,6 +1398,7 @@ export function applyLook(
   for (const s of Object.values(sockets)) {
     while (s.children.length) s.remove(s.children[0]!);
   }
+  if (!characterAllowsWearables(look.body)) return;
 
   if (look.hat === "cap_red" || look.hat === "cap_blue") {
     const color = look.hat === "cap_red" ? 0xc45c4a : 0x4a6cb0;
@@ -1300,25 +1434,33 @@ export function applyLook(
   }
 }
 
-export function paintBodyPortrait(img: HTMLImageElement, body: BodyId) {
-  const rig = pickRig(body);
-  const src = rig?.template;
-  if (!src) return () => {};
+let portraitRenderer: THREE.WebGLRenderer | null = null;
 
-  const size = 512;
+function getPortraitRenderer() {
+  if (portraitRenderer) return portraitRenderer;
   const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
+  canvas.width = 512;
+  canvas.height = 512;
   const renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: true,
     alpha: true,
     preserveDrawingBuffer: true,
   });
-  renderer.setSize(size, size, false);
+  renderer.setSize(512, 512, false);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.setClearColor(0x2a211c, 0);
+  portraitRenderer = renderer;
+  return renderer;
+}
 
+export async function paintBodyPortrait(img: HTMLImageElement, body: BodyId) {
+  await ensureCharacter(body);
+  const rig = pickRig(body);
+  const src = rig?.template;
+  if (!src || !img.isConnected) return () => {};
+
+  const renderer = getPortraitRenderer();
   const scene = new THREE.Scene();
   scene.add(new THREE.HemisphereLight(0xffe4c8, 0x3a2a22, 1.15));
   const sun = new THREE.DirectionalLight(0xfff1e0, 1.35);
@@ -1330,8 +1472,8 @@ export function paintBodyPortrait(img: HTMLImageElement, body: BodyId) {
   scene.add(new THREE.AmbientLight(0xffe8d4, 0.35));
 
   const model = cloneModel(src);
-  fitToHeight(model, 1.7);
-  model.rotation.y = 0.35;
+  applyCharacterFit(model, body);
+  model.rotation.y += 0.35;
   if (body === "y") {
     model.traverse((o) => {
       const mesh = o as THREE.Mesh;
@@ -1360,10 +1502,9 @@ export function paintBodyPortrait(img: HTMLImageElement, body: BodyId) {
   camera.position.set(0.78, 1.38, 1.92);
   camera.lookAt(0, 1.22, 0);
   renderer.render(scene, camera);
-  img.src = canvas.toDataURL("image/png");
-  img.alt = body === "y" ? "Y Bot" : "X Bot";
+  img.src = renderer.domElement.toDataURL("image/png");
+  img.alt = BODY_LABELS[body] ?? body;
 
-  renderer.dispose();
   return () => {
     img.removeAttribute("src");
   };
@@ -1417,6 +1558,16 @@ export function createLiveAvatarPreview(container: HTMLElement, initialLook: Loo
   // Avatar model
   let avatar = createAvatar(currentLook, "");
   scene.add(avatar.root);
+  if (avatar.pending) {
+    const token = currentLook.body;
+    void ensureCharacter(token).then(() => {
+      if (!canvas.isConnected || currentLook.body !== token) return;
+      scene.remove(avatar.root);
+      disposeAvatar(avatar);
+      avatar = createAvatar(currentLook, "");
+      scene.add(avatar.root);
+    });
+  }
 
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 50);
 
@@ -1500,10 +1651,15 @@ export function createLiveAvatarPreview(container: HTMLElement, initialLook: Loo
       currentLook = { ...nextLook };
 
       if (bodyChanged) {
+        const token = currentLook.body;
         scene.remove(avatar.root);
-        avatar = createAvatar(currentLook, "");
-        scene.add(avatar.root);
-        avatar.root.rotation.y = currentRotY;
+        disposeAvatar(avatar);
+        void ensureCharacter(currentLook.body).then(() => {
+          if (!canvas.isConnected || currentLook.body !== token) return;
+          avatar = createAvatar(currentLook, "");
+          scene.add(avatar.root);
+          avatar.root.rotation.y = currentRotY;
+        });
       } else {
         applyLook(avatar.sockets, currentLook);
       }

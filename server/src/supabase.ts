@@ -9,6 +9,7 @@ export type Profile = {
   hat: string;
   top: string;
   accessory: string;
+  body?: string;
   banned: boolean;
 };
 
@@ -95,6 +96,7 @@ export async function saveLook(userId: string, look: Look, displayName?: string)
       hat: look.hat,
       top: look.top,
       accessory: look.accessory,
+      body: look.body,
       ...(displayName ? { display_name: displayName } : {}),
       updated_at: new Date().toISOString(),
     })

@@ -1,5 +1,5 @@
 import { ServerError } from "@colyseus/core";
-import { DEFAULT_STAFF_NAME, type Look, type Role } from "@klase/shared";
+import { DEFAULT_STAFF_NAME, normalizeLook, type Look, type Role } from "@klase/shared";
 import { isCleanDisplayName, sanitizeDisplayName } from "./chatFilter.js";
 import { recordDeniedAttempt, recordStaffSuccess } from "./adminLockout.js";
 import { findHold, findHoldMemory, holdToNotice } from "./moderationHold.js";
@@ -215,7 +215,7 @@ export async function resolveIdentity(options: {
       name = sanitizeDisplayName(profile?.display_name || guestName) || DEFAULT_STAFF_NAME;
       if (!isCleanDisplayName(name)) name = DEFAULT_STAFF_NAME;
       look = profile
-        ? { hat: profile.hat, top: profile.top, accessory: profile.accessory, body: guestLook.body }
+        ? normalizeLook({ hat: profile.hat, top: profile.top, accessory: profile.accessory, body: profile.body ?? guestLook.body })
         : guestLook;
       rememberPrivileged(name, user.id);
     } else {
@@ -230,7 +230,7 @@ export async function resolveIdentity(options: {
         console.error("[identity] reserved-name check threw:", e instanceof Error ? e.message : e);
       }
       look = profile
-        ? { hat: profile.hat, top: profile.top, accessory: profile.accessory, body: guestLook.body }
+        ? normalizeLook({ hat: profile.hat, top: profile.top, accessory: profile.accessory, body: profile.body ?? guestLook.body })
         : guestLook;
     }
     const hold = await findHold(user.id, name);

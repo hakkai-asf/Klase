@@ -1,5 +1,5 @@
 import { Room, Client, ServerError } from "@colyseus/core";
-import { CHAT_LOG_MAX, CHAT_RADIUS, CLASSROOM, IDLE_MS, MOD_DURATION_MAX_SEC, MOD_MESSAGE_MAX, REGULAR_CAP, SEAT_REACH, SPAWN, STAFF_IDLE_MS, WEARABLES, classroomSeats, clampClassroom, normalizeLook, resolvePlayerMove, type ModerationNotice, type Role } from "@klase/shared";
+import { CHAT_LOG_MAX, CHAT_RADIUS, CLASSROOM, IDLE_MS, MOD_DURATION_MAX_SEC, MOD_MESSAGE_MAX, REGULAR_CAP, SEAT_REACH, SPAWN, STAFF_IDLE_MS, WEARABLES, classroomSeats, clampClassroom, normalizeCharacterId, normalizeLook, resolvePlayerMove, type ModerationNotice, type Role } from "@klase/shared";
 import { ClassroomState, Player } from "./schema.js";
 import { filterChat, isCleanDisplayName, sanitizeDisplayName } from "./chatFilter.js";
 import { assertCanModerate, banName, canUseName, invalidateReservedNames, ownerName, rememberPrivileged, resolveIdentity } from "./roles.js";
@@ -235,7 +235,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
               if (ok) {
                 p.name = rawName;
                 if (p.role === "owner" || p.role === "admin") rememberPrivileged(rawName, p.userId);
-                if (p.userId) void saveLook(p.userId, { hat: p.hat, top: p.top, accessory: p.accessory, body: p.body === "y" ? "y" : "x" }, rawName);
+                if (p.userId) void saveLook(p.userId, { hat: p.hat, top: p.top, accessory: p.accessory, body: normalizeCharacterId(p.body) }, rawName);
               } else {
                 client.send("chat", {
                   from: "system",
@@ -252,7 +252,7 @@ export class ClassroomRoom extends Room<ClassroomState> {
         hat: String(data?.hat ?? p.hat),
         top: String(data?.top ?? p.top),
         accessory: String(data?.accessory ?? p.accessory),
-        body: data?.body === "y" ? "y" : "x",
+        body: data?.body ?? p.body,
       });
       p.hat = allowed(WEARABLES.hat, look.hat);
       p.top = allowed(WEARABLES.top, look.top);

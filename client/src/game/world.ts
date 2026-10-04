@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { CLASSROOM, MOVE_SPEED, SEAT_REACH, SPAWN, clampClassroom, type Look, type Seat } from "@klase/shared";
-import { applyLook, createAvatar, drawMic, drawName, drawSpeech, layoutHeadSprites, poseWalk, setGlobalAnisotropy, setLocalFpPresentation } from "./avatar";
+import { applyLook, createAvatar, disposeAvatar, hasCharacterRig, drawMic, drawName, drawSpeech, layoutHeadSprites, poseWalk, setGlobalAnisotropy, setLocalFpPresentation } from "./avatar";
 import { buildClassroom, findClearStand, nearExitDoor, nearestExitDoor, resolveMove, type AABB } from "./classroom";
 
 type AvatarHandle = ReturnType<typeof createAvatar> & {
@@ -85,6 +85,11 @@ export class World {
   private readonly freeRight = new THREE.Vector3();
   private readonly freeMove = new THREE.Vector3();
   private readonly worldUp = new THREE.Vector3(0, 1, 0);
+  private lookUnbinds: Array<() => void> = [];
+
+  get isDisposed() {
+    return this.disposed;
+  }
 
   get camera(): THREE.Camera {
     return this.firstPerson || this.freeCam ? this.fpCam : this.isoCam;
@@ -211,17 +216,56 @@ export class World {
     this.disposed = true;
     this.inputLocked = true;
     this.keys.clear();
-    window.removeEventListener("keydown", this.onKeyDown);
-    window.removeEventListener("keyup", this.onKeyUp);
-    window.removeEventListener("resize", this.onResize);
-    this.sitPrompt.remove();
-    this.hintWrap.remove();
+    this.justPressed.clear();
+    this.stickX = 0;
+    this.stickY = 0;
+    this.dragging = false;
+    try {
+      this.unbindLook();
+    } catch {
+      /* */
+    }
+    try {
+      if (document.pointerLockElement === this.renderer.domElement) document.exitPointerLock();
+    } catch {
+      /* */
+    }
+    try {
+      window.removeEventListener("keydown", this.onKeyDown);
+      window.removeEventListener("keyup", this.onKeyUp);
+      window.removeEventListener("resize", this.onResize);
+    } catch {
+      /* */
+    }
+    try {
+      this.sitPrompt.remove();
+    } catch {
+      /* */
+    }
+    try {
+      this.hintWrap.remove();
+    } catch {
+      /* */
+    }
+    for (const a of this.avatars.values()) {
+      try {
+        disposeAvatar(a);
+      } catch {
+        /* */
+      }
+    }
+    this.avatars.clear();
     try {
       this.renderer.dispose();
+      this.renderer.domElement.remove();
     } catch {
       /* already torn down */
     }
-    this.scene.clear();
+    try {
+      this.scene.clear();
+    } catch {
+      /* */
+    }
   }
 
   resize() {
@@ -370,6 +414,17 @@ export class World {
       this.keys.clear();
       this.justPressed.clear();
       this.dragging = false;
+      this.firstPerson = false;
+      this.freeCam = false;
+      this.noclip = false;
+      this.godMode = false;
+      this.localSeatId = "";
+      this.localX = SPAWN.x;
+      this.localZ = SPAWN.z;
+      this.localRot = SPAWN.rotY;
+      this.lookAt.set(0, 0.75, 0);
+      this.isoCam.position.copy(this.lookAt).add(ISO);
+      this.isoCam.lookAt(this.lookAt);
       // Release pointer lock if held
       if (document.pointerLockElement === this.renderer.domElement) {
         document.exitPointerLock();
@@ -399,7 +454,8 @@ export class World {
 
   upsert(id: string, name: string, look: Look, x: number, z: number, rotY: number, seatId = "", role = "", hidden = false) {
     let a = this.avatars.get(id);
-    if (a && a.look.body !== look.body) {
+    if (a && (a.look.body !== look.body || (a.pending && hasCharacterRig(look.body)))) {
+      disposeAvatar(a);
       this.scene.remove(a.root);
       this.avatars.delete(id);
       a = undefined;
@@ -445,6 +501,7 @@ export class World {
   remove(id: string) {
     const a = this.avatars.get(id);
     if (!a) return;
+    disposeAvatar(a);
     this.scene.remove(a.root);
     this.avatars.delete(id);
   }
@@ -467,38 +524,60 @@ export class World {
   }
 
   private bindLook(canvas: HTMLCanvasElement) {
-    canvas.addEventListener("click", () => {
-      if (this.spectator) return;
+    const onClick = () => {
+      if (this.disposed || this.spectator) return;
       if ((!this.firstPerson && !this.freeCam) || this.touchUi) return;
       if (document.pointerLockElement !== canvas) void canvas.requestPointerLock();
-    });
-    document.addEventListener("mousemove", (e) => {
-      if (this.spectator) return;
+    };
+    const onMouseMove = (e: MouseEvent) => {
+      if (this.disposed || this.spectator) return;
       if (!this.firstPerson && !this.freeCam) return;
       if (document.pointerLockElement !== canvas) return;
       this.applyLookDelta(e.movementX, e.movementY);
-    });
-    canvas.addEventListener("pointerdown", (e) => {
-      if (this.spectator) return;
+    };
+    const onPointerDown = (e: PointerEvent) => {
+      if (this.disposed || this.spectator) return;
       if ((!this.firstPerson && !this.freeCam) || !this.touchUi) return;
       if (e.pointerType === "mouse") return;
       this.dragging = true;
       this.lastPtrX = e.clientX;
       this.lastPtrY = e.clientY;
       canvas.setPointerCapture(e.pointerId);
-    });
-    canvas.addEventListener("pointermove", (e) => {
-      if (this.spectator) return;
+    };
+    const onPointerMove = (e: PointerEvent) => {
+      if (this.disposed || this.spectator) return;
       if ((!this.firstPerson && !this.freeCam) || !this.dragging) return;
       this.applyLookDelta(e.clientX - this.lastPtrX, e.clientY - this.lastPtrY);
       this.lastPtrX = e.clientX;
       this.lastPtrY = e.clientY;
-    });
+    };
     const endDrag = () => {
       this.dragging = false;
     };
+    canvas.addEventListener("click", onClick);
+    document.addEventListener("mousemove", onMouseMove);
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointermove", onPointerMove);
     canvas.addEventListener("pointerup", endDrag);
     canvas.addEventListener("pointercancel", endDrag);
+    this.lookUnbinds.push(
+      () => canvas.removeEventListener("click", onClick),
+      () => document.removeEventListener("mousemove", onMouseMove),
+      () => canvas.removeEventListener("pointerdown", onPointerDown),
+      () => canvas.removeEventListener("pointermove", onPointerMove),
+      () => canvas.removeEventListener("pointerup", endDrag),
+      () => canvas.removeEventListener("pointercancel", endDrag),
+    );
+  }
+
+  private unbindLook() {
+    for (const fn of this.lookUnbinds.splice(0)) {
+      try {
+        fn();
+      } catch {
+        /* */
+      }
+    }
   }
 
   private applyLookDelta(dx: number, dy: number) {

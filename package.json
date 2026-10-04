@@ -9,9 +9,15 @@
     "build": "npm run build -w client",
     "dev": "concurrently -n server,client -c cyan,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
     "dev:client": "npm run dev -w client",
-    "dev:server": "npm run dev -w server"
+    "dev:server": "npm run dev -w server",
+    "assets:characters": "node tools/compress-characters.mjs"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "@gltf-transform/core": "^4.2.1",
+    "@gltf-transform/extensions": "^4.2.1",
+    "@gltf-transform/functions": "^4.2.1",
+    "draco3dgltf": "^1.5.7",
+    "sharp": "^0.34.2"
   }
 }

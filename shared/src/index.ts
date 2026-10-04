@@ -57,13 +57,19 @@ export type Role = "owner" | "admin" | "user";
 
 export type WearableSlot = "hat" | "top" | "accessory";
 
-export const BODIES = ["x", "y"] as const;
-export type BodyId = (typeof BODIES)[number];
-
-export const BODY_LABELS: Record<BodyId, string> = {
-  x: "X Bot",
-  y: "Y Bot",
-};
+export {
+  BODIES,
+  BODY_LABELS,
+  CHARACTERS,
+  DEFAULT_CHARACTER,
+  characterAllowsWearables,
+  characterById,
+  isCharacterId,
+  normalizeCharacterId,
+  type BodyId,
+  type CharacterDef,
+} from "./characters";
+import { BODIES, characterAllowsWearables, normalizeCharacterId, type BodyId } from "./characters";
 
 export const WEARABLES = {
   hat: ["", "cap_red", "cap_blue", "beanie"] as const,
@@ -82,12 +88,14 @@ export type Look = {
   body: BodyId;
 };
 
-export function normalizeLook(look: Partial<Look> | null | undefined): Look {
+export function normalizeLook(look: { hat?: string; top?: string; accessory?: string; body?: string } | null | undefined): Look {
+  const body = normalizeCharacterId(look?.body);
+  const wear = characterAllowsWearables(body);
   return {
-    hat: String(look?.hat ?? ""),
-    top: String(look?.top ?? ""),
-    accessory: String(look?.accessory ?? ""),
-    body: look?.body === "y" ? "y" : "x",
+    hat: wear ? String(look?.hat ?? "") : "",
+    top: wear ? String(look?.top ?? "") : "",
+    accessory: wear ? String(look?.accessory ?? "") : "",
+    body,
   };
 }
 
@@ -98,7 +106,7 @@ export function randomLook(): Look {
     hat: pick(WEARABLES.hat),
     top: pick(WEARABLES.top),
     accessory: pick(WEARABLES.accessory),
-    body: Math.random() < 0.5 ? "x" : "y",
+    body: pick(BODIES) as BodyId,
   };
 }
 

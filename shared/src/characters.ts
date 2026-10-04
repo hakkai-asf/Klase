@@ -8,17 +8,14 @@ export type CharacterDef = {
   rotY?: number;
   yOffset?: number;
   tagLift?: number;
+  wearables?: boolean;
 };
 
 export const DEFAULT_CHARACTER = "x";
 
 export const CHARACTERS = [
-  { id: "x", name: "X Bot", file: "Xbot.skinned.glb", tag: "Character", heightM: 1.7 },
-  { id: "y", name: "Y Bot", file: "Xbot.skinned.glb", tag: "Character", heightM: 1.7 },
-  { id: "swat", name: "SWAT Operator", file: "s.w.a.t_operator_cop_-_game_ready_animated.glb", tag: "Character", heightM: 1.7 },
-  { id: "hakkai", name: "Hakkai", file: "HAKKAI 3D1.glb", tag: "Character", heightM: 1.7 },
-  { id: "boy", name: "Young Boy", file: "3d_character_young_boy.glb", tag: "Character", heightM: 1.55 },
-  { id: "tupac", name: "Tupac", file: "2pac.glb", tag: "Character", heightM: 1.75, rotX: -Math.PI / 2 },
+  { id: "x", name: "X Bot", file: "Xbot.skinned.glb", tag: "Character", heightM: 1.7, wearables: true },
+  { id: "y", name: "Y Bot", file: "Xbot.skinned.glb", tag: "Character", heightM: 1.7, wearables: true },
 ] as const satisfies readonly CharacterDef[];
 
 export type BodyId = (typeof CHARACTERS)[number]["id"];
@@ -40,4 +37,8 @@ export function normalizeCharacterId(v: unknown): BodyId {
 export function characterById(v: unknown): CharacterDef {
   const id = normalizeCharacterId(v);
   return (CHARACTERS.find((c) => c.id === id) ?? CHARACTERS[0]) as CharacterDef;
+}
+
+export function characterAllowsWearables(v: unknown): boolean {
+  return characterById(v).wearables !== false;
 }

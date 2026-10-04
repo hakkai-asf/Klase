@@ -1,4 +1,4 @@
-import { BODY_LABELS, BODIES, WEARABLE_LABELS, WEARABLES, normalizeLook, type BodyId, type Look, type WearableSlot } from "@klase/shared";
+import { BODY_LABELS, CHARACTERS, WEARABLE_LABELS, WEARABLES, characterAllowsWearables, normalizeLook, type BodyId, type Look, type WearableSlot } from "@klase/shared";
 import { createLiveAvatarPreview, paintBodyPortrait, preloadAvatars } from "./game/avatar";
 
 export type LookPickerHandle = {
@@ -32,7 +32,7 @@ function persist(look: Look, enabled: boolean) {
 
 /**
  * Shared body / wearable grid + live 3D preview.
- * Options always come from BODIES / WEARABLES in @klase/shared.
+ * Options always come from CHARACTERS / WEARABLES in @klase/shared.
  */
 export function mountLookPicker(host: HTMLElement, opts: LookPickerOptions): LookPickerHandle {
   let currentLook = normalizeLook(opts.look);
@@ -44,6 +44,7 @@ export function mountLookPicker(host: HTMLElement, opts: LookPickerOptions): Loo
   type CategoryTab = "body" | WearableSlot;
   let activeTab: CategoryTab = "body";
 
+  const wearablesOn = () => opts.enableWearables && characterAllowsWearables(currentLook.body);
   const tabItems: Array<{ id: CategoryTab; label: string; disabled?: boolean }> = [
     { id: "body", label: "Characters" },
     { id: "hat", label: "Hats", disabled: !opts.enableWearables },
@@ -79,23 +80,50 @@ export function mountLookPicker(host: HTMLElement, opts: LookPickerOptions): Loo
   let updateRightPanelSummary: () => void = () => {};
   let livePreviewHandle: ReturnType<typeof createLiveAvatarPreview> | null = null;
   let portraitStops: Array<() => void> = [];
+  let paintToken = 0;
 
   const paintPortraits = () => {
     for (const stop of portraitStops) stop();
     portraitStops = [];
-    void preloadAvatars()
-      .then(() => {
-        if (!cardsGridContainer.isConnected) return;
-        portraitStops = BODIES.filter((id) => portraits.has(id)).map((id) =>
-          paintBodyPortrait(portraits.get(id)!, id),
-        );
-      })
-      .catch((e) => console.warn("Character preview failed", e));
+    const token = ++paintToken;
+    void (async () => {
+      await preloadAvatars();
+      if (token !== paintToken || !cardsGridContainer.isConnected) return;
+      for (const def of CHARACTERS) {
+        const img = portraits.get(def.id);
+        if (!img) continue;
+        const stop = await paintBodyPortrait(img, def.id);
+        if (token !== paintToken) return;
+        portraitStops.push(stop);
+      }
+    })().catch((e) => console.warn("Character preview failed", e));
+  };
+
+  const syncWearableTabs = () => {
+    const on = wearablesOn();
+    for (const id of ["hat", "top", "accessory"] as const) {
+      const btn = tabBtnsMap.get(id);
+      if (!btn || !opts.enableWearables) continue;
+      btn.disabled = !on;
+      btn.classList.toggle("disabled", !on);
+      let soon = btn.querySelector(".neo-tab-soon");
+      if (!on) {
+        if (!soon) btn.append(el("span", "neo-tab-soon", "N/A"));
+        else soon.textContent = "N/A";
+        if (activeTab === id) {
+          activeTab = "body";
+          tabBtnsMap.forEach((b, k) => b.classList.toggle("active", k === activeTab));
+        }
+      } else if (soon) {
+        soon.remove();
+      }
+    }
   };
 
   const applyLook = (next: Look, renderGrid = true) => {
     currentLook = normalizeLook(next);
     persist(currentLook, persistLook);
+    syncWearableTabs();
     if (renderGrid) renderCardGrid();
     livePreviewHandle?.updateLook(currentLook);
     updateRightPanelSummary();
@@ -141,18 +169,21 @@ export function mountLookPicker(host: HTMLElement, opts: LookPickerOptions): Loo
 
     if (activeTab === "body") {
       grid.append(el("div", "neo-grid-heading", "Characters"));
-      for (const id of BODIES) {
-        const card = el("button", `neo-char-card${currentLook.body === id ? " active" : ""}`) as HTMLButtonElement;
+      for (const def of CHARACTERS) {
+        const card = el("button", `neo-char-card${currentLook.body === def.id ? " active" : ""}`) as HTMLButtonElement;
         card.type = "button";
         const thumb = el("div", "neo-char-card-thumb");
         const img = el("img") as HTMLImageElement;
-        img.alt = BODY_LABELS[id];
+        img.alt = def.name;
         thumb.append(img);
-        portraits.set(id, img);
+        portraits.set(def.id, img);
         const info = el("div", "neo-char-card-info");
-        info.append(el("span", "neo-char-card-name", BODY_LABELS[id]), el("span", "neo-char-card-tag", "Character"));
+        info.append(
+          el("span", "neo-char-card-name", def.name),
+          el("span", "neo-char-card-tag", def.tag ?? "Character"),
+        );
         card.append(thumb, info, el("div", "neo-char-card-check", "✓"));
-        card.addEventListener("click", () => applyLook({ ...currentLook, body: id }));
+        card.addEventListener("click", () => applyLook({ ...currentLook, body: def.id }));
         grid.append(card);
       }
     } else {
@@ -201,12 +232,14 @@ export function mountLookPicker(host: HTMLElement, opts: LookPickerOptions): Loo
 
   pickerBody.append(leftCol, centerCol, rightCol);
   host.append(pickerBody);
+  syncWearableTabs();
   renderCardGrid();
 
   return {
     getLook: () => normalizeLook(currentLook),
     setLook: (look) => applyLook(look),
     dispose: () => {
+      paintToken += 1;
       for (const stop of portraitStops) stop();
       portraitStops = [];
       livePreviewHandle?.dispose();

@@ -17,6 +17,7 @@ create table if not exists public.profiles (
 -- Idempotent for projects that created the table from an older version of this file.
 alter table public.profiles add column if not exists banned boolean not null default false;
 alter table public.profiles add column if not exists updated_at timestamptz not null default now();
+alter table public.profiles add column if not exists body text not null default 'x';
 
 alter table public.profiles enable row level security;
 

@@ -58,4 +58,14 @@ export function bindJoystick(
   base.addEventListener("pointermove", move);
   base.addEventListener("pointerup", end);
   base.addEventListener("pointercancel", end);
+
+  return () => {
+    pointerId = null;
+    onVec(0, 0);
+    setKnob(0, 0);
+    base.removeEventListener("pointerdown", start);
+    base.removeEventListener("pointermove", move);
+    base.removeEventListener("pointerup", end);
+    base.removeEventListener("pointercancel", end);
+  };
 }

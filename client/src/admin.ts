@@ -1,4 +1,4 @@
-﻿import { DEFAULT_STAFF_NAME, ROOM_CODES } from "@klase/shared";
+import { DEFAULT_STAFF_NAME, ROOM_CODES } from "@klase/shared";
 import { authEnabled, currentSession, loadStaffIdentity, saveStaffIdentity, signInWithGoogle, signOut } from "./auth";
 import { mountLookPicker, type LookPickerHandle } from "./lookPicker";
 import { apiBase } from "./net";
@@ -223,6 +223,13 @@ async function mountDashboard(root: HTMLElement, token: string, me: { name: stri
   const headBtns = el("div", "admin-actions");
   const game = el("a", "clay-btn", "Back to Klase") as HTMLAnchorElement;
   game.href = "/";
+  game.addEventListener("click", (e) => {
+    e.preventDefault();
+    stop();
+    document.body.classList.remove("admin-route");
+    window.history.pushState({}, "", "/");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
   const out = el("button", "clay-btn", "Sign out");
   out.addEventListener("click", async () => {
     stop();

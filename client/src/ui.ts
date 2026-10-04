@@ -1182,5 +1182,5 @@ export function renderLeaveConfirm(host: HTMLElement, onLeave: () => void, onSta
   wrap.append(card);
   host.append(wrap);
   stay.focus();
-  return { close: () => { close(); onStay(); } };
+  return { close };
 }

@@ -19,8 +19,12 @@ const overlayRoot = document.createElement("div");
 overlayRoot.style.position = "absolute";
 overlayRoot.style.inset = "0";
 overlayRoot.style.zIndex = "100";
+type LeaveDest = "rooms" | "admin" | "menu" | "held" | "landing";
+
 let joining = false;
 let leavingOnPurpose = false;
+let leaveInFlight = false;
+let playGeneration = 0;
 let globalRoom: Room | null = null;
 let globalWorld: World | null = null;
 let globalVoice: VoiceMesh | null = null;
@@ -66,6 +70,10 @@ function menuLayer() {
 
 async function ensurePregame() {
   if (globalRoom) return;
+  if (globalWorld?.isDisposed) {
+    globalWorld = null;
+    globalUi = null;
+  }
   if (globalWorld) return;
   if (!localStorage.getItem("klase-look")) {
     localStorage.setItem("klase-look", JSON.stringify(randomLook()));
@@ -254,11 +262,80 @@ function showHeld(notice: import("@klase/shared").ModerationNotice) {
   });
 }
 
-async function teardownPlay() {
+function safe(fn: () => void) {
+  try {
+    fn();
+  } catch {
+    /* one teardown step must not block the rest */
+  }
+}
+
+function clearPlayShell() {
+  for (const node of Array.from(app.children)) {
+    if (node === overlayRoot) continue;
+    node.remove();
+  }
+}
+
+function settleRoomLeave(room: Room | null) {
+  if (!room) return;
+  safe(() => {
+    room.removeAllListeners();
+  });
+  void Promise.race([
+    room.leave(true).then(() => undefined, () => undefined),
+    new Promise<void>((resolve) => window.setTimeout(resolve, 1000)),
+  ]);
+}
+
+async function applyLeaveDest(
+  dest: LeaveDest,
+  opts?: { message?: string; retryable?: boolean; notice?: import("@klase/shared").ModerationNotice; replace?: boolean },
+) {
+  if (dest === "admin") {
+    document.body.classList.add("admin-route");
+    setPath("/admin", opts?.replace);
+    const { renderAdmin } = await import("./admin");
+    await renderAdmin(app);
+    return;
+  }
+  document.body.classList.remove("admin-route");
+  if (dest === "menu") {
+    await goMenu();
+    return;
+  }
+  if (dest === "held") {
+    if (opts?.notice) showHeld(opts.notice);
+    return;
+  }
+  if (dest === "landing") {
+    startLanding(opts?.message || "This account is banned.", "play");
+    return;
+  }
+  await showRoomSelect(opts?.message ?? "", opts?.retryable ?? false);
+}
+
+/** Every exit (door, Back to Admin, popstate, kick, disconnect) goes through here. */
+async function leaveRoom(
+  dest: LeaveDest,
+  opts?: { message?: string; retryable?: boolean; notice?: import("@klase/shared").ModerationNotice; replace?: boolean },
+) {
+  if (leaveInFlight) return;
+  leaveInFlight = true;
   leavingOnPurpose = true;
+  playGeneration += 1;
+  joining = false;
   stopRoomPoll();
+
+  safe(() => {
+    leaveModal?.close();
+  });
   leaveModal = null;
+  safe(() => {
+    if (document.pointerLockElement) document.exitPointerLock();
+  });
   runSessionCleanup();
+
   const voice = globalVoice;
   const room = globalRoom;
   const world = globalWorld;
@@ -267,39 +344,52 @@ async function teardownPlay() {
   globalWorld = null;
   globalUi = null;
   activeStaff = null;
-  try {
+
+  safe(() => {
     voice?.dispose();
-  } catch {
-    /* */
-  }
-  try {
+  });
+  safe(() => {
     world?.dispose();
-  } catch {
-    /* */
-  }
+  });
+  safe(clearPlayShell);
+  safe(() => {
+    overlayRoot.replaceChildren();
+    overlayRoot.style.display = "none";
+    overlayRoot.remove();
+  });
+  settleRoomLeave(room);
+
   try {
-    await room?.leave(true);
+    await applyLeaveDest(dest, opts);
   } catch {
-    /* already closed */
+    if (dest !== "admin") {
+      try {
+        await showRoomSelect("Could not finish leaving. Pick a classroom to continue.", true);
+      } catch {
+        /* last resort: stay on whatever screen remains */
+      }
+    } else {
+      try {
+        setPath("/admin");
+        const { renderAdmin } = await import("./admin");
+        await renderAdmin(app);
+      } catch {
+        /* */
+      }
+    }
+  } finally {
+    leaveInFlight = false;
   }
-  overlayRoot.replaceChildren();
-  overlayRoot.style.display = "none";
-  overlayRoot.remove();
-  joining = false;
 }
 
 function askToLeave(staff?: StaffJoin) {
-  if (leaveModal || !globalUi) return;
+  if (leaveModal || !globalUi || leaveInFlight) return;
   globalWorld?.setInputLocked(true);
   leaveModal = renderLeaveConfirm(
     globalUi.canvas.parentElement ?? app,
     () => {
       leaveModal = null;
-      if (staff) {
-        void teardownPlay().then(() => window.location.assign("/admin"));
-        return;
-      }
-      void teardownPlay().then(() => showRoomSelect());
+      void leaveRoom(staff ? "admin" : "rooms");
     },
     () => {
       leaveModal = null;
@@ -322,6 +412,9 @@ async function bootWorld(
 ) {
   if (joining) return;
   joining = true;
+  leavingOnPurpose = false;
+  leaveInFlight = false;
+  const sessionGen = ++playGeneration;
   stopRoomPoll();
   disposeLandingPreviews();
   look = normalizeLook(look);
@@ -338,8 +431,10 @@ async function bootWorld(
   
   const loader = renderJoining(app);
   overlayRoot.style.display = "none";
+  const sessionAlive = () => playGeneration === sessionGen;
   const fail = (err: string, retryable = false) => {
     loader.dispose();
+    if (!sessionAlive()) return;
     joining = false;
     if (staff) {
       window.alert(err);
@@ -352,10 +447,15 @@ async function bootWorld(
   const picked = staff
     ? { roomKey: staff.roomKey }
     : await pickRoom(name, accessToken, () => loader.setStage("wake"), wantedRoom);
+  if (!sessionAlive()) {
+    loader.dispose();
+    joining = false;
+    return;
+  }
   if ("error" in picked) {
     if (picked.error === "HELD" && picked.notice) {
       loader.dispose();
-      showHeld(picked.notice);
+      if (sessionAlive()) showHeld(picked.notice);
       return;
     }
     const err =
@@ -386,6 +486,13 @@ async function bootWorld(
   try {
     loader.setStage("join");
     room = await joinClassroom(picked.roomKey, name, look, accessToken, staff?.mode === "observe", Boolean(staff));
+    if (!sessionAlive()) {
+      loader.dispose();
+      joining = false;
+      settleRoomLeave(room);
+      return;
+    }
+    globalRoom = room;
   } catch (e) {
     const msg = String(e);
     if (msg.includes("ROOM_FULL")) fail(wantedRoom ? "That classroom just filled up. Pick another one." : "All classrooms are full. Try again in a bit.");
@@ -421,7 +528,6 @@ async function bootWorld(
   let voice: VoiceMesh | undefined;
   let leaveReason = "";
   let pendingNotice: import("@klase/shared").ModerationNotice | null = null;
-  let left = false;
   const CHAT_IDLE_MS = 5000;
   let chatIdle = 0;
   let lastPoke = 0;
@@ -432,41 +538,43 @@ async function bootWorld(
     lastPoke = t;
     room.send("poke");
   };
-  room.onLeave((code) => {
-    left = true;
+  const unexpectedLeave = (code?: number) => {
     loader.dispose();
-    if (leavingOnPurpose) {
-      leavingOnPurpose = false;
-      return;
-    }
+    if (leavingOnPurpose || leaveInFlight || !sessionAlive()) return;
     const notice = pendingNotice;
     const wasStaff = Boolean(staff);
     const reason = leaveReason;
-    void teardownPlay().then(() => {
-      if (notice) {
-        showHeld(notice);
-        return;
-      }
-      if (wasStaff) {
-        window.location.replace("/admin");
-        return;
-      }
-      if (reason === "idle" || code === 4002) void showRoomSelect("You were disconnected for being idle.", true);
-      else if (code === 4000) void showRoomSelect(reason || "You were removed from the classroom.");
-      else if (code === 4001) startLanding("This account is banned.", "play");
-      else void showRoomSelect("You were disconnected.", true);
-    });
-  });
+    if (notice) {
+      void leaveRoom("held", { notice });
+      return;
+    }
+    if (wasStaff) {
+      void leaveRoom("admin", { replace: true });
+      return;
+    }
+    if (reason === "idle" || code === 4002) void leaveRoom("rooms", { message: "You were disconnected for being idle.", retryable: true });
+    else if (code === 4000) void leaveRoom("rooms", { message: reason || "You were removed from the classroom." });
+    else if (code === 4001) void leaveRoom("landing", { message: "This account is banned." });
+    else void leaveRoom("rooms", { message: "You were disconnected.", retryable: true });
+  };
+  room.onLeave((code) => unexpectedLeave(code));
+  room.onError(() => unexpectedLeave());
 
   loader.setStage("load");
   const results = await Promise.allSettled([preloadAvatars(), preloadClassroom()]);
   for (const r of results) {
     if (r.status === "rejected") console.warn("Asset preload failed", r.reason);
   }
-  if (left) return;
+  if (!sessionAlive()) {
+    loader.dispose();
+    return;
+  }
   loader.setStage("ready");
   await new Promise((r) => window.setTimeout(r, 280));
-  if (left) return;
+  if (!sessionAlive()) {
+    loader.dispose();
+    return;
+  }
   loader.dispose();
 
   const ui = renderGameShell(app);
@@ -531,7 +639,7 @@ async function bootWorld(
     window.removeEventListener("keydown", bumpActivity);
     window.removeEventListener("pointerdown", bumpActivity);
   });
-  if (left) return;
+  if (!sessionAlive()) return;
   let iAmOwner = false;
   let iAmStaff = false;
   let observeCamApplied = false;
@@ -556,7 +664,7 @@ async function bootWorld(
   globalWorld = world;
 
   const leaveToAdmin = () => {
-    void teardownPlay().then(() => window.location.assign("/admin"));
+    void leaveRoom("admin");
   };
 
   const mountStaffBar = (role: string) => {
@@ -582,6 +690,10 @@ async function bootWorld(
         staffBar?.setNoclip(next);
       },
     });
+    onSession(() => {
+      staffBar?.remove();
+      staffBar = null;
+    });
   };
   
   if (isPregame) {
@@ -594,7 +706,8 @@ async function bootWorld(
     setMuteAllButton(ui.muteAllBtn, on);
   };
   if (isTouchUi()) {
-    bindJoystick(ui.joyBase, ui.joyKnob, (x, y) => scene.setStick(x, y));
+    const unbindJoy = bindJoystick(ui.joyBase, ui.joyKnob, (x, y) => scene.setStick(x, y));
+    onSession(unbindJoy);
     ui.sitBtn.addEventListener("pointerdown", (e) => {
       e.preventDefault();
       scene.interact();
@@ -619,7 +732,7 @@ async function bootWorld(
         hat: p.hat,
         top: p.top,
         accessory: p.accessory,
-        body: p.body === "y" ? "y" : "x",
+        body: p.body,
         serverMuted: p.serverMuted,
         seatId: p.seatId ?? "",
         observer: p.observer,
@@ -637,7 +750,7 @@ async function bootWorld(
       scene.upsert(
         p.sessionId,
         p.name,
-        { hat: p.hat, top: p.top, accessory: p.accessory, body: p.body === "y" ? "y" : "x" },
+        normalizeLook({ hat: p.hat, top: p.top, accessory: p.accessory, body: p.body }),
         p.x,
         p.z,
         p.rotY,
@@ -813,7 +926,7 @@ async function bootWorld(
 
   let last = performance.now();
   const loop = (now: number) => {
-    if (left) return;
+    if (!sessionAlive()) return;
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     const ev = scene.step(dt);
@@ -932,20 +1045,24 @@ async function route() {
   else await goMenu();
 }
 
-window.addEventListener("popstate", () => {
+window.addEventListener("popstate", async () => {
   const path = window.location.pathname.replace(/\/+$/, "") || "/";
-  if (path === "/admin") return;
-  if (globalRoom) {
+  if (globalRoom || joining) {
     const staff = activeStaff;
-    void teardownPlay().then(() => {
-      if (staff) window.location.assign("/admin");
-      else void showRoomSelect();
-    });
+    const dest: LeaveDest = path === "/admin" ? "admin" : path === "/rooms" ? "rooms" : path === "/play" ? "landing" : "menu";
+    await leaveRoom(dest);
     return;
   }
-  if (path === "/rooms") void showRoomSelect();
-  else if (path === "/play") startLanding("", "play");
-  else void goMenu();
+  if (path === "/admin") {
+    document.body.classList.add("admin-route");
+    const { renderAdmin } = await import("./admin");
+    await renderAdmin(app);
+  } else {
+    document.body.classList.remove("admin-route");
+    if (path === "/rooms") void showRoomSelect();
+    else if (path === "/play") startLanding("", "play");
+    else void goMenu();
+  }
 });
 
 void route();

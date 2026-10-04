@@ -433,6 +433,11 @@ export class VoiceMesh {
 
   dispose() {
     this.disposed = true;
+    try {
+      this.room.removeAllListeners();
+    } catch {
+      /* ignore */
+    }
     for (const ev of ["pointerdown", "keydown", "touchend", "click"]) {
       window.removeEventListener(ev, this.gesture);
     }

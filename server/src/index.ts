@@ -8,6 +8,7 @@ import { REGULAR_CAP, ROOM_CODES } from "@klase/shared";
 import { ClassroomRoom } from "./ClassroomRoom.js";
 import { resolveIdentity } from "./roles.js";
 import { registerAdminRoutes } from "./admin.js";
+import { loadAllRoomConfigs } from "./supabase.js";
 
 const port = Number(process.env.PORT ?? 2567);
 const app = express();
@@ -16,12 +17,15 @@ app.use(express.json());
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
-app.get("/api/rooms", (_req, res) => {
+app.get("/api/rooms", async (_req, res) => {
   try {
+    const configs = await loadAllRoomConfigs();
+    const configMap = Object.fromEntries(configs.map((c) => [c.room_key, c]));
     const rooms = ROOM_CODES.map((roomKey) => {
       const { players } = ClassroomRoom.snapshot(roomKey);
       const visible = players.filter((p) => !p.observer);
       const regulars = visible.filter((p) => p.role === "user").length;
+      const cfg = configMap[roomKey];
       return {
         roomKey,
         label: roomKey.replace("klase-", "Classroom "),
@@ -29,6 +33,7 @@ app.get("/api/rooms", (_req, res) => {
         present: visible.length,
         cap: REGULAR_CAP,
         full: regulars >= REGULAR_CAP,
+        locked: cfg?.locked ?? false,
       };
     });
     res.json({ rooms });
@@ -43,6 +48,7 @@ app.get("/api/rooms", (_req, res) => {
         present: 0,
         cap: REGULAR_CAP,
         full: false,
+        locked: false,
       })),
     });
   }

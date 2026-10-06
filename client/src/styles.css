@@ -2326,7 +2326,50 @@ body.admin-route #app { overflow-y: auto; }
 .admin-tracker-section-head:first-child { margin-top: 0; }
 .admin-tracker-body { display: flex; flex-direction: column; }
 
-/* ── Room grid ────────────────────────────────────────────────────────────── */
+/* ── Room tabs ────────────────────────────────────────────────────────────── */
+.admin-rooms-section { padding-bottom: 0; }
+.admin-room-tabs {
+  display: flex;
+  gap: 0.35rem;
+  background: #f2e7db;
+  padding: 0.35rem;
+  border-radius: 14px 14px 0 0;
+  border: 2px solid #e0d0c4;
+  border-bottom: none;
+  margin: 0.6rem 0 0;
+}
+.admin-room-tab {
+  flex: 1;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 800;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: #7a6558;
+  border-radius: 10px;
+  padding: 0.45rem 0.5rem;
+  transition: all 0.1s ease;
+  text-align: center;
+  white-space: nowrap;
+}
+.admin-room-tab:hover:not(.active) { background: rgba(0,0,0,0.05); }
+.admin-room-tab.active {
+  background: #e07a3d;
+  color: #fff;
+  font-weight: 900;
+  box-shadow: 1px 1px 0 rgba(0,0,0,0.15);
+}
+.admin-room-panel {
+  padding: 1rem 0.2rem 0.6rem;
+}
+
+/* ── Centralized players panel ────────────────────────────────────────────── */
+.admin-players-central {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
 .admin-rooms {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
@@ -2694,6 +2737,14 @@ body.admin-route #app { overflow-y: auto; }
 }
 .room-card-state.open { color: #2f7d32; }
 .room-card-state.full { color: #b42318; }
+.room-card-state.locked { color: #b45309; }
+.room-card.is-locked {
+  opacity: 0.72;
+  cursor: not-allowed;
+  background: #fdf6ee;
+  border-color: #d4a574;
+}
+.room-card.is-locked .room-card-title { color: #78500a; }
 .room-select-actions {
   display: flex;
   flex-wrap: wrap;

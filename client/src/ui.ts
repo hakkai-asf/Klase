@@ -1106,15 +1106,19 @@ export function renderRoomSelect(
     if (!opts.error) body.append(el("p", "lede room-select-status", "Checking classrooms…"));
   } else {
     for (const room of opts.rooms) {
-      const card = el("button", `clay room-card${room.full ? " is-full" : ""}`) as HTMLButtonElement;
+      const isLocked = room.locked === true;
+      const isDisabled = room.full || isLocked;
+      const card = el("button", `clay room-card${room.full ? " is-full" : ""}${isLocked ? " is-locked" : ""}`) as HTMLButtonElement;
       card.type = "button";
-      card.disabled = room.full;
+      card.disabled = isDisabled;
       const title = el("div", "room-card-title", room.label);
-      const count = el("div", "room-card-count", `${room.regulars} / ${room.cap}`);
-      const state = el("div", `room-card-state${room.full ? " full" : " open"}`, room.full ? "Full" : "Available");
+      const count = el("div", "room-card-count", isLocked ? "🔒 Locked" : `${room.regulars} / ${room.cap}`);
+      const stateText = isLocked ? "Locked" : room.full ? "Full" : "Available";
+      const stateCls = isLocked ? "locked" : room.full ? "full" : "open";
+      const state = el("div", `room-card-state ${stateCls}`, stateText);
       card.append(title, count, state);
       card.addEventListener("click", () => {
-        if (room.full) return;
+        if (isDisabled) return;
         opts.onJoin(room.roomKey);
       });
       body.append(card);

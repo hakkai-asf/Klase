@@ -148,6 +148,7 @@ export type RoomListItem = {
   present: number;
   cap: number;
   full: boolean;
+  locked?: boolean;
 };
 
 export type RoomListError = {

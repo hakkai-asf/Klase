@@ -218,6 +218,18 @@ export function registerAdminRoutes(app: Express) {
     }
   });
 
+  // Search accounts by display_name or email for whitelist addition
+  app.get("/api/admin/whitelist-search", requireStaff, async (req, res) => {
+    try {
+      const q = String(req.query?.q ?? "").trim();
+      if (!q) { res.json({ accounts: [] }); return; }
+      const accounts = await searchAccounts(q, 10);
+      res.json({ accounts });
+    } catch (e) {
+      sendError(res, e);
+    }
+  });
+
   app.post("/api/admin/whitelist/:roomKey/add", requireStaff, async (req, res) => {
     try {
       const staff = res.locals.staff as Staff;

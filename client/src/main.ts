@@ -165,7 +165,7 @@ async function showRoomSelect(message = "", retryable = false) {
       rooms,
       error,
       retryable: canRetry,
-      onJoin: (roomKey) => void finalizeJoin(name, storedLook(), roomKey),
+      onJoin: (roomKey, passcode) => void finalizeJoin(name, storedLook(), roomKey, passcode),
       onChangeCharacter: () => startLanding("", "play"),
       onBackMenu: () => void goMenu(),
       onRetry: () => void showRoomSelect(),
@@ -243,10 +243,10 @@ async function joinWithSession(fallbackName: string) {
   }
 }
 
-async function finalizeJoin(name: string, look: Look, roomKey: string) {
+async function finalizeJoin(name: string, look: Look, roomKey: string, passcode?: string) {
   if (joining) return;
   const session = await currentSession();
-  await bootWorld(name, look, session?.access_token, false, undefined, roomKey);
+  await bootWorld(name, look, session?.access_token, false, undefined, roomKey, passcode);
 }
 
 function staffRoomUrl(roomKey: string, mode: string) {
@@ -409,6 +409,7 @@ async function bootWorld(
   isPregame = false,
   staff?: StaffJoin,
   wantedRoom?: string,
+  passcode?: string,
 ) {
   if (joining) return;
   joining = true;
@@ -485,7 +486,7 @@ async function bootWorld(
   let room: Room;
   try {
     loader.setStage("join");
-    room = await joinClassroom(picked.roomKey, name, look, accessToken, staff?.mode === "observe", Boolean(staff));
+    room = await joinClassroom(picked.roomKey, name, look, accessToken, staff?.mode === "observe", Boolean(staff), passcode);
     if (!sessionAlive()) {
       loader.dispose();
       joining = false;
@@ -496,6 +497,9 @@ async function bootWorld(
   } catch (e) {
     const msg = String(e);
     if (msg.includes("ROOM_FULL")) fail(wantedRoom ? "That classroom just filled up. Pick another one." : "All classrooms are full. Try again in a bit.");
+    else if (msg.includes("ROOM_LOCKED")) fail("This room is currently locked. Use a passcode to enter.");
+    else if (msg.includes("PASSCODE_CONSUMED")) fail("That passcode has already been used.");
+    else if (msg.includes("PASSCODE_EXPIRED")) fail("That passcode has expired.");
     else if (msg.includes("BANNED")) fail("This name or account is banned.");
     else if (msg.includes("HELD") || msg.includes("\"notice\"")) {
       const n = parseHeld(msg);

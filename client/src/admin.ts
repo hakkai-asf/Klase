@@ -635,15 +635,7 @@ async function mountDashboard(root: HTMLElement, token: string, me: Me) {
     renderPermissionsSection(page, token, notify);
   }
 
-  // ── Centralized online players panel (always visible) ────────────────────
-  const playersSection = el("section", "clay admin-section");
-  playersSection.append(el("h2", "", "Online Players"));
-  playersSection.append(el("p", "admin-lede", "All players currently in any room, updated every few seconds."));
-  const playersBody = el("div", "admin-players-central");
-  playersSection.append(playersBody);
-  page.append(playersSection);
-
-  // ── Rooms panel (tab-based, single card) ─────────────────────────────────
+  // ── Rooms panel (tab-based, single card) — TOP ────────────────────────────
   const roomsSection = el("section", "clay admin-section admin-rooms-section");
   roomsSection.append(el("h2", "", "Classrooms"));
 
@@ -673,6 +665,14 @@ async function mountDashboard(root: HTMLElement, token: string, me: Me) {
   roomsSection.append(tabStrip);
   for (const panel of tabPanels) roomsSection.append(panel);
   page.append(roomsSection);
+
+  // ── Centralized online players panel ─────────────────────────────────────
+  const playersSection = el("section", "clay admin-section");
+  playersSection.append(el("h2", "", "Online Players"));
+  playersSection.append(el("p", "admin-lede", "All players currently in any room, updated every few seconds."));
+  const playersBody = el("div", "admin-players-central");
+  playersSection.append(playersBody);
+  page.append(playersSection);
   root.append(page);
 
   // ── Internals ─────────────────────────────────────────────────────────────

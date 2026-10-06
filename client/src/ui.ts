@@ -1084,7 +1084,7 @@ export function renderRoomSelect(
     rooms: RoomListItem[] | null;
     error?: string;
     retryable?: boolean;
-    onJoin: (roomKey: string) => void;
+    onJoin: (roomKey: string, passcode?: string) => void;
     onChangeCharacter: () => void;
     onBackMenu: () => void;
     onRetry?: () => void;
@@ -1122,6 +1122,25 @@ export function renderRoomSelect(
         opts.onJoin(room.roomKey);
       });
       body.append(card);
+
+      // Passcode entry for locked rooms
+      if (isLocked) {
+        const pcWrap = el("div", "room-passcode-wrap");
+        const pcInput = el("input", "clay-input room-passcode-input") as HTMLInputElement;
+        pcInput.placeholder = "Enter passcode…";
+        pcInput.maxLength = 32;
+        const pcBtn = el("button", "neo-btn room-passcode-btn", "Join with passcode") as HTMLButtonElement;
+        pcBtn.type = "button";
+        const submitPasscode = () => {
+          const code = pcInput.value.trim();
+          if (!code) { pcInput.focus(); return; }
+          opts.onJoin(room.roomKey, code);
+        };
+        pcBtn.addEventListener("click", submitPasscode);
+        pcInput.addEventListener("keydown", (e) => { if (e.key === "Enter") submitPasscode(); });
+        pcWrap.append(pcInput, pcBtn);
+        body.append(pcWrap);
+      }
     }
   }
 

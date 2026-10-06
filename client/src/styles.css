@@ -2745,6 +2745,37 @@ body.admin-route #app { overflow-y: auto; }
   border-color: #d4a574;
 }
 .room-card.is-locked .room-card-title { color: #78500a; }
+
+/* Passcode entry below a locked room card */
+.room-passcode-wrap {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin: -0.25rem 0 0.5rem;
+  padding: 0.65rem 0.85rem;
+  background: #fff6ee;
+  border: 2px solid #e0c8a8;
+  border-top: none;
+  border-radius: 0 0 14px 14px;
+}
+.room-passcode-input {
+  flex: 1;
+  font-size: 0.88rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 10px;
+  font-family: "Courier New", monospace;
+  letter-spacing: 0.05em;
+}
+.room-passcode-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 0.85rem;
+  padding: 0.5rem 1rem;
+  border-radius: 10px;
+  background: #e07a3d;
+  border-color: #1a1a1a;
+  box-shadow: 3px 3px 0 #1a1a1a;
+}
 .room-select-actions {
   display: flex;
   flex-wrap: wrap;

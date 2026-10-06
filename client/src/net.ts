@@ -210,11 +210,11 @@ export async function listRooms(onWake?: () => void): Promise<RoomListItem[] | R
   return Array.isArray(second) ? second : first;
 }
 
-function parseFindBody(data: { error?: string; roomKey?: string; notice?: ModerationNotice } | null, status: number): PickRoomError {
+function parseFindBody(data: { error?: string; roomKey?: string; notice?: ModerationNotice; message?: string } | null, status: number): PickRoomError {
   if (!data) return { error: "SERVER_ERROR", status };
   if (data.error === "HELD" && data.notice) return { error: "HELD", notice: data.notice };
   const code = data.error;
-  if (code?.startsWith("KICKED:") || code === "BANNED" || code === "AUTH" || code === "NAME_RESERVED" || code === "BAD_NAME") {
+  if (code?.startsWith("KICKED:") || code === "BANNED" || code === "AUTH" || code === "NAME_RESERVED" || code === "BAD_NAME" || code === "ROOM_LOCKED") {
     return { error: code };
   }
   if (status === 409 || code === "ROOM_FULL") return { error: "ROOM_FULL" };
@@ -284,6 +284,7 @@ export async function joinClassroom(
   accessToken?: string,
   god = false,
   staffJoin = false,
+  passcode?: string,
 ) {
   if (!WS) throw new Error("NOT_CONFIGURED");
   const token = usableToken(accessToken);
@@ -296,6 +297,7 @@ export async function joinClassroom(
     accessory: look.accessory,
     body: look.body,
     ...(token ? { accessToken: token } : {}),
+    ...(passcode ? { passcode } : {}),
     god,
     staffJoin,
   });

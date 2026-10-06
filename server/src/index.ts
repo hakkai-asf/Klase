@@ -57,12 +57,13 @@ const KNOWN = new Set([
   "NAME_RESERVED",
   "NO_PERMISSION",
   "ROOM_FULL",
+  "ROOM_LOCKED",
   "AUTH_DISABLED",
 ]);
 
 function httpStatusFor(code: string, fallback: number) {
   if (code === "AUTH") return 401;
-  if (code === "BANNED" || code.startsWith("KICKED:") || code === "NO_PERMISSION") return 403;
+  if (code === "BANNED" || code.startsWith("KICKED:") || code === "NO_PERMISSION" || code === "ROOM_LOCKED") return 403;
   if (code === "NAME_RESERVED" || code === "BAD_NAME") return 422;
   if (code === "ROOM_FULL") return 409;
   if (code === "AUTH_DISABLED") return 503;

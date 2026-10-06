@@ -1,10 +1,10 @@
 import { Room, Client, ServerError } from "@colyseus/core";
-import { CHAT_LOG_MAX, CHAT_RADIUS, CLASSROOM, IDLE_MS, MOD_DURATION_MAX_SEC, MOD_MESSAGE_MAX, REGULAR_CAP, SEAT_REACH, SPAWN, STAFF_IDLE_MS, WEARABLES, classroomSeats, clampClassroom, normalizeCharacterId, normalizeLook, resolvePlayerMove, type ModerationNotice, type Role } from "@klase/shared";
+import { CHAT_LOG_MAX, CHAT_RADIUS, CLASSROOM, IDLE_MS, MOD_DURATION_MAX_SEC, MOD_MESSAGE_MAX, REGULAR_CAP, SEAT_REACH, SPAWN, STAFF_IDLE_MS, WEARABLES, ERROR_ROOM_LOCKED, ERROR_PASSCODE_CONSUMED, ERROR_PASSCODE_EXPIRED, classroomSeats, clampClassroom, normalizeCharacterId, normalizeLook, resolvePlayerMove, type ModerationNotice, type Role } from "@klase/shared";
 import { ClassroomState, Player } from "./schema.js";
 import { filterChat, isCleanDisplayName, sanitizeDisplayName } from "./chatFilter.js";
 import { assertCanModerate, banName, canUseName, invalidateReservedNames, ownerName, rememberPrivileged, resolveIdentity } from "./roles.js";
 import { putHold } from "./moderationHold.js";
-import { saveLook, setBanned, setRole, supabaseEnabled } from "./supabase.js";
+import { saveLook, setBanned, setRole, supabaseEnabled, loadRoomConfig, checkWhitelistEntry, consumeWhitelistEntry } from "./supabase.js";
 
 function allowed(list: readonly string[], value: string) {
   return (list as readonly string[]).includes(value) ? value : "";
@@ -543,13 +543,42 @@ export class ClassroomRoom extends Room<ClassroomState> {
 
   async onAuth(
     _client: Client,
-    options: { name?: string; hat?: string; top?: string; accessory?: string; body?: string; accessToken?: string; god?: boolean; staffJoin?: boolean },
+    options: { name?: string; hat?: string; top?: string; accessory?: string; body?: string; accessToken?: string; god?: boolean; staffJoin?: boolean; passcode?: string },
   ) {
-    return resolveIdentity(options);
+    const ident = await resolveIdentity(options);
+    const passcode = String(options?.passcode ?? "").trim() || null;
+
+    // Room lock check for regular users (staff bypass)
+    if (!ident.god && ident.role === "user" && supabaseEnabled()) {
+      const roomKey = this.state.roomKey;
+      const cfg = await loadRoomConfig(roomKey);
+      if (cfg.locked) {
+        // Check whitelist
+        const userId = ident.userId || null;
+        const result = await checkWhitelistEntry(roomKey, userId, passcode);
+        if (!result.allowed) {
+          if (result.reason === "consumed") {
+            throw new ServerError(403, JSON.stringify({ error: ERROR_PASSCODE_CONSUMED, message: "This passcode has already been used." }));
+          }
+          if (result.reason === "expired") {
+            throw new ServerError(403, JSON.stringify({ error: ERROR_PASSCODE_EXPIRED, message: "This passcode has expired." }));
+          }
+          throw new ServerError(403, JSON.stringify({ error: ERROR_ROOM_LOCKED, message: "This room is currently locked." }));
+        }
+        // Mark entry with lock flag so onJoin fast-path won't double-throw
+        // Consume single-use passcode
+        if (result.consumeId) void consumeWhitelistEntry(result.consumeId);
+      }
+      // Attach lock flag so onJoin can fast-check without another DB call
+      return Object.assign(ident, { _roomLocked: false, passcode });
+    }
+
+    return Object.assign(ident, { _roomLocked: false, passcode });
   }
 
   onJoin(client: Client) {
     const ident = client.auth as Awaited<ReturnType<typeof resolveIdentity>>;
+
     // Observe (god) and staff skip capacity. Regulars hit both the 12-user cap and the room ceiling.
     if (!ident.god && ident.role === "user") {
       const regulars = [...this.state.players.values()].filter((p) => p.role === "user").length;

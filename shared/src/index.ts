@@ -18,6 +18,11 @@ export const MOD_NAME_MAX = 24;
 /** Default in-world name for a verified owner/admin. Not a privilege — the token is. */
 export const DEFAULT_STAFF_NAME = "Hakkai";
 export const MOD_DURATION_MAX_SEC = 30 * 24 * 3600;
+
+/** Error codes for room access control. */
+export const ERROR_ROOM_LOCKED = "ROOM_LOCKED";
+export const ERROR_PASSCODE_CONSUMED = "PASSCODE_CONSUMED";
+export const ERROR_PASSCODE_EXPIRED = "PASSCODE_EXPIRED";
 export const MOD_DURATIONS = [
   { label: "5 min", sec: 5 * 60 },
   { label: "15 min", sec: 15 * 60 },

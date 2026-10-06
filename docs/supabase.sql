@@ -221,3 +221,57 @@ create table if not exists public.moderation_holds (
   created_at timestamptz not null default now()
 );
 alter table public.moderation_holds enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Per-admin permission flags. Owner-only write; server (service role) reads.
+-- Safe to re-run.
+-- ---------------------------------------------------------------------------
+create table if not exists public.admin_permissions (
+  user_id uuid primary key references auth.users (id) on delete cascade,
+  can_observe boolean not null default false,
+  can_lock_rooms boolean not null default false,
+  can_blacklist boolean not null default false,
+  can_announce boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+alter table public.admin_permissions enable row level security;
+-- No client-side RLS policies: all reads/writes go through service_role on the server.
+
+-- ---------------------------------------------------------------------------
+-- Room lock config. One row per room_key. Server (service role) only.
+-- Safe to re-run.
+-- ---------------------------------------------------------------------------
+create table if not exists public.room_config (
+  room_key text primary key check (room_key in ('klase-1', 'klase-2', 'klase-3')),
+  locked boolean not null default false,
+  whitelist_mode boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+alter table public.room_config enable row level security;
+
+-- Seed the three rooms if missing.
+insert into public.room_config (room_key) values ('klase-1'), ('klase-2'), ('klase-3')
+on conflict (room_key) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- Per-room whitelist. Server (service role) only.
+-- Entries can be by user_id (known account) or passcode (opaque string).
+-- Safe to re-run.
+-- ---------------------------------------------------------------------------
+create table if not exists public.whitelist (
+  id uuid primary key default gen_random_uuid(),
+  room_key text not null check (room_key in ('klase-1', 'klase-2', 'klase-3')),
+  user_id uuid references auth.users (id) on delete cascade,
+  passcode text unique,
+  label text not null default '',
+  single_use boolean not null default false,
+  consumed boolean not null default false,
+  expires_at timestamptz,
+  added_by uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now(),
+  constraint whitelist_has_key check (user_id is not null or passcode is not null)
+);
+alter table public.whitelist enable row level security;
+
+create index if not exists whitelist_room_user on public.whitelist (room_key, user_id) where user_id is not null;
+create index if not exists whitelist_passcode on public.whitelist (passcode) where passcode is not null;

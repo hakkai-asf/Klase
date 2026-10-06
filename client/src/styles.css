@@ -2060,42 +2060,472 @@ button, input, select { font-family: inherit; }
 
 }
 
-/* Admin dashboard (/admin) */
+/* ═══════════════════════════════════════════════════════════════════════════
+   ADMIN DASHBOARD — /admin route
+   Design tokens, layout, sections, and components
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Route setup ──────────────────────────────────────────────────────────── */
 body.admin-route #app { overflow-y: auto; }
-.admin-card { padding: 1.6rem 1.8rem; max-width: 30rem; color: #1a1a1a; }
-.admin-card h2 { margin: 0 0 0.5rem; }
-.admin-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1rem; }
-.admin-actions a.clay-btn { text-decoration: none; display: inline-block; }
-.admin-page {
-  min-height: 100%;
-  padding: 1.6rem clamp(1rem, 4vw, 3rem) 3rem;
-  background: radial-gradient(circle at 18% 8%, #3a2418 0%, var(--klase-page) 52%);
-  color: var(--klase-cream);
-}
-.admin-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
-.admin-head h1 { margin: 0; }
-.admin-who { margin: 0.3rem 0 0; font-weight: 800; }
-.admin-head .admin-actions { margin-top: 0; }
-.admin-status { min-height: 1.4rem; margin: 0.9rem 0; font-weight: 800; color: var(--klase-ink-muted); }
-.admin-status.bad { color: #ff8a8a; }
-.admin-rooms { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 1.2rem; align-items: start; }
-.admin-room { padding: 1rem 1.1rem 0.6rem; color: #1a1a1a; }
-.admin-room-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; margin-bottom: 0.7rem; }
-.admin-room-head h2 { margin: 0; }
-.admin-count { font-weight: 800; font-size: 0.8rem; }
-.admin-room > .clay-btn { margin-bottom: 0.8rem; }
-.admin-empty { font-weight: 700; opacity: 0.7; }
-.admin-enter-as {
-  margin: 1.1rem 0 0.4rem;
-  padding: 1.1rem 1.2rem 1.2rem;
+
+/* ── Auth screens (sign-in / denied / locked) ─────────────────────────────── */
+.admin-card {
+  padding: 2rem 2.2rem 1.8rem;
+  max-width: 28rem;
   color: #1a1a1a;
 }
-.admin-enter-as h2 { margin: 0 0 0.3rem; }
-.admin-enter-as > .lede { margin: 0 0 0.85rem; font-weight: 700; opacity: 0.75; }
-.admin-enter-name { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: flex-end; margin-bottom: 0.9rem; }
-.admin-enter-name label { display: flex; flex-direction: column; gap: 0.3rem; flex: 1; min-width: 14rem; font-weight: 800; font-size: 0.72rem; letter-spacing: 0.05em; }
+.admin-card h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1.6rem;
+  letter-spacing: -0.025em;
+  color: #1a1a1a;
+}
+.admin-card p {
+  margin: 0 0 1rem;
+  font-weight: 700;
+  color: #6b5a50;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 1rem;
+}
+.admin-actions a.clay-btn { text-decoration: none; display: inline-block; }
+
+/* ── Page shell ───────────────────────────────────────────────────────────── */
+.admin-page {
+  min-height: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 1.75rem clamp(1rem, 4vw, 2.5rem) 4rem;
+  background: radial-gradient(circle at 18% 8%, #3a2418 0%, var(--klase-page) 52%);
+  color: var(--klase-cream);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* ── Top header bar ───────────────────────────────────────────────────────── */
+.admin-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-bottom: 1.25rem;
+  border-bottom: 2px solid rgba(255,255,255,0.08);
+}
+.admin-head-left { display: flex; flex-direction: column; gap: 0.2rem; }
+.admin-head h1 {
+  margin: 0;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  letter-spacing: -0.035em;
+  color: var(--klase-orange);
+  line-height: 1;
+}
+.admin-who {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-weight: 800;
+  font-size: 0.88rem;
+  color: var(--klase-cream);
+  opacity: 0.85;
+}
+.admin-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.admin-head-actions .clay-btn {
+  white-space: nowrap;
+  font-size: 0.85rem;
+  padding: 0.5rem 1rem;
+}
+
+/* ── Global status bar ────────────────────────────────────────────────────── */
+.admin-status {
+  min-height: 1.5rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: var(--klase-ink-muted);
+  background: transparent;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.admin-status:not(:empty) {
+  background: rgba(255,255,255,0.06);
+}
+.admin-status.bad {
+  background: rgba(255,107,107,0.12);
+  color: #ff9a9a;
+}
+
+/* ── Generic section card ─────────────────────────────────────────────────── */
+.admin-section {
+  padding: 1.4rem 1.6rem 1.5rem;
+  color: #1a1a1a;
+  margin: 0;
+}
+.admin-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.3rem;
+  flex-wrap: wrap;
+}
+.admin-section h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: #1a1a1a;
+}
+.admin-section > .lede,
+.admin-section .admin-lede {
+  margin: 0.2rem 0 1.1rem;
+  font-size: 0.83rem;
+  font-weight: 700;
+  color: #7a6558;
+  line-height: 1.5;
+}
+
+/* ── Search row ───────────────────────────────────────────────────────────── */
+.admin-search-row {
+  display: flex;
+  gap: 0.55rem;
+  margin-bottom: 1rem;
+}
+.admin-search-row .clay-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.9rem;
+}
+.admin-search-row .clay-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* ── Account result rows ──────────────────────────────────────────────────── */
+.admin-account-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.admin-immune {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #a08878;
+  padding: 0.3rem 0.6rem;
+  background: #f5ede4;
+  border-radius: 8px;
+  border: 1.5px solid #e0d0c4;
+}
+
+/* ── Permissions section ──────────────────────────────────────────────────── */
+.admin-perms-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.admin-perm-row {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.9rem 1rem;
+}
+.admin-perm-row-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 900;
+  font-size: 0.95rem;
+  color: #1a1a1a;
+}
+.admin-perm-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  width: 100%;
+}
+.admin-perm-flag {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #3a2e28;
+  cursor: pointer;
+  padding: 0.3rem 0.7rem;
+  background: #f8f2eb;
+  border: 2px solid #e0d0c4;
+  border-radius: 8px;
+  user-select: none;
+  transition: background 0.1s ease, border-color 0.1s ease;
+}
+.admin-perm-flag:hover { background: #f0e6da; border-color: #c8b5a8; }
+.admin-perm-flag input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #e07a3d;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ── Player Tracker modal ─────────────────────────────────────────────────── */
+.admin-tracker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(10,6,4,0.75);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 2rem 1rem;
+}
+.admin-tracker-modal {
+  width: 100%;
+  max-width: 680px;
+  padding: 1.5rem 1.6rem 1.6rem;
+  color: #1a1a1a;
+  flex-shrink: 0;
+}
+.admin-tracker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.2rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 2.5px solid #e8ded3;
+}
+.admin-tracker-head h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 900;
+  letter-spacing: -0.025em;
+}
+.admin-tracker-section-head {
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #c45c28;
+  margin: 1rem 0 0.45rem;
+  padding: 0 0.1rem;
+}
+.admin-tracker-section-head:first-child { margin-top: 0; }
+.admin-tracker-body { display: flex; flex-direction: column; }
+
+/* ── Room grid ────────────────────────────────────────────────────────────── */
+.admin-rooms {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  gap: 1.25rem;
+  align-items: start;
+}
+.admin-room {
+  padding: 1.2rem 1.3rem 1rem;
+  color: #1a1a1a;
+}
+.admin-room-header {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.35rem;
+  flex-wrap: wrap;
+}
+.admin-room-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+.admin-room-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.9rem;
+  flex-wrap: wrap;
+}
+.admin-room-count {
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #7a6558;
+}
+.admin-room-actions {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.85rem;
+}
+.admin-room-actions .clay-btn {
+  font-size: 0.83rem;
+  padding: 0.45rem 0.85rem;
+}
+
+/* ── Divider inside room card ─────────────────────────────────────────────── */
+.admin-room-divider {
+  height: 1.5px;
+  background: #e8ded3;
+  margin: 0.75rem 0;
+  border: none;
+}
+
+/* ── Section label inside room ────────────────────────────────────────────── */
+.admin-room-sublabel {
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #c45c28;
+  margin: 0 0 0.5rem;
+}
+
+/* ── Player rows ──────────────────────────────────────────────────────────── */
+.admin-players-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.admin-empty {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: #a08878;
+  padding: 0.5rem 0;
+}
+
+/* ── Enter-as section ─────────────────────────────────────────────────────── */
+.admin-enter-as {
+  padding: 1.4rem 1.6rem 1.5rem;
+  color: #1a1a1a;
+}
+.admin-enter-as h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.15rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+.admin-enter-as > .lede {
+  margin: 0 0 1rem;
+  font-size: 0.83rem;
+  font-weight: 700;
+  color: #7a6558;
+}
+.admin-enter-name {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+}
+.admin-enter-name label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1;
+  min-width: 13rem;
+  font-weight: 900;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #5a4a40;
+}
+.admin-enter-name label .clay-input { font-size: 0.93rem; }
 .admin-enter-picker.neo-picker-frame { margin: 0; max-width: none; }
 
+/* ── Whitelist panel ──────────────────────────────────────────────────────── */
+.admin-whitelist-panel {
+  margin-top: 0.25rem;
+}
+.admin-whitelist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.85rem;
+}
+.admin-whitelist-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.9rem 1rem;
+  background: #f8f2eb;
+  border: 2px solid #e0d0c4;
+  border-radius: 12px;
+  margin-bottom: 0.6rem;
+}
+.admin-whitelist-form strong {
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #6b5a50;
+}
+.admin-whitelist-form .clay-input {
+  font-size: 0.87rem;
+  padding: 0.5rem 0.8rem;
+}
+.admin-whitelist-form-row {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.admin-whitelist-form-row .clay-input { flex: 1; min-width: 0; }
+.admin-passcode {
+  font-family: "Courier New", monospace;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #c45c28;
+  background: #fff6ee;
+  border: 1.5px solid #e07a3d;
+  border-radius: 6px;
+  padding: 0.1rem 0.45rem;
+  margin-left: 0.35rem;
+}
+.admin-passcode-reveal {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.7rem 0.8rem;
+  background: #fff6ee;
+  border: 2px solid #e07a3d;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #6b3a1a;
+}
+.admin-passcode-reveal .clay-input {
+  font-family: "Courier New", monospace;
+  font-size: 0.85rem;
+  flex: 1;
+  min-width: 10rem;
+}
+
+/* ── Moderation tools ─────────────────────────────────────────────────────── */
+.admin-mod-tools { margin-bottom: 0.6rem; }
+
+/* ── Responsive ───────────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .admin-page { padding: 1.1rem 0.9rem 3rem; gap: 1.1rem; }
+  .admin-head { padding-bottom: 1rem; }
+  .admin-rooms { grid-template-columns: 1fr; }
+  .admin-section, .admin-enter-as, .admin-room { padding: 1.1rem 1rem 1rem; }
+  .admin-head-actions { gap: 0.4rem; }
+  .admin-head-actions .clay-btn { font-size: 0.8rem; padding: 0.45rem 0.75rem; }
+}
+
+/* ── Misc ─────────────────────────────────────────────────────────────────── */
 /* Google sign-in button on the account screen */
 .google-btn { display: flex; align-items: center; justify-content: center; gap: 0.6rem; }
 .google-btn svg { width: 1.15rem; height: 1.15rem; flex: none; }

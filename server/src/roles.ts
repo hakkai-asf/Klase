@@ -4,6 +4,7 @@ import { isCleanDisplayName, sanitizeDisplayName } from "./chatFilter.js";
 import { recordDeniedAttempt, recordStaffSuccess } from "./adminLockout.js";
 import { findHold, findHoldMemory, holdToNotice } from "./moderationHold.js";
 import {
+  loadAdminPermissions,
   loadPrivilegedProfiles,
   loadProfile,
   ownerEmail,
@@ -196,8 +197,18 @@ export async function resolveIdentity(options: {
     const role = roleForAccount(user, profile);
     syncOwnerRole(user.id, role, profile);
     if (wantsGod && role !== "owner") {
-      console.warn(describeStaffDecision("identity", "god rejected", user, profile?.role, role));
-      throw new ServerError(403, "NO_PERMISSION");
+      // Admins need can_observe permission to enter god/observe mode
+      if (role === "admin") {
+        const perms = await loadAdminPermissions(user.id);
+        if (!perms.can_observe) {
+          console.warn(describeStaffDecision("identity", "god rejected: admin lacks can_observe", user, profile?.role, role));
+          throw new ServerError(403, "NO_PERMISSION");
+        }
+        // Admin with can_observe is allowed through
+      } else {
+        console.warn(describeStaffDecision("identity", "god rejected", user, profile?.role, role));
+        throw new ServerError(403, "NO_PERMISSION");
+      }
     }
     if (staffJoin && role !== "owner" && role !== "admin") {
       console.warn(describeStaffDecision("identity", "staffJoin as non-staff", user, profile?.role, role));

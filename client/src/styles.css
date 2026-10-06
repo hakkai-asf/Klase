@@ -2452,6 +2452,7 @@ body.admin-route #app { overflow-y: auto; }
   flex-direction: column;
   gap: 0.4rem;
   margin-bottom: 0.85rem;
+  min-height: 2rem;
 }
 .admin-whitelist-form {
   display: flex;

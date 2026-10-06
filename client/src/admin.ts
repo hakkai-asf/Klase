@@ -570,12 +570,15 @@ function renderWhitelistPanel(
   panel.append(sublabel("Whitelist"));
 
   const listEl = el("div", "admin-whitelist-list");
+  // Reserve height so the forms below don't jump while the async fetch is in flight
+  listEl.style.minHeight = "2rem";
   panel.append(listEl);
 
   const refreshList = async () => {
-    listEl.innerHTML = "";
     try {
       const { entries } = await api<{ entries: WhitelistEntry[] }>(`/api/admin/whitelist/${roomKey}`, token);
+      // Only clear and repaint once we have the response — prevents the jump
+      listEl.innerHTML = "";
       if (!entries.length) {
         listEl.append(el("p", "admin-empty", "No entries — add one below."));
         return;

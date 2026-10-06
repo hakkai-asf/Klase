@@ -579,10 +579,7 @@ function renderWhitelistPanel(
       const { entries } = await api<{ entries: WhitelistEntry[] }>(`/api/admin/whitelist/${roomKey}`, token);
       // Only clear and repaint once we have the response — prevents the jump
       listEl.innerHTML = "";
-      if (!entries.length) {
-        listEl.append(el("p", "admin-empty", "No entries — add one below."));
-        return;
-      }
+      if (!entries.length) return;
       for (const entry of entries) {
         const row = el("div", "player-row");
         const info = el("div");

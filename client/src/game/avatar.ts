@@ -1302,8 +1302,13 @@ export function poseWalk(
         if (!avatar.idleAction.isRunning()) avatar.idleAction.play();
       }
       if (avatar.sitAction) {
+        const wasPlaying = avatar.sitAction.getEffectiveWeight() > 0.01;
         avatar.sitAction.enabled = false;
         avatar.sitAction.setEffectiveWeight(0);
+        // If we just stood up from sit, force the mixer to apply the new
+        // idle/walk weights immediately so the pose snaps out of sit on
+        // this frame rather than waiting for the next movement input.
+        if (wasPlaying) forceMix = true;
       }
       setActionWeight(avatar.walkAction, moving ? 1 : 0, k);
       setActionWeight(avatar.idleAction ?? null, moving ? 0 : 1, k);

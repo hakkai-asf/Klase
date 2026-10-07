@@ -6,6 +6,7 @@ import {
   humanRemain,
   type ModerationNotice,
 } from "@klase/shared";
+import { ICONS } from "./ui";
 
 export type ModTarget = {
   id: string;

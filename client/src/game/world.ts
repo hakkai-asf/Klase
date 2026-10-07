@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { CLASSROOM, MOVE_SPEED, SEAT_REACH, SPAWN, clampClassroom, type Look, type Seat } from "@klase/shared";
 import { applyLook, createAvatar, disposeAvatar, hasCharacterRig, drawMic, drawName, drawSpeech, layoutHeadSprites, poseWalk, setGlobalAnisotropy, setLocalFpPresentation } from "./avatar";
 import { buildClassroom, findClearStand, nearExitDoor, nearestExitDoor, resolveMove, type AABB } from "./classroom";
+import { ICONS } from "../ui";
 
 type AvatarHandle = ReturnType<typeof createAvatar> & {
   target: THREE.Vector3;
@@ -686,7 +687,11 @@ export class World {
     if (this.sitBtn) {
       this.sitPrompt.hidden = true;
       this.sitBtn.hidden = !(canSit || seated || atDoor);
-      this.sitBtn.textContent = seated ? "Stand" : atDoor ? "Exit" : "Sit";
+      this.sitBtn.innerHTML = seated
+        ? ICONS.stand + ' <span class="btn-label">Stand</span>'
+        : atDoor
+        ? ICONS.exit + ' <span class="btn-label">Exit</span>'
+        : ICONS.sit + ' <span class="btn-label">Sit</span>';
       return;
     }
     if (seated) {

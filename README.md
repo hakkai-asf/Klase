@@ -1,112 +1,125 @@
-# Klase
+<div align="center">
 
-Real-time 3D multiplayer classroom in the browser. Walk around an isometric classroom, talk to people near you, customize a primitive avatar.
+<img src="client/public/preview.png" alt="Klase preview" width="720" />
 
-## Run locally
+<br />
 
-Needs Node 20 (pinned in `.nvmrc` / `package.json` `engines` so it matches Render).
+# KLASE!
 
-```bash
-npm install
-npm run dev
-```
+### A real-time 3D space hangout, right in your browser
 
-- App: http://localhost:5173
-- Game server: `ws://localhost:2567`
+<br />
 
-Open two browser tabs for multiplayer. Guest join works with no cloud accounts.
+**Entertainment** &nbsp;|&nbsp; **Harry Lagto** &nbsp;|&nbsp; Three.js &middot; Colyseus &middot; TypeScript &middot; Vite &middot; Node.js &middot; Supabase
 
-Copy `.env.example` to `.env` (repo root or `server/`) when you want Supabase accounts. Run `docs/supabase.sql` in the SQL editor. Set `KLASE_OWNER_USER_ID` or `KLASE_OWNER_EMAIL` so owner is not a spoofable display name. Until those keys exist, display name `Hakkai` is owner in guest-dev only.
+[**Visit the live site**](https://klase-room.vercel.app)
 
-## Google sign-in and the admin dashboard
+</div>
 
-1. Run `docs/supabase.sql` in the Supabase SQL editor (profiles table, RLS, new-user trigger).
-2. Supabase → Authentication → URL Configuration: add `http://localhost:5173/auth/callback` and your production `https://<site>/auth/callback` to **Redirect URLs**.
-3. Google Cloud → OAuth client → Authorized redirect URI: `https://<project-ref>.supabase.co/auth/v1/callback` (Google client ID/secret live only in the Supabase Google provider).
-4. Set the Supabase env vars on both hosts (see `.env.example`), then sign in with Google once and set `KLASE_OWNER_USER_ID` or `KLASE_OWNER_EMAIL`.
-5. Open `/admin`. Access is decided by the game server on every request (`/api/admin/*` re-verifies the token and role). The owner also gets **God mode**: join any room from the dashboard, silently and invisibly, ignoring capacity limits.
+<br />
 
-Owner/admin display names are reserved: guests (and renames in-room) can't use them, case-insensitively.
+## About the Project
+
+| | |
+|---|---|
+| **Project title** | Klase |
+| **Student name** | Harry Lagto |
+| **Website category** | Entertainment (3D Space Hangout) |
+
+Klase is a cozy 3D hangout space that runs entirely in the browser with no install. Pick a character, drop into a shared room, and walk around an isometric classroom built with Three.js. Sit on chairs, chat with people standing near you, and talk through proximity voice, the way you would in a small virtual campus.
+
+Every room is kept in sync in real time by a Colyseus game server, so everyone sees the same movement, seats, and chat. An optional Supabase back end handles accounts, roles, and moderation, and an owner dashboard lets staff keep the space safe and friendly.
+
+<br />
+
+## Pages and Sections
+
+| # | Page or section | What it does |
+|:-:|---|---|
+| 1 | **Game Menu** | Landing screen with Play, guest join, and Google or email sign in |
+| 2 | **Onboarding** | Step by step intro, Terms, Privacy Policy, and a consent step with age and agreement checkboxes |
+| 3 | **Character Selection** | Rotating 3D preview, character cards, and a display name input |
+| 4 | **Room Select** | Lists the rooms with live capacity, and shows rooms full or locked messages |
+| 5 | **3D Hangout Room** | Movement, sit and stand, proximity chat and voice, player list, on screen joystick on mobile |
+| 6 | **Admin Dashboard** (`/admin`) | Account search, roles, bans, room locks, whitelist and passcodes, God mode |
+| 7 | **Auth Callback** (`/auth/callback`) | Finishes Google sign in and sends the user back to the right page |
+
+<br />
+
+## Main Features
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**Hangout**
+- Real-time multiplayer with instant state sync
+- Isometric 3D room with animated characters (idle, walking, sitting)
+- Proximity text chat with the last 40 lines kept as history
+- Proximity voice, with the mic off by default
+- Character and display name remembered between visits
+- Mobile friendly with an on screen joystick and Sit or Stand button
+
+</td>
+<td width="50%" valign="top">
+
+**Safety and Accounts**
+- Guest join, Google sign in, and email registration
+- Consent checkboxes that gate the Play button
+- Display name cleaning, profanity filter, and link redaction
+- Owner, admin, and user roles enforced on the server
+- Kick with message and cooldown, ban, global mute, local mute
+- Admin dashboard with search, room locks, whitelist, and God mode
+- Idle removal and a staff lockout after failed attempts
+
+</td>
+</tr>
+</table>
+
+<br />
 
 ## Controls
 
-- WASD / arrows — move (screen-relative on the isometric floor)
-- Phone / tablet — on-screen joystick (bottom left). Sit / Stand appears next to it when you can use a chair
-- Mic — proximity voice, off by default
-- Chat — nearby players only
-- Look — hat / top / accessory
-- Players — local mute; kick/ban/global mute/promote if admin or owner
-- E — sit / stand on desktop; Space also stands
-
-## Deploy (beginner): Render + Vercel
-
-You do **not** need Supabase for guest join. Skip those keys until you want email accounts.
-
-**Vercel** hosts the website. **Render** hosts the game server (who is in the room). Both are required for [klase-room.vercel.app](https://klase-room.vercel.app) to join.
-
-### 1. Push this repo to GitHub `main`
-
-Render and Vercel both deploy from GitHub.
-
-### 2. Create a Render web service
-
-1. Sign up at [render.com](https://render.com) with GitHub and allow the **Klase** repo.
-2. **New** → **Web Service** → connect **Klase**.
-3. Set:
-
-| Field | Value |
+| Input | Action |
 |---|---|
-| Name | `klase-server` |
-| Language | Node |
-| Branch | `main` |
-| Root Directory | leave **empty** (whole repo) |
-| Build Command | `npm install` |
-| Start Command | `npm run start -w server` |
-| Instance | Free |
+| `W` `A` `S` `D` or arrow keys | Move around the room |
+| `E` | Sit or stand (Space also stands) |
+| Joystick (phone or tablet) | Move, with a Sit or Stand button beside it |
+| Mic button | Toggle proximity voice |
+| Chat box | Talk to nearby players |
+| Players menu | Mute locally, or kick, ban, mute, and promote if you are staff |
 
-4. Environment: `NODE_VERSION` = `20` (also in `render.yaml` / `.nvmrc`). Guest join does not use `SUPABASE_*`; those keys are only for signed-in accounts. Render sets `PORT` for you.
-5. Deploy. In **Settings**, Health Check Path = `/health`.
-6. When logs show `Klase server on :…`, copy the URL, e.g. `https://klase-server.onrender.com`. Open `https://YOUR-SERVICE.onrender.com/health` — you should see `{"ok":true}`.
+<br />
 
-Free Render **sleeps** after ~15 minutes. The first join after sleep can take 30–60 seconds.
+## Technologies Used
 
-### 3. Point Vercel at Render
-
-Vite bakes env vars at **build** time. You must redeploy after adding them.
-
-1. Vercel project → **Settings** → **Environment Variables** → Production:
-
-| Name | Value |
+| Layer | Technologies |
 |---|---|
-| `VITE_COLYSEUS_URL` | `wss://YOUR-SERVICE.onrender.com` (must be **wss**, not `ws`) |
-| `VITE_API_URL` | `https://YOUR-SERVICE.onrender.com` |
-| `VITE_SUPABASE_URL` | `https://YOUR-PROJECT.supabase.co` (origin only, no `/rest/v1/`) |
-| `VITE_SUPABASE_ANON_KEY` | Supabase **anon / publishable** key — never the service_role key |
+| **Front end** | HTML, CSS, TypeScript (compiled to JavaScript), Vite, Three.js, lottie-web |
+| **Real-time** | Colyseus and colyseus.js over WebSocket |
+| **Back end** | Node.js 20, Express, REST API, `ws`, `cors`, `dotenv` |
+| **Data and auth** | Supabase (PostgreSQL, Row Level Security, Google OAuth), Local Storage, Session Storage, JSON |
+| **Browser APIs** | Fetch API, WebRTC and Web Audio (proximity voice), `getUserMedia`, DOM events |
+| **Assets** | Draco compressed GLB 3D models, PNG, Lottie JSON |
+| **Hosting** | GitHub, Vercel (website), Render (game server) |
 
-No trailing slash on the URLs. Use your real Render hostname. After changing any `VITE_*` var, **Redeploy** (Vite bakes them at build time).
+<br />
 
-If **Root Directory** is `client`, keep `client/vercel.json`. If it is the repo root, keep root `vercel.json` (`outputDirectory` = `client/dist`). `/admin` and `/auth/callback` must serve the app, not a Vercel 404.
+## Project Structure
 
-2. **Deployments** → **Redeploy** (or push a new commit). Wait until it succeeds.
-3. Hard-refresh the Vercel site and **Join as guest**.
+```text
+client/   Web app: screens, 3D world, auth, admin dashboard
+server/   Colyseus rooms, REST API, moderation, Supabase access
+shared/   Constants and helpers used by both client and server
+assets/   3D models, animations, textures, menu art
+docs/     Project spec, UI style guide, database SQL
+tools/    Scripts for compressing and converting character models
+```
 
-**Supabase** → Authentication → URL Configuration:
+<br />
 
-| Setting | Value |
-|---|---|
-| Site URL | `https://klase-room.vercel.app` |
-| Redirect URLs | `https://klase-room.vercel.app/auth/callback` and `http://localhost:5173/auth/callback` |
+<div align="center">
 
-Google provider stays in the Supabase dashboard (not Vercel).
+Made by **Harry Lagto**
 
-**Render** env (server only): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and at least one of `KLASE_OWNER_EMAIL` or `KLASE_OWNER_USER_ID`. Rejected owner checks log `[identity]` / `[admin]` reasons (no secrets).
-
-Vercel: Root Directory empty (repo root), Output Directory `dist`.
-
-Local play is unchanged: `npm run dev` (no Render needed).
-
-## Stack
-
-- Client: Vite, Three.js (orthographic isometric), Colyseus.js, claymorphism overlay
-- Server: Colyseus rooms `klase-1` … `klase-3`, 12 regulars per room (owner/admin bypass)
-- Auth/DB: optional Supabase (`docs/supabase.sql`)
+</div>
